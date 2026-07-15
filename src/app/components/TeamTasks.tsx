@@ -233,12 +233,12 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
                         <p className="truncate text-sm font-semibold" style={{ color: NAVY }}>{task.task}</p>
                         <p className="truncate text-xs text-muted-foreground">{task.client}</p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 text-xs text-foreground/70">
+                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                        <span className={`whitespace-nowrap rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${STATUS_COLOR[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status}</span>
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-foreground/70">
                           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pm.dot }} />
                           {task.priority}
                         </span>
-                        <span className={`rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${STATUS_COLOR[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status}</span>
                       </div>
                     </div>
 
