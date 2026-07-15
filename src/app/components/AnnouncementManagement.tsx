@@ -148,19 +148,21 @@ export function AnnouncementManagement({ user }: AnnouncementManagementProps) {
                       </div>
                       <p className="mt-1.5 text-sm text-muted-foreground">{a.message}</p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <IconBtn tone={a.is_active ? 'default' : 'green'} title={a.is_active ? 'Deactivate' : 'Activate'} onClick={() => handleToggle(a.id)}>
+                          {a.is_active ? <PowerOff size={14} /> : <Power size={14} />}
+                        </IconBtn>
+                        <IconBtn tone="default" title="Edit" onClick={() => { setEditingAnnouncement(a); setShowAddModal(true); }}>
+                          <Pencil size={14} />
+                        </IconBtn>
+                        <IconBtn tone="red" title="Delete" onClick={() => handleDelete(a.id)}>
+                          <Trash2 size={14} />
+                        </IconBtn>
+                      </div>
                       <span className={`inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${a.is_active ? 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]' : 'bg-slate-100 text-slate-500'}`}>
                         {a.is_active ? 'Active' : 'Inactive'}
                       </span>
-                      <IconBtn tone={a.is_active ? 'default' : 'green'} title={a.is_active ? 'Deactivate' : 'Activate'} onClick={() => handleToggle(a.id)}>
-                        {a.is_active ? <PowerOff size={14} /> : <Power size={14} />}
-                      </IconBtn>
-                      <IconBtn tone="default" title="Edit" onClick={() => { setEditingAnnouncement(a); setShowAddModal(true); }}>
-                        <Pencil size={14} />
-                      </IconBtn>
-                      <IconBtn tone="red" title="Delete" onClick={() => handleDelete(a.id)}>
-                        <Trash2 size={14} />
-                      </IconBtn>
                     </div>
                   </div>
 
