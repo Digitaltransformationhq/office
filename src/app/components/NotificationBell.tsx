@@ -33,14 +33,26 @@ export function NotificationBell({ userId }: { userId: string }) {
   const [open, setOpen] = useState(false);
   const [pushState, setPushState] = useState<string>('default');
   const [enabling, setEnabling] = useState(false);
+  const [enableError, setEnableError] = useState<string>('');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setPushState(pushPermission()); }, []);
 
   const handleEnable = async () => {
     setEnabling(true);
-    await enablePush(userId);
-    setPushState(pushPermission());
+    setEnableError('');
+    const res = await enablePush(userId);
+    const perm = pushPermission();
+    setPushState(perm);
+    if (!res.ok) {
+      // The browser refuses to re-show the prompt once a site is blocked — the
+      // only way back is the browser's own site settings.
+      setEnableError(
+        perm === 'denied'
+          ? 'Your browser has blocked notifications for this site. Turn them on from the browser menu → Site settings → Notifications → Allow, then reload.'
+          : "Couldn't enable notifications. Please try again."
+      );
+    }
     setEnabling(false);
   };
 
@@ -105,7 +117,7 @@ export function NotificationBell({ userId }: { userId: string }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-[320px] overflow-hidden rounded-xl border border-[#E7EDF4] bg-white shadow-[0_20px_50px_-20px_rgba(10,23,40,0.45)]">
+        <div className="fixed left-3 right-3 top-[76px] z-50 flex max-h-[calc(100dvh-92px)] flex-col overflow-hidden rounded-xl border border-[#E7EDF4] bg-white shadow-[0_20px_50px_-20px_rgba(10,23,40,0.45)] sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:max-h-none sm:w-[340px]">
           <div className="flex items-center justify-between border-b border-[#E7EDF4] px-4 py-3">
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold" style={{ color: NAVY }}>Notifications</p>
@@ -118,21 +130,17 @@ export function NotificationBell({ userId }: { userId: string }) {
             )}
           </div>
 
-          {pushState === 'default' && (
+          {(pushState === 'default' || pushState === 'denied') && (
             <div className="border-b border-[#E7EDF4] bg-[#F9FAFB] px-4 py-3">
               <p className="text-xs text-muted-foreground">Get notified even when this tab is closed.</p>
               <button onClick={handleEnable} disabled={enabling} className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#1b365d] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#142a4a] disabled:opacity-60">
-                <BellRing size={13} /> {enabling ? 'Enabling…' : 'Enable browser notifications'}
+                <BellRing size={13} /> {enabling ? 'Enabling…' : 'Enable notifications'}
               </button>
-            </div>
-          )}
-          {pushState === 'denied' && (
-            <div className="border-b border-[#E7EDF4] bg-[#FDECEC] px-4 py-2.5">
-              <p className="text-xs text-[#c0392b]">Browser notifications are blocked. Enable them in your browser's site settings.</p>
+              {enableError && <p className="mt-2 text-[0.7rem] leading-relaxed text-[#c0392b]">{enableError}</p>}
             </div>
           )}
 
-          <div className="max-h-[380px] overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto sm:max-h-[380px]">
             {items.length === 0 ? (
               <div className="flex flex-col items-center py-10 text-center">
                 <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[#F4F6F9] text-muted-foreground"><Bell size={18} /></span>

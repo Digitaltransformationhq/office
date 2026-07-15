@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button } from './Button';
 import { clientsAPI, inquiriesAPI } from '../services/api';
 import { useToast } from './Toast';
+import { useBackButton } from '../hooks/useBackButton';
 import { X, Inbox, Pencil, Check, ChevronDown, CheckCircle2 } from 'lucide-react';
 
 interface ReviewInquiryModalProps {
@@ -30,6 +31,9 @@ export function ReviewInquiryModal({ inquiry, reviewerId, reviewerName, onClose,
     notes: inquiry.notes || '',
   });
   const { showSuccess, showError } = useToast();
+
+  // Let the phone / browser Back button close the modal instead of leaving the page.
+  useBackButton(true, onClose);
 
   const handleApproveAndConvert = async () => {
     setLoading(true);
@@ -151,7 +155,7 @@ export function ReviewInquiryModal({ inquiry, reviewerId, reviewerName, onClose,
 
   return (
     <div className={overlay}>
-      <div className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]">
+      <div className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-[#E7EDF4] px-6 py-5">
           <div className="flex items-center gap-3">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
 import { PartnerDashboard } from './components/PartnerDashboard';
@@ -36,6 +36,12 @@ export default function App() {
   const [activeView, setActiveView] = useState<string>('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Refs so the (once-registered) popstate handler always reads current values.
+  const activeViewRef = useRef(activeView);
+  const sidebarOpenRef = useRef(isMobileSidebarOpen);
+  useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
+  useEffect(() => { sidebarOpenRef.current = isMobileSidebarOpen; }, [isMobileSidebarOpen]);
 
   // Helper function to extract numeric ID from user ID format (e.g., "user:2" -> 2)
   const extractNumericId = (userId: string): number => {
@@ -79,6 +85,16 @@ export default function App() {
     localStorage.removeItem('kaps_user');
   };
 
+  // Navigate to a view and record it in browser history so the mobile / browser
+  // Back button walks back through visited sections instead of closing the app.
+  const navigateTo = (view: string) => {
+    if (view === activeViewRef.current) return;
+    setActiveView(view);
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ view }, '');
+    }
+  };
+
   const handleViewChange = (view: string) => {
     // Prevent users from switching to other roles
     // Only allow navigation to feature views or their own role dashboard
@@ -87,15 +103,39 @@ export default function App() {
     if (roleViews.includes(view)) {
       // If trying to switch to a role view, only allow if it's their own role
       if (view === user?.role) {
-        setActiveView(view);
+        navigateTo(view);
       }
       // Silently ignore attempts to switch to other roles
       return;
     }
 
     // Allow navigation to feature views (settings, tasks, etc.)
-    setActiveView(view);
+    navigateTo(view);
   };
+
+  // Sync the phone / browser Back button with in-app navigation. Without this,
+  // a Back press hits the empty browser history and closes the site entirely.
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return;
+
+    // Seed the root entry (the user's dashboard) so the first Back press lands here.
+    window.history.replaceState({ view: activeViewRef.current || user.role, root: true }, '');
+
+    const handlePop = (event: PopStateEvent) => {
+      // If the mobile sidebar is open, a Back press should just close it —
+      // re-add an entry so we don't fall through and exit the app.
+      if (sidebarOpenRef.current) {
+        setIsMobileSidebarOpen(false);
+        window.history.pushState({ view: activeViewRef.current }, '');
+        return;
+      }
+      const state = event.state as { view?: string } | null;
+      setActiveView(state?.view || user.role);
+    };
+
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [user]);
 
   const renderDashboard = () => {
     switch (activeView) {
