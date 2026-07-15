@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 import { loginAPI } from '../services/api';
 
 interface LoginProps {
@@ -74,6 +74,9 @@ export function Login({ onLogin, onForgotPassword }: LoginProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'staff' | 'admin'>('staff');
+
+  const switchMode = (m: 'staff' | 'admin') => { setMode(m); setError(''); };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +87,10 @@ export function Login({ onLogin, onForgotPassword }: LoginProps) {
       const response = await loginAPI.login({ email, password });
 
       if (response.success && response.data) {
+        if (mode === 'admin' && response.data.role !== 'admin') {
+          setError('This account is not an administrator.');
+          return;
+        }
         onLogin({
           id: response.data.id,
           name: response.data.name,
@@ -174,11 +181,19 @@ export function Login({ onLogin, onForgotPassword }: LoginProps) {
           </div>
 
           <div className="mb-8">
+            {mode === 'admin' && (
+              <span
+                className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-[#E7EDF4] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em]"
+                style={{ backgroundColor: 'rgba(27,54,93,0.05)', color: NAVY }}
+              >
+                <ShieldCheck size={13} /> Administrator
+              </span>
+            )}
             <h1 className="text-[1.6rem] font-semibold tracking-tight" style={{ color: NAVY }}>
-              Sign in
+              {mode === 'admin' ? 'Admin sign in' : 'Sign in'}
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Welcome back. Please enter your details.
+              {mode === 'admin' ? 'Restricted to administrator accounts.' : 'Welcome back. Please enter your details.'}
             </p>
           </div>
 
@@ -272,6 +287,26 @@ export function Login({ onLogin, onForgotPassword }: LoginProps) {
           <p className="mt-3 text-center text-xs text-muted-foreground/80">
             Please use your KAPS &amp; Co. credentials to continue.
           </p>
+
+          <div className="mt-5 text-center">
+            {mode === 'staff' ? (
+              <button
+                type="button"
+                onClick={() => switchMode('admin')}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-[#1b365d]"
+              >
+                <ShieldCheck size={13} /> Admin login
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => switchMode('staff')}
+                className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-[#1b365d]"
+              >
+                <ArrowRight size={13} className="rotate-180" /> Back to staff login
+              </button>
+            )}
+          </div>
         </div>
       </main>
     </div>

@@ -19,7 +19,7 @@ import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
 import {
   Loader2, UserPlus, Building2, UploadCloud, ClipboardCheck, Inbox,
-  Users as UsersIcon, ClipboardList, FolderOpen, ArrowRight,
+  Users as UsersIcon, ClipboardList, FolderOpen, ArrowRight, ChevronDown, Search,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -39,6 +39,14 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [openCards, setOpenCards] = useState<Set<string>>(new Set());
+  const [userSearch, setUserSearch] = useState('');
+  const [clientSearch, setClientSearch] = useState('');
+  const toggleCard = (id: string) => setOpenCards(prev => {
+    const n = new Set(prev);
+    n.has(id) ? n.delete(id) : n.add(id);
+    return n;
+  });
   const timeAgo = useTimeAgo(lastRefresh);
   const { showSuccess, showError } = useToast();
 
@@ -177,6 +185,31 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     avgTime: data.count > 0 ? `${(data.totalHours / data.count).toFixed(1)} hrs` : '0 hrs',
   }));
 
+  // Control-panel overview data
+  const roleCount = (roles: string[]) => users.filter(u => roles.includes(u.role)).length;
+  const roleTiles = [
+    { label: 'Partners', count: roleCount(['partner', 'Partner']) },
+    { label: 'Accounts', count: roleCount(['team-leader', 'Accounts', 'Team Leader']) },
+    { label: 'Staff', count: roleCount(['team-member', 'Staff', 'Team Member']) },
+    { label: 'Admins', count: roleCount(['admin', 'Admin']) },
+  ];
+  const activeUsers = users.filter(u => u.status === 'Active').length;
+  const inactiveUsers = users.length - activeUsers;
+  const activeClients = clients.filter(c => c.status === 'Active').length;
+  const NAVY = '#1b365d';
+
+  const uq = userSearch.trim().toLowerCase();
+  const filteredUsers = users.filter(u => !uq ||
+    (u.name || '').toLowerCase().includes(uq) ||
+    (u.email || '').toLowerCase().includes(uq) ||
+    (u.role || '').toLowerCase().includes(uq));
+  const cq = clientSearch.trim().toLowerCase();
+  const filteredClients = clients.filter(c => !cq ||
+    (c.name || '').toLowerCase().includes(cq) ||
+    (c.industry || '').toLowerCase().includes(cq) ||
+    (c.gstin || c.gst || '').toLowerCase().includes(cq) ||
+    (c.contact || c.mobileNumber || '').toLowerCase().includes(cq));
+
   return (
     <div className="space-y-0">
       <AnnouncementBar />
@@ -189,192 +222,103 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">System management and configuration</p>
           </div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-[#E7EDF4] bg-white px-3 py-1.5 text-xs text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#4ea72e' }} />
-            Updated {timeAgo} ago
-          </span>
         </div>
 
-        {/* User Management */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>User Management</CardTitle>
-              <Button size="sm" onClick={() => setShowAddUser(true)} className="inline-flex items-center gap-1.5">
-                <UserPlus size={15} /> Add User
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last Login</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>{user.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="primary">{user.role}</Badge>
-                    </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <Badge variant={user.status === 'Active' ? 'success' : 'default'}>
-                        {user.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('en-IN') : 'Never'}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button 
-                          size="sm" 
-                          variant="secondary"
-                          onClick={() => handleEditUser(user)}
-                        >
-                          Edit
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="danger"
-                          onClick={() => {
-                            setUserToDelete(user);
-                            setShowDeleteConfirm(true);
-                          }}
-                          disabled={user.status === 'Inactive'}
-                        >
-                          {user.status === 'Inactive' ? 'Inactive' : 'Deactivate'}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        {/* ── Control panel overview ── */}
+        <div className="space-y-4">
+          {/* Quick actions — aligned to the stat-tile columns below */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <button
+              onClick={() => setShowAddUser(true)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#1b365d] px-4 py-2 text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]"
+            >
+              <UserPlus size={15} /> Add User
+            </button>
+            <button
+              onClick={() => setShowAddClient(true)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#E7EDF4] bg-white px-4 py-2 text-sm font-medium transition-colors hover:bg-[#F4F6F9]"
+              style={{ color: NAVY }}
+            >
+              <Building2 size={15} /> Add Client
+            </button>
+          </div>
 
-        {/* Client Master */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Client Master</CardTitle>
-              <Button size="sm" onClick={() => setShowAddClient(true)} className="inline-flex items-center gap-1.5">
-                <Building2 size={15} /> Add Client
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Industry</TableHead>
-                  <TableHead>GST Number</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {clients.map((client) => (
-                  <TableRow key={client.id}>
-                    <TableCell>{client.name}</TableCell>
-                    <TableCell>{client.industry || 'N/A'}</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {client.gstin || client.gst || 'N/A'}
-                    </TableCell>
-                    <TableCell>{client.contact || client.mobileNumber || 'N/A'}</TableCell>
-                    <TableCell>
-                      <Badge variant="success">{client.status || 'Active'}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button 
-                          size="sm" 
-                          variant="secondary"
-                          onClick={() => handleEditClient(client)}
-                        >
-                          Edit
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="secondary"
-                          onClick={() => handleViewClient(client)}
-                        >
-                          View
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+          {/* Stat tiles */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <KPICard title="Total Users" value={users.length} />
+            <KPICard title="Active Clients" value={activeClients} variant="success" />
+            <KPICard title="Total Tasks" value={tasks.length} />
+            <KPICard title="Pending Inquiries" value={inquiries.length} variant="warning" />
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Task Categories */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Task Categories</CardTitle>
+          {/* Team composition + account status */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <section className="rounded-xl border border-[#E7EDF4] bg-white p-5 lg:col-span-2">
+              <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Team composition</h3>
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {roleTiles.map(r => (
+                  <div key={r.label}>
+                    <p className="text-[1.7rem] font-semibold leading-none" style={{ color: NAVY }}>{r.count}</p>
+                    <p className="mt-1.5 text-xs uppercase tracking-[0.08em] text-muted-foreground">{r.label}</p>
+                  </div>
+                ))}
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
+            </section>
+            <section className="rounded-xl border border-[#E7EDF4] bg-white p-5">
+              <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Account status</h3>
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-2 text-sm text-foreground/80">
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#4ea72e' }} /> Active
+                  </span>
+                  <span className="text-sm font-semibold" style={{ color: NAVY }}>{activeUsers}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-2 text-sm text-foreground/80">
+                    <span className="h-2 w-2 rounded-full bg-slate-400" /> Inactive
+                  </span>
+                  <span className="text-sm font-semibold" style={{ color: NAVY }}>{inactiveUsers}</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+
+        {/* Task Categories */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Task Categories</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Tasks</TableHead>
+                  <TableHead>Avg Time</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {categories.length === 0 ? (
                   <TableRow>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Tasks</TableHead>
-                    <TableHead>Avg Time</TableHead>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+                      No task categories found
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {categories.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                        No task categories found
-                      </TableCell>
+                ) : (
+                  categories.map((cat, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{cat.name}</TableCell>
+                      <TableCell>{cat.count}</TableCell>
+                      <TableCell>{cat.avgTime}</TableCell>
                     </TableRow>
-                  ) : (
-                    categories.map((cat, index) => (
-                      <TableRow key={index}>
-                        <TableCell>{cat.name}</TableCell>
-                        <TableCell>{cat.count}</TableCell>
-                        <TableCell>{cat.avgTime}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Excel Upload */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Excel Upload</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-lg border-2 border-dashed border-[#E7EDF4] p-8 text-center">
-                <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#F4F6F9] text-muted-foreground">
-                  <UploadCloud size={22} />
-                </span>
-                <p className="text-sm">Excel client upload coming soon</p>
-                <p className="mt-1 text-xs text-muted-foreground">Use the Add Client button for now</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
         {/* Approval Workflow Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -392,18 +336,6 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
           />
         </div>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard title="Total Users" value={users.length} icon={<UsersIcon size={22} />} />
-          <KPICard
-            title="Active Clients"
-            value={clients.filter(c => c.status === 'Active').length}
-            icon={<Building2 size={22} />}
-            variant="success"
-          />
-          <KPICard title="Total Tasks" value={tasks.length} icon={<ClipboardList size={22} />} />
-          <KPICard title="Categories" value={categories.length} icon={<FolderOpen size={22} />} />
-        </div>
       </div>
 
       {/* Modals */}
@@ -540,6 +472,15 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CardRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2.5">
+      <dt className="shrink-0 text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-right text-[0.8rem] font-medium text-foreground/80">{children}</dd>
     </div>
   );
 }

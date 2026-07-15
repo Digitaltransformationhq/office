@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { KPICard } from './KPICard';
-import { tasksAPI, clientsAPI, usersAPI } from '../services/api';
+import { tasksAPI, clientsAPI, usersAPI, billingAPI } from '../services/api';
 import { useToast } from './Toast';
-import { ClipboardList, Wallet, BarChart3, Download, IndianRupee, Users, TrendingUp, ChevronDown } from 'lucide-react';
+import { ClipboardList, Wallet, BarChart3, Download, IndianRupee, Users, TrendingUp, ChevronDown, Receipt, Search, X, Clock } from 'lucide-react';
 
 interface ReportsProps {
   user?: { id: string; name: string; email: string; role: string };
@@ -22,11 +22,19 @@ const inputCls =
 const thCls = 'px-3 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground';
 
 export function Reports({ user }: ReportsProps) {
-  const [activeReport, setActiveReport] = useState<'tasks' | 'billing' | 'performance'>('tasks');
+  const [activeReport, setActiveReport] = useState<'tasks' | 'billing' | 'billing-records' | 'performance'>('tasks');
   const [tasks, setTasks] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [billingRecords, setBillingRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // Billing-records filters
+  const [bSearch, setBSearch] = useState('');
+  const [bClient, setBClient] = useState('all');
+  const [bStaff, setBStaff] = useState('all');
+  const [bFrom, setBFrom] = useState('');
+  const [bTo, setBTo] = useState('');
+  const [selectedRecord, setSelectedRecord] = useState<any>(null);
   const [dateRange, setDateRange] = useState({
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0],
@@ -44,10 +52,13 @@ export function Reports({ user }: ReportsProps) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [tasksRes, clientsRes, usersRes] = await Promise.all([tasksAPI.getAll(), clientsAPI.getAll(), usersAPI.getAll()]);
+      const [tasksRes, clientsRes, usersRes, billingRes] = await Promise.all([
+        tasksAPI.getAll(), clientsAPI.getAll(), usersAPI.getAll(), billingAPI.getAll().catch(() => ({ data: [] })),
+      ]);
       setTasks(tasksRes.data || []);
       setClients(clientsRes.data || []);
       setUsers(usersRes.data || []);
+      setBillingRecords(billingRes.data || []);
     } catch (error) {
       console.error('Error loading report data:', error);
       showError('Failed to load report data');
@@ -104,11 +115,49 @@ export function Reports({ user }: ReportsProps) {
   });
 
   const hasBillingAccess = user?.role === 'admin' || user?.email === 'audit1@kapsca.in';
-  const rupees = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+  const rupees = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
+  const money = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // ── Billing records (actual billed tasks) ──
+  const bq = bSearch.trim().toLowerCase();
+  const filteredRecords = billingRecords
+    .filter(r => !bq || [r.clientName, r.taskName, r.billNumber, r.assignedTo].some((v: any) => (v || '').toLowerCase().includes(bq)))
+    .filter(r => bClient === 'all' || r.clientName === bClient)
+    .filter(r => bStaff === 'all' || r.assignedTo === bStaff)
+    .filter(r => !bFrom || new Date(r.billDate) >= new Date(bFrom))
+    .filter(r => !bTo || new Date(r.billDate) <= new Date(bTo));
+  const bHasFilters = !!bq || bClient !== 'all' || bStaff !== 'all' || bFrom || bTo;
+  const clearBFilters = () => { setBSearch(''); setBClient('all'); setBStaff('all'); setBFrom(''); setBTo(''); };
+  const uniqueBClients = Array.from(new Set(billingRecords.map(r => r.clientName))).filter(Boolean).sort();
+  const uniqueBStaff = Array.from(new Set(billingRecords.map(r => r.assignedTo))).filter(Boolean).sort();
+  const totalBilled = filteredRecords.reduce((s, r) => s + (r.budgetedFee || 0), 0);
+  const totalTaxable = filteredRecords.reduce((s, r) => s + (r.taxableAmount || 0), 0);
+  const totalHours = filteredRecords.reduce((s, r) => s + (r.hoursLogged || 0), 0);
+  const billedThisMonth = filteredRecords.filter(r => {
+    const d = new Date(r.billDate); const n = new Date();
+    return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear();
+  }).length;
+
+  const exportBilling = () => {
+    if (filteredRecords.length === 0) { showError('No records to export'); return; }
+    const headers = ['Bill Number', 'Bill Date', 'Client', 'Task', 'Category', 'Assigned Staff', 'Completion Date', 'Budgeted Fee', 'Taxable Amount', 'Hours', 'Billed By', 'Billed Date', 'Remarks'];
+    const rows = filteredRecords.map(r => [
+      r.billNumber, new Date(r.billDate).toLocaleDateString('en-IN'), r.clientName, r.taskName, r.category || '', r.assignedTo,
+      r.completionDate ? new Date(r.completionDate).toLocaleDateString('en-IN') : '', r.budgetedFee || 0, r.taxableAmount || 0,
+      r.hoursLogged || 0, r.billedBy, r.billedAt ? new Date(r.billedAt).toLocaleDateString('en-IN') : '', r.remarks || '',
+    ]);
+    const csv = [headers, ...rows].map(row => row.map((c: any) => `"${c}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `billing-records-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
 
   const TABS: { key: typeof activeReport; label: string; icon: React.ReactNode }[] = [
     { key: 'tasks', label: 'Task Completion', icon: <ClipboardList size={15} /> },
     ...(hasBillingAccess ? [{ key: 'billing' as const, label: 'Billing & Revenue', icon: <Wallet size={15} /> }] : []),
+    ...(hasBillingAccess ? [{ key: 'billing-records' as const, label: 'Billing Records', icon: <Receipt size={15} /> }] : []),
     { key: 'performance', label: 'Team Performance', icon: <BarChart3 size={15} /> },
   ];
 
@@ -330,6 +379,148 @@ export function Reports({ user }: ReportsProps) {
           </div>
         </ReportSection>
       )}
+
+      {/* Billing Records */}
+      {activeReport === 'billing-records' && (
+        <>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <KPICard title="Billed Tasks" value={filteredRecords.length} />
+            <KPICard title="Billed Amount" value={money(totalBilled)} variant="success" />
+            <KPICard title="Taxable Amount" value={money(totalTaxable)} />
+            <KPICard title="Hours Logged" value={totalHours} />
+            <KPICard title="This Month" value={billedThisMonth} variant="warning" />
+          </div>
+
+          <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
+            <div className="flex flex-col gap-3.5 border-b border-[#E7EDF4] px-5 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-sm font-semibold" style={{ color: NAVY }}>Billing Records</h2>
+                  <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    {filteredRecords.length}{bHasFilters ? ` of ${billingRecords.length}` : ''}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {bHasFilters && (
+                    <button onClick={clearBFilters} className="rounded-full border border-[#E7EDF4] px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-foreground">Clear filters</button>
+                  )}
+                  <button onClick={exportBilling} className="inline-flex items-center gap-1.5 rounded-full bg-[#1b365d] px-3.5 py-1.5 text-xs font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]">
+                    <Download size={14} /> Export
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-[200px] flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input value={bSearch} onChange={e => setBSearch(e.target.value)} placeholder="Search client, task, bill no, staff…" className="w-full rounded-lg border border-[#E7EDF4] bg-white py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15" />
+                </div>
+                <FilterSelect value={bClient} onChange={e => setBClient(e.target.value)}>
+                  <option value="all">All clients</option>
+                  {uniqueBClients.map(c => <option key={c} value={c}>{c}</option>)}
+                </FilterSelect>
+                <FilterSelect value={bStaff} onChange={e => setBStaff(e.target.value)}>
+                  <option value="all">All staff</option>
+                  {uniqueBStaff.map(s => <option key={s} value={s}>{s}</option>)}
+                </FilterSelect>
+                <input type="date" value={bFrom} onChange={e => setBFrom(e.target.value)} className={inputCls} />
+                <span className="text-sm text-muted-foreground">to</span>
+                <input type="date" value={bTo} onChange={e => setBTo(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[960px] border-collapse text-[0.8rem]">
+                <thead>
+                  <tr className="border-b border-[#E7EDF4] bg-[#F9FAFB]">
+                    {['Bill No', 'Date', 'Client', 'Task', 'Category', 'Staff', 'Budgeted', 'Taxable', 'Hrs', ''].map((h, i) => (
+                      <th key={i} className={`${thCls} ${i === 6 || i === 7 ? 'text-right' : ''}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecords.length === 0 ? (
+                    <tr><td colSpan={10} className="py-14 text-center text-sm text-muted-foreground">{bHasFilters ? 'No records match your filters.' : 'No billing records yet.'}</td></tr>
+                  ) : filteredRecords.map(r => (
+                    <tr key={r.id} className="border-b border-[#EFF3F8] transition-colors hover:bg-[#F9FBFD]">
+                      <td className="px-3 py-3 font-mono text-xs font-medium" style={{ color: NAVY }}>{r.billNumber}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{new Date(r.billDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
+                      <td className="px-3 py-3 font-medium" style={{ color: NAVY }}>{r.clientName}</td>
+                      <td className="px-3 py-3 text-foreground/80">{r.taskName}</td>
+                      <td className="px-3 py-3"><Chip>{r.category || '—'}</Chip></td>
+                      <td className="px-3 py-3 text-muted-foreground">{r.assignedTo}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right font-mono text-foreground/80">{money(r.budgetedFee || 0)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right font-mono font-semibold" style={{ color: NAVY }}>{money(r.taxableAmount || 0)}</td>
+                      <td className="px-3 py-3 text-right text-muted-foreground">{r.hoursLogged || 0}</td>
+                      <td className="px-3 py-3 text-right">
+                        <button onClick={() => setSelectedRecord(r)} className="rounded-full border border-[#E7EDF4] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#F4F6F9]" style={{ color: NAVY }}>View</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      )}
+
+      {/* Billing record detail */}
+      {selectedRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1728]/60 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]">
+            <div className="flex items-start justify-between gap-4 border-b border-[#E7EDF4] px-6 py-5">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: 'rgba(27,54,93,0.08)', color: NAVY }}>
+                  <Receipt size={20} />
+                </span>
+                <div>
+                  <h2 className="text-[1.05rem] font-semibold" style={{ color: NAVY }}>Billing Record</h2>
+                  <p className="font-mono text-xs text-muted-foreground">{selectedRecord.billNumber}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedRecord(null)} className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-foreground" aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-[#E7EDF4] p-4">
+                  <p className="text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">Budgeted Fee</p>
+                  <p className="mt-1 text-xl font-semibold" style={{ color: NAVY }}>{money(selectedRecord.budgetedFee || 0)}</p>
+                </div>
+                <div className="rounded-xl border p-4" style={{ borderColor: 'rgba(78,167,46,0.3)', backgroundColor: 'rgba(78,167,46,0.05)' }}>
+                  <p className="text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">Taxable Amount</p>
+                  <p className="mt-1 text-xl font-semibold" style={{ color: '#3d8a22' }}>{money(selectedRecord.taxableAmount || 0)}</p>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-[#E7EDF4]">
+                <dl className="divide-y divide-[#F1F4F8]">
+                  <CardRow label="Bill date">{new Date(selectedRecord.billDate).toLocaleDateString('en-IN')}</CardRow>
+                  <CardRow label="Client"><span style={{ color: NAVY }}>{selectedRecord.clientName}</span></CardRow>
+                  <CardRow label="Task"><span style={{ color: NAVY }}>{selectedRecord.taskName}</span></CardRow>
+                  <CardRow label="Category">{selectedRecord.category || 'N/A'}</CardRow>
+                  <CardRow label="Assigned to">{selectedRecord.assignedTo}</CardRow>
+                  <CardRow label="Completion">{selectedRecord.completionDate ? new Date(selectedRecord.completionDate).toLocaleDateString('en-IN') : 'N/A'}</CardRow>
+                  <CardRow label="Hours">{selectedRecord.hoursLogged || 0}</CardRow>
+                  <CardRow label="Billed by">{selectedRecord.billedBy}</CardRow>
+                  <CardRow label="Billed at">{selectedRecord.billedAt ? new Date(selectedRecord.billedAt).toLocaleString('en-IN') : '—'}</CardRow>
+                  {selectedRecord.remarks && <CardRow label="Remarks"><span className="text-foreground/80">{selectedRecord.remarks}</span></CardRow>}
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterSelect({ value, onChange, children }: { value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void; children: React.ReactNode }) {
+  return (
+    <div className="relative inline-flex">
+      <select value={value} onChange={onChange} className="appearance-none rounded-lg border border-[#E7EDF4] bg-white py-2 pl-3 pr-9 text-sm text-foreground/80 outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15">
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
     </div>
   );
 }

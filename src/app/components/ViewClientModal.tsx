@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './Card';
-import { Button } from './Button';
-import { Badge } from './Badge';
 import { tasksAPI } from '../services/api';
+import { X, Building2, Pencil } from 'lucide-react';
+import { NAVY, rupees, FEE_FIELDS, ModalTabs, overlayCls, panelCls } from './clientModalUI';
 
 interface ViewClientModalProps {
   client: any;
@@ -10,23 +9,27 @@ interface ViewClientModalProps {
   onEdit?: () => void;
 }
 
+const TASK_STATUS: Record<string, string> = {
+  'Completed': 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]',
+  'In Progress': 'bg-blue-100 text-blue-700',
+  'Pending': 'bg-[#FEF4E6] text-[#b7791f]',
+  'Overdue': 'bg-[#FDECEC] text-[#c0392b]',
+};
+
 export function ViewClientModal({ client, onClose, onEdit }: ViewClientModalProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'billing' | 'tasks'>('details');
   const [clientTasks, setClientTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (activeTab === 'tasks') {
-      loadClientTasks();
-    }
+    if (activeTab === 'tasks') loadClientTasks();
   }, [activeTab, client.id]);
 
   const loadClientTasks = async () => {
     setLoading(true);
     try {
       const response = await tasksAPI.getAll();
-      const filtered = response.data.filter((task: any) => task.client === client.name);
-      setClientTasks(filtered);
+      setClientTasks((response.data || []).filter((task: any) => task.client === client.name));
     } catch (error) {
       console.error('Error loading client tasks:', error);
     } finally {
@@ -34,215 +37,120 @@ export function ViewClientModal({ client, onClose, onEdit }: ViewClientModalProp
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return `₹${amount.toLocaleString('en-IN')}`;
-  };
+  const details: [string, React.ReactNode, boolean][] = [
+    ['Client name', client.name || 'N/A', false],
+    ['Firm name', client.firmName || 'N/A', false],
+    ['PAN', client.pan || 'N/A', true],
+    ['GSTIN', client.gstin || client.gst || 'N/A', true],
+    ['Contact', client.contact || client.mobileNumber || 'N/A', false],
+    ['Email', client.email || client.emailId || 'N/A', false],
+    ['Industry', client.industry || 'N/A', false],
+  ];
 
   return (
-    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <Card className="w-full max-w-4xl my-8">
-        <CardHeader>
-          <div className="flex items-center justify-between">
+    <div className={overlayCls}>
+      <div className={`${panelCls} max-w-2xl`}>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-[#E7EDF4] px-6 py-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: 'rgba(27,54,93,0.08)', color: NAVY }}>
+              <Building2 size={20} />
+            </span>
             <div>
-              <CardTitle>{client.name}</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">{client.industry || 'N/A'}</p>
-            </div>
-            <div className="flex gap-2">
-              {onEdit && (
-                <Button size="sm" variant="secondary" onClick={onEdit}>
-                  ✏️ Edit
-                </Button>
-              )}
-              <Button size="sm" variant="secondary" onClick={onClose}>
-                ✕
-              </Button>
+              <h2 className="text-[1.05rem] font-semibold" style={{ color: NAVY }}>{client.name}</h2>
+              <p className="text-xs text-muted-foreground">{client.industry || 'Client record'}</p>
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          {/* Tabs */}
-          <div className="flex gap-2 mb-6 border-b border-border">
-            <button
-              className={`px-4 py-2 font-medium transition-colors ${
-                activeTab === 'details'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              onClick={() => setActiveTab('details')}
-            >
-              Client Details
-            </button>
-            <button
-              className={`px-4 py-2 font-medium transition-colors ${
-                activeTab === 'billing'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              onClick={() => setActiveTab('billing')}
-            >
-              Billing & Fees
-            </button>
-            <button
-              className={`px-4 py-2 font-medium transition-colors ${
-                activeTab === 'tasks'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              onClick={() => setActiveTab('tasks')}
-            >
-              Tasks ({clientTasks.length})
+          <div className="flex items-center gap-2">
+            {onEdit && (
+              <button onClick={onEdit} className="inline-flex items-center gap-1.5 rounded-full border border-[#E7EDF4] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#F4F6F9]" style={{ color: NAVY }}>
+                <Pencil size={14} /> Edit
+              </button>
+            )}
+            <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-foreground" aria-label="Close">
+              <X size={18} />
             </button>
           </div>
+        </div>
 
-          {/* Details Tab */}
+        <ModalTabs
+          tabs={[{ key: 'details', label: 'Client Details' }, { key: 'billing', label: 'Billing & Fees' }, { key: 'tasks', label: `Tasks (${clientTasks.length})` }]}
+          active={activeTab}
+          onChange={setActiveTab}
+        />
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          {/* Details */}
           {activeTab === 'details' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="text-sm text-muted-foreground">Client Name</label>
-                  <p className="font-medium">{client.name || 'N/A'}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Firm Name</label>
-                  <p className="font-medium">{client.firmName || 'N/A'}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">PAN</label>
-                  <p className="font-mono text-sm">{client.pan || 'N/A'}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">GSTIN</label>
-                  <p className="font-mono text-sm">{client.gstin || client.gst || 'N/A'}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Contact</label>
-                  <p className="font-medium">{client.contact || client.mobileNumber || 'N/A'}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Email</label>
-                  <p className="font-medium">{client.email || client.emailId || 'N/A'}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Industry</label>
-                  <p className="font-medium">{client.industry || 'N/A'}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Status</label>
-                  <div>
-                    <Badge variant={client.status === 'Active' ? 'success' : 'default'}>
-                      {client.status || 'Active'}
-                    </Badge>
+            <div className="overflow-hidden rounded-xl border border-[#E7EDF4]">
+              <dl className="divide-y divide-[#F1F4F8]">
+                {details.map(([label, value, mono]) => (
+                  <div key={label} className="flex items-start gap-4 px-4 py-2.5">
+                    <dt className="w-28 shrink-0 pt-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{label}</dt>
+                    <dd className={`flex-1 text-sm font-medium ${mono ? 'font-mono' : ''}`} style={{ color: NAVY }}>{value}</dd>
                   </div>
+                ))}
+                <div className="flex items-center gap-4 px-4 py-2.5">
+                  <dt className="w-28 shrink-0 text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Status</dt>
+                  <dd className="flex-1">
+                    <span className={`inline-block rounded-md px-2 py-0.5 text-[0.72rem] font-medium ${client.status === 'Active' ? 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]' : 'bg-slate-100 text-slate-600'}`}>
+                      {client.status || 'Active'}
+                    </span>
+                  </dd>
                 </div>
-              </div>
+              </dl>
             </div>
           )}
 
-          {/* Billing Tab */}
+          {/* Billing */}
           {activeTab === 'billing' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="border border-border rounded-lg p-4">
-                  <label className="text-sm text-muted-foreground">ITR Fees</label>
-                  <p className="text-lg font-semibold">{formatCurrency(client.itrFees || 0)}</p>
-                </div>
-                <div className="border border-border rounded-lg p-4">
-                  <label className="text-sm text-muted-foreground">GST Fees</label>
-                  <p className="text-lg font-semibold">{formatCurrency(client.gstFees || 0)}</p>
-                </div>
-                <div className="border border-border rounded-lg p-4">
-                  <label className="text-sm text-muted-foreground">GST Annual Return</label>
-                  <p className="text-lg font-semibold">{formatCurrency(client.gstAnnualReturnFees || 0)}</p>
-                </div>
-                <div className="border border-border rounded-lg p-4">
-                  <label className="text-sm text-muted-foreground">Accounting Fees</label>
-                  <p className="text-lg font-semibold">{formatCurrency(client.accountingFees || 0)}</p>
-                </div>
-                <div className="border border-border rounded-lg p-4">
-                  <label className="text-sm text-muted-foreground">Audit Fees</label>
-                  <p className="text-lg font-semibold">{formatCurrency(client.auditFees || 0)}</p>
-                </div>
-                <div className="border border-border rounded-lg p-4">
-                  <label className="text-sm text-muted-foreground">Company Act Fees</label>
-                  <p className="text-lg font-semibold">{formatCurrency(client.companyActFees || 0)}</p>
-                </div>
-                <div className="border border-border rounded-lg p-4">
-                  <label className="text-sm text-muted-foreground">TDS Fees</label>
-                  <p className="text-lg font-semibold">{formatCurrency(client.tdsFees || 0)}</p>
-                </div>
-                <div className="border border-border rounded-lg p-4">
-                  <label className="text-sm text-muted-foreground">PF, ESIC, PT, Labour</label>
-                  <p className="text-lg font-semibold">{formatCurrency(client.pfEsicPtLabourFees || 0)}</p>
-                </div>
-                <div className="border border-border rounded-lg p-4">
-                  <label className="text-sm text-muted-foreground">Consultancy Fees</label>
-                  <p className="text-lg font-semibold">{formatCurrency(client.consultancyFees || 0)}</p>
-                </div>
+            <div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {FEE_FIELDS.map(f => (
+                  <div key={f.key} className="rounded-xl border border-[#E7EDF4] p-3.5">
+                    <p className="text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">{f.label}</p>
+                    <p className="mt-1 text-[0.95rem] font-semibold" style={{ color: NAVY }}>{rupees(client[f.key] || 0)}</p>
+                  </div>
+                ))}
               </div>
-
-              <div className="bg-primary/10 border-2 border-primary rounded-lg p-6 mt-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-lg font-semibold">Total Annual Fees:</span>
-                  <span className="text-3xl font-bold text-primary">
-                    {formatCurrency(client.totalFees || 0)}
-                  </span>
-                </div>
+              <div className="mt-4 flex items-center justify-between rounded-xl border p-4" style={{ borderColor: 'rgba(27,54,93,0.2)', backgroundColor: 'rgba(27,54,93,0.04)' }}>
+                <span className="text-sm font-medium" style={{ color: NAVY }}>Total annual fees</span>
+                <span className="text-2xl font-semibold" style={{ color: NAVY }}>{rupees(client.totalFees || 0)}</span>
               </div>
             </div>
           )}
 
-          {/* Tasks Tab */}
+          {/* Tasks */}
           {activeTab === 'tasks' && (
-            <div className="space-y-4">
-              {loading ? (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground">Loading tasks...</p>
-                </div>
-              ) : clientTasks.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground">No tasks found for this client</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {clientTasks.map((task) => (
-                    <div key={task.id} className="border border-border rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h4 className="font-medium">{task.task}</h4>
-                          <p className="text-sm text-muted-foreground">{task.category}</p>
-                        </div>
-                        <Badge variant={
-                          task.status === 'Completed' ? 'success' :
-                          task.status === 'In Progress' ? 'info' :
-                          'warning'
-                        }>
-                          {task.status}
-                        </Badge>
+            loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#1b365d] border-t-transparent" />
+              </div>
+            ) : clientTasks.length === 0 ? (
+              <p className="py-12 text-center text-sm text-muted-foreground">No tasks found for this client.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {clientTasks.map(task => (
+                  <div key={task.id} className="rounded-xl border border-[#E7EDF4] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold" style={{ color: NAVY }}>{task.task}</p>
+                        <p className="truncate text-xs text-muted-foreground">{task.category}</p>
                       </div>
-                      <div className="grid grid-cols-3 gap-4 text-sm mt-3">
-                        <div>
-                          <span className="text-muted-foreground">Assigned To:</span>
-                          <p className="font-medium">{task.assignedTo}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Priority:</span>
-                          <p className="font-medium">{task.priority}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Target Date:</span>
-                          <p className="font-medium">
-                            {task.targetDate ? new Date(task.targetDate).toLocaleDateString('en-IN') : 'N/A'}
-                          </p>
-                        </div>
-                      </div>
+                      <span className={`shrink-0 rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${TASK_STATUS[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status}</span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    <div className="mt-3 grid grid-cols-3 gap-3 border-t border-[#F1F4F8] pt-3 text-xs">
+                      <div><p className="text-[0.6rem] uppercase tracking-[0.08em] text-muted-foreground">Assigned</p><p className="mt-0.5 truncate font-medium" style={{ color: NAVY }}>{task.assignedTo}</p></div>
+                      <div><p className="text-[0.6rem] uppercase tracking-[0.08em] text-muted-foreground">Priority</p><p className="mt-0.5 font-medium" style={{ color: NAVY }}>{task.priority}</p></div>
+                      <div><p className="text-[0.6rem] uppercase tracking-[0.08em] text-muted-foreground">Target</p><p className="mt-0.5 font-medium" style={{ color: NAVY }}>{task.targetDate ? new Date(task.targetDate).toLocaleDateString('en-IN') : 'N/A'}</p></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

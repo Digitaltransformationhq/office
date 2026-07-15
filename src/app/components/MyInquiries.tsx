@@ -4,7 +4,7 @@ import { CreateInquiryModal } from './CreateInquiryModal';
 import { ViewInquiryModal } from './ViewInquiryModal';
 import { useToast } from './Toast';
 import { inquiriesAPI } from '../services/api';
-import { Plus, Inbox, Clock, CheckCircle2, XCircle, ChevronDown } from 'lucide-react';
+import { Plus, ChevronDown } from 'lucide-react';
 
 interface MyInquiriesProps {
   userId: number;
@@ -89,10 +89,10 @@ export function MyInquiries({ userId, userName }: MyInquiriesProps) {
 
       {/* KPI tiles */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KPICard title="Total" value={inquiries.length} icon={<Inbox size={22} />} />
-        <KPICard title="Pending" value={count('Pending Review')} icon={<Clock size={22} />} variant="warning" />
-        <KPICard title="Approved" value={count('Approved') + count('Converted to Client')} icon={<CheckCircle2 size={22} />} variant="success" />
-        <KPICard title="Rejected / Hold" value={count('Rejected') + count('On Hold')} icon={<XCircle size={22} />} variant="danger" />
+        <KPICard title="Total" value={inquiries.length} />
+        <KPICard title="Pending" value={count('Pending Review')} variant="warning" />
+        <KPICard title="Approved" value={count('Approved') + count('Converted to Client')} variant="success" />
+        <KPICard title="Rejected / Hold" value={count('Rejected') + count('On Hold')} variant="danger" />
       </div>
 
       {/* Status tabs */}

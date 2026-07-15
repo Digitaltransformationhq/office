@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { tasksAPI, usersAPI } from '../services/api';
 import { RotateCw, ChevronDown, Users } from 'lucide-react';
+import { UserManagement } from './UserManagement';
 
 interface Task {
   id: string;
@@ -60,11 +61,13 @@ function workload(n: number) {
   return { label: 'Light', cls: 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]' };
 }
 
-export function TeamTasks() {
+export function TeamTasks({ user }: { user?: { id: string; name: string; email: string; role: string } }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<string>('all');
+  const [tab, setTab] = useState<'workload' | 'users'>('workload');
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => { loadData(); }, []);
 
@@ -91,14 +94,37 @@ export function TeamTasks() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-[1.5rem] font-semibold tracking-tight" style={{ color: NAVY }}>Team Tasks</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Pending workload across your team members</p>
+          <h1 className="text-[1.5rem] font-semibold tracking-tight" style={{ color: NAVY }}>Team</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isAdmin && tab === 'users' ? 'Manage staff accounts and access' : 'Pending workload across your team members'}
+          </p>
         </div>
-        <button onClick={loadData} title="Refresh" className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E7EDF4] bg-white text-muted-foreground transition-colors hover:bg-[#F4F6F9]">
-          <RotateCw size={15} />
-        </button>
+        {(!isAdmin || tab === 'workload') && (
+          <button onClick={loadData} title="Refresh" className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E7EDF4] bg-white text-muted-foreground transition-colors hover:bg-[#F4F6F9]">
+            <RotateCw size={15} />
+          </button>
+        )}
       </div>
 
+      {/* Tabs (admin: Workload | Users) */}
+      {isAdmin && (
+        <div className="flex gap-6 border-b border-[#E7EDF4]">
+          {([['workload', 'Workload'], ['users', 'Users']] as const).map(([key, label]) => {
+            const on = tab === key;
+            return (
+              <button key={key} onClick={() => setTab(key)} className={`relative -mb-px py-2.5 text-sm font-medium transition-colors ${on ? '' : 'text-muted-foreground hover:text-foreground'}`} style={on ? { color: NAVY } : undefined}>
+                {label}
+                {on && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ backgroundColor: NAVY }} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {isAdmin && tab === 'users' && <UserManagement embedded />}
+
+      {(!isAdmin || tab === 'workload') && (
+        <>
       {/* All-staff summary — a distinct navy banner, set apart from the member tiles */}
       <button
         onClick={() => setSelectedUser('all')}
@@ -238,6 +264,8 @@ export function TeamTasks() {
           )}
         </div>
       </section>
+        </>
+      )}
     </div>
   );
 }

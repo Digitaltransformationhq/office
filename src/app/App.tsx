@@ -20,8 +20,8 @@ import { AnnouncementBar } from './components/AnnouncementBar';
 import { MyInquiries } from './components/MyInquiries';
 import { InquiryManagement } from './components/InquiryManagement';
 import { ToastProvider } from './components/Toast';
-import { BillingReports } from './components/BillingReports';
 import { Reports } from './components/Reports';
+import { ClientManagement } from './components/ClientManagement';
 
 interface User {
   id: string;
@@ -127,11 +127,21 @@ export default function App() {
       case 'task-mis':
         return user ? <TaskMIS user={user} /> : null;
       case 'team-tasks':
-        return <TeamTasks />;
+        return <TeamTasks user={user || undefined} />;
       case 'billing':
         return <Billing user={user || undefined} />;
       case 'billing-reports':
-        return user ? <BillingReports user={user} /> : null;
+        // Merged into Reports (Billing Records tab)
+        setActiveView('reports');
+        return null;
+      case 'users':
+        // Users are now managed inside the Team section
+        setActiveView('team-tasks');
+        return null;
+      case 'clients':
+        if (user && user.role === 'admin') return <ClientManagement />;
+        if (user) setActiveView(user.role);
+        return null;
       case 'calendar':
         // Only allow admin to access calendar management
         if (user && user.role === 'admin') {
