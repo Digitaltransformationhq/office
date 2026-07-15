@@ -1,0 +1,83 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* ============================================================
+   Responsive tables — under `md`, each row of a `.responsive-table`
+   becomes a stacked card and every cell shows its column label
+   (set automatically via data-label by the Table component).
+   ============================================================ */
+@media (max-width: 767px) {
+  .responsive-table {
+    display: block;
+    width: 100%;
+    min-width: 0 !important;
+  }
+  .responsive-table colgroup,
+  .responsive-table col,
+  .responsive-table thead {
+    display: none;
+  }
+  .responsive-table tbody,
+  .responsive-table tr,
+  .responsive-table td {
+    display: block;
+    width: 100%;
+  }
+  /* Let value content shrink/wrap instead of forcing the card wider */
+  .responsive-table td > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .responsive-table tr {
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--card);
+    padding: 0.25rem 0.875rem;
+    margin-bottom: 0.625rem;
+  }
+  .responsive-table tr:hover {
+    background: var(--card);
+  }
+  .responsive-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 0;
+    text-align: right;
+    border: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    min-height: 0;
+  }
+  .responsive-table tr td:last-child {
+    border-bottom: none;
+  }
+  .responsive-table td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    text-align: left;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  /* Full-width cells (empty states) stay centered without a label */
+  .responsive-table td.rt-full {
+    display: block;
+    text-align: center;
+    padding: 1.25rem 0;
+    border-bottom: none;
+  }
+  /* A primary cell that becomes the card's title row (left-aligned, no label) */
+  .responsive-table td.rt-title {
+    display: block;
+    text-align: left;
+    padding: 0.5rem 0 0.6rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  }
+  .responsive-table td.rt-title::before {
+    display: none;
+  }
+}
