@@ -12,6 +12,71 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
 
+// Web Push (VAPID) — keys provided via environment variables
+const VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC_KEY') ?? '';
+const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') ?? '';
+const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:brijesh@kapsca.in';
+
+// Lazy-load web-push so a load failure can never break the rest of the API.
+let _webpush: any = null;
+let _webpushTried = false;
+async function getWebpush() {
+  if (_webpushTried) return _webpush;
+  _webpushTried = true;
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return null;
+  try {
+    const mod: any = await import('npm:web-push@3.6.7');
+    _webpush = mod.default || mod;
+    _webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
+  } catch (e) {
+    console.log('web-push load failed:', e);
+    _webpush = null;
+  }
+  return _webpush;
+}
+
+// Send a browser push to all of a user's subscriptions (best-effort).
+async function sendPush(userId: string, payload: { title: string; body: string; url?: string }) {
+  if (!userId) return;
+  const wp = await getWebpush();
+  if (!wp) return;
+  try {
+    const { data: subs } = await supabase.from('push_subscriptions').select('*').eq('user_id', userId);
+    for (const s of subs || []) {
+      try {
+        await wp.sendNotification(JSON.parse(s.subscription), JSON.stringify(payload));
+      } catch (e: any) {
+        // Drop expired/invalid subscriptions
+        if (e?.statusCode === 404 || e?.statusCode === 410) {
+          await supabase.from('push_subscriptions').delete().eq('id', s.id);
+        } else {
+          console.log('push send error:', e?.statusCode || e);
+        }
+      }
+    }
+  } catch (e) {
+    console.log('sendPush failed:', e);
+  }
+}
+
+// Create an in-app notification AND a browser push for a user (best-effort).
+async function notifyUser(userId: string, type: string, title: string, message: string) {
+  if (!userId) return;
+  try {
+    await supabase.from('notifications').insert([{
+      id: `notif:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      user_id: userId,
+      type,
+      title,
+      message: message || title,
+      is_read: false,
+    }]);
+  } catch (e) {
+    console.log('notifyUser failed:', e);
+  }
+  await sendPush(userId, { title, body: message || title, url: '/' });
+}
+
 // Enable logger
 app.use('*', logger(console.log));
 
@@ -258,6 +323,12 @@ app.post('/make-server-0abfa7cf/tasks', async (c) => {
 
     console.log('Task created successfully:', data);
 
+    // Notify the assignee (unless it still needs partner approval)
+    if (body.assignedToId && task.status !== 'Pending Approval') {
+      await notifyUser(body.assignedToId, 'task', 'New task assigned',
+        `${body.task}${body.client ? ' — ' + body.client : ''}`);
+    }
+
     return c.json({ success: true, data });
   } catch (error: any) {
     console.log('=== CREATE CATCH BLOCK ERROR ===');
@@ -353,6 +424,12 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
     }
 
     console.log('Task updated successfully:', data);
+
+    // On approval (task released to the assignee), notify them
+    if (body.approvedBy && data?.status === 'Pending' && data?.assigned_to_id) {
+      await notifyUser(data.assigned_to_id, 'task', 'Task approved & assigned',
+        `${data.task}${data.client ? ' — ' + data.client : ''}`);
+    }
 
     return c.json({ success: true, data });
   } catch (error: any) {
@@ -769,6 +846,22 @@ app.post('/make-server-0abfa7cf/announcements', async (c) => {
     };
 
     await kvStore.set(announcementId, announcementData);
+
+    // Fan out a notification to every targeted user (all active users if no roles set)
+    if (announcementData.is_active) {
+      try {
+        let query = supabase.from('users').select('id').eq('status', 'Active');
+        const roles = announcementData.target_roles;
+        if (Array.isArray(roles) && roles.length > 0) query = query.in('role', roles);
+        const { data: recipients } = await query;
+        for (const u of recipients || []) {
+          await notifyUser(u.id, 'announcement', announcementData.title, announcementData.message);
+        }
+      } catch (e) {
+        console.log('announcement notify fan-out failed:', e);
+      }
+    }
+
     return c.json({ success: true, data: announcementData });
   } catch (error) {
     console.log('Error creating announcement:', error);
@@ -1246,6 +1339,33 @@ app.put('/make-server-0abfa7cf/assignments/:assignmentId/status', async (c) => {
 // ============================================
 
 // Get notifications for a user
+// Web Push: expose the public VAPID key so the browser can subscribe
+app.get('/make-server-0abfa7cf/push/vapid-public-key', (c) => {
+  return c.json({ success: true, key: VAPID_PUBLIC });
+});
+
+// Web Push: save a browser push subscription for a user (upsert by endpoint)
+app.post('/make-server-0abfa7cf/push/subscribe', async (c) => {
+  try {
+    const { userId, subscription } = await c.req.json();
+    const endpoint = subscription?.endpoint;
+    if (!userId || !endpoint) {
+      return c.json({ success: false, error: 'userId and subscription are required' }, 400);
+    }
+    const { error } = await supabase.from('push_subscriptions').upsert({
+      id: `push:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      user_id: userId,
+      endpoint,
+      subscription: JSON.stringify(subscription),
+    }, { onConflict: 'endpoint' });
+    if (error) throw error;
+    return c.json({ success: true });
+  } catch (error) {
+    console.log('Error saving push subscription:', error);
+    return c.json({ success: false, error: 'Failed to save subscription' }, 500);
+  }
+});
+
 app.get('/make-server-0abfa7cf/notifications/:userId', async (c) => {
   try {
     const userId = c.req.param('userId');

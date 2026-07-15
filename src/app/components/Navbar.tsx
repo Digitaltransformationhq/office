@@ -1,5 +1,6 @@
 import React from 'react';
 import { Menu, LogOut } from 'lucide-react';
+import { NotificationBell } from './NotificationBell';
 
 interface NavbarProps {
   user: {
@@ -49,6 +50,7 @@ export function Navbar({ user, onLogout, onMobileMenuToggle }: NavbarProps) {
 
       {/* Right — identity + logout */}
       <div className="flex items-center gap-3 md:gap-4">
+        <NotificationBell userId={user.id} />
         <div className="hidden text-right leading-tight sm:block">
           <p className="text-sm font-medium" style={{ color: NAVY }}>{user.name}</p>
           <p className="text-xs capitalize text-muted-foreground">{user.role.replace('-', ' ')}</p>
