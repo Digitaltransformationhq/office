@@ -149,7 +149,7 @@ export function AnnouncementManagement({ user }: AnnouncementManagementProps) {
                       <p className="mt-1.5 text-sm text-muted-foreground">{a.message}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
-                      <span className={`hidden rounded-md px-2 py-0.5 text-[0.66rem] font-medium sm:inline-block ${a.is_active ? 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${a.is_active ? 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]' : 'bg-slate-100 text-slate-500'}`}>
                         {a.is_active ? 'Active' : 'Inactive'}
                       </span>
                       <IconBtn tone={a.is_active ? 'default' : 'green'} title={a.is_active ? 'Deactivate' : 'Activate'} onClick={() => handleToggle(a.id)}>
