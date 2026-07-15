@@ -22,6 +22,7 @@ import { InquiryManagement } from './components/InquiryManagement';
 import { ToastProvider } from './components/Toast';
 import { Reports } from './components/Reports';
 import { ClientManagement } from './components/ClientManagement';
+import { enablePush, pushPermission } from './services/push';
 
 interface User {
   id: string;
@@ -63,6 +64,14 @@ export default function App() {
     setActiveView(loggedInUser.role);
     localStorage.setItem('kaps_user', JSON.stringify(loggedInUser));
   };
+
+  // Auto-enable browser push once a user is active (asks for permission the
+  // first time only; if already granted it silently refreshes the subscription).
+  useEffect(() => {
+    if (!user?.id) return;
+    if (pushPermission() === 'unsupported') return;
+    enablePush(user.id).catch(() => { /* best-effort */ });
+  }, [user?.id]);
 
   const handleLogout = () => {
     setUser(null);
