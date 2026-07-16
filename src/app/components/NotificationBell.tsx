@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Bell, BellRing, ClipboardList, Megaphone, CheckCheck } from 'lucide-react';
 import { notificationsAPI } from '../services/api';
 import { enablePush, pushPermission } from '../services/push';
+import { viewForType } from '../utils/notifications';
 
 const NAVY = '#1b365d';
 
@@ -13,6 +14,7 @@ interface Notif {
   is_read: boolean;
   created_at: string;
 }
+
 
 function timeAgo(iso: string) {
   const d = new Date(iso).getTime();
@@ -28,7 +30,10 @@ function timeAgo(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
-export function NotificationBell({ userId }: { userId: string }) {
+export function NotificationBell({ userId, onNavigate }: {
+  userId: string;
+  onNavigate: (view: string) => void;
+}) {
   const [items, setItems] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
   const [pushState, setPushState] = useState<string>('default');
@@ -91,6 +96,18 @@ export function NotificationBell({ userId }: { userId: string }) {
     try { await notificationsAPI.markAsRead(n.id); } catch { /* ignore */ }
   };
 
+  /**
+   * Opening a notification takes you to the section it's about. Marking it read
+   * happens alongside — it shouldn't be the only thing a click does — and isn't
+   * awaited, so navigation is never held up by the write.
+   */
+  const openNotification = (n: Notif) => {
+    const view = viewForType(n.type);
+    markOne(n);
+    setOpen(false);
+    if (view) onNavigate(view);
+  };
+
   const markAll = async () => {
     if (unread === 0) return;
     setItems(prev => prev.map(x => ({ ...x, is_read: true })));
@@ -151,8 +168,8 @@ export function NotificationBell({ userId }: { userId: string }) {
               items.map((n) => (
                 <button
                   key={n.id}
-                  onClick={() => markOne(n)}
-                  className={`flex w-full items-start gap-3 border-b border-[#F1F4F8] px-4 py-3 text-left transition-colors hover:bg-[#F9FBFD] ${n.is_read ? '' : 'bg-[rgba(27,54,93,0.03)]'}`}
+                  onClick={() => openNotification(n)}
+                  className={`flex w-full items-start gap-3 border-b border-[#F1F4F8] px-4 py-3 text-left transition-colors hover:bg-[#F9FBFD] ${n.is_read ? '' : 'bg-[rgba(27,54,93,0.03)]'} ${viewForType(n.type) ? '' : 'cursor-default'}`}
                 >
                   <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${n.type === 'announcement' ? 'bg-[rgba(245,158,11,0.12)] text-[#b7791f]' : 'bg-[rgba(27,54,93,0.08)] text-[#1b365d]'}`}>
                     {iconFor(n.type)}

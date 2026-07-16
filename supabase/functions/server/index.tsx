@@ -74,7 +74,11 @@ async function notifyUser(userId: string, type: string, title: string, message: 
   } catch (e) {
     console.log('notifyUser failed:', e);
   }
-  await sendPush(userId, { title, body: message || title, url: '/' });
+  // Carry the type, not a view: the client owns the type -> section mapping
+  // (src/app/utils/notifications.ts) and resolves it against the user's role.
+  // This was hardcoded to '/', so every push click landed on the app root.
+  const url = `/?notif=${encodeURIComponent(type)}`;
+  await sendPush(userId, { title, body: message || title, url });
 }
 
 // Enable logger

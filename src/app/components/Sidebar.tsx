@@ -73,6 +73,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Team', id: 'team' },
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Billing', id: 'billing' },
+      { label: 'Announcements', id: 'announcements' },
       { label: 'Reports', id: 'reports' },
       { label: 'Settings', id: 'settings' },
     ],
@@ -93,6 +94,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
       { label: 'Inquiries', id: 'inquiries' },
+      { label: 'Announcements', id: 'announcements' },
       { label: 'Approvals', id: 'approvals' },
       { label: 'Leave', id: 'leave' },
     ],
@@ -101,6 +103,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
       { label: 'Inquiries', id: 'inquiries' },
+      { label: 'Announcements', id: 'announcements' },
       ...(user.email === 'audit1@kapsca.in' ? [{ label: 'Billing', id: 'billing' }] : []),
     ],
     client: [

@@ -11,6 +11,8 @@ interface NavbarProps {
     role: string;
   };
   onLogout: () => void;
+  /** Same handler the Sidebar uses, so notifications can jump to a section. */
+  onNavigate: (view: string) => void;
   onMobileMenuToggle: () => void;
 }
 
@@ -24,7 +26,7 @@ function greeting() {
   return 'Good evening';
 }
 
-export function Navbar({ user, onLogout, onMobileMenuToggle }: NavbarProps) {
+export function Navbar({ user, onLogout, onNavigate, onMobileMenuToggle }: NavbarProps) {
   const firstName = user.name.split(' ')[0];
   const today = new Date().toLocaleDateString('en-IN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -51,7 +53,7 @@ export function Navbar({ user, onLogout, onMobileMenuToggle }: NavbarProps) {
 
       {/* Right — identity + logout */}
       <div className="flex items-center gap-3 md:gap-4">
-        <NotificationBell userId={user.id} />
+        <NotificationBell userId={user.id} onNavigate={onNavigate} />
         <div className="hidden text-right leading-tight sm:block">
           <p className="text-sm font-medium" style={{ color: NAVY }}>{user.name}</p>
           <p className="text-xs text-muted-foreground">{roleLabel(user.role)}</p>

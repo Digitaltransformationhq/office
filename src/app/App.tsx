@@ -15,6 +15,7 @@ import { TeamTasks } from './components/TeamTasks';
 import { Billing } from './components/Billing';
 import { CalendarManagement } from './components/CalendarManagement';
 import { AnnouncementManagement } from './components/AnnouncementManagement';
+import { AnnouncementsView } from './components/AnnouncementsView';
 import { ImportantDatesBar } from './components/ImportantDatesBar';
 import { AnnouncementBar } from './components/AnnouncementBar';
 import { MyInquiries } from './components/MyInquiries';
@@ -23,6 +24,7 @@ import { ToastProvider } from './components/Toast';
 import { Reports } from './components/Reports';
 import { ClientManagement } from './components/ClientManagement';
 import { enablePush, pushPermission } from './services/push';
+import { viewForType, typeFromUrl, NOTIF_PARAM } from './utils/notifications';
 
 interface User {
   id: string;
@@ -137,6 +139,33 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePop);
   }, [user]);
 
+  // A push click on a cold start opens the app at /?notif=<type>. Resolve it
+  // once we know who's logged in, then strip the param so a later refresh
+  // doesn't silently re-navigate. Keeps the history state the effect above
+  // seeded — only the query string goes.
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return;
+    const type = new URLSearchParams(window.location.search).get(NOTIF_PARAM);
+    if (!type) return;
+    window.history.replaceState(window.history.state, '', window.location.pathname);
+    const view = viewForType(type);
+    if (view) handleViewChange(view);
+  }, [user]);
+
+  // A push click while the app is already open: the service worker can't change
+  // a focused tab's URL, so it messages us the destination instead.
+  useEffect(() => {
+    if (!user || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'notification-click') return;
+      const type = typeFromUrl(event.data.url || '');
+      const view = type ? viewForType(type) : null;
+      if (view) handleViewChange(view);
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [user]);
+
   const renderDashboard = () => {
     switch (activeView) {
       case 'partner':
@@ -201,12 +230,13 @@ export default function App() {
         }
         return null;
       case 'announcements':
-        // Only allow admin to access announcement management
+        // Admins manage announcements; everyone else gets the read-only list of
+        // the ones aimed at them.
         if (user && user.role === 'admin') {
           return <AnnouncementManagement user={user} />;
         }
         if (user) {
-          setActiveView(user.role);
+          return <AnnouncementsView user={user} />;
         }
         return null;
       case 'reports':
@@ -276,6 +306,7 @@ export default function App() {
           <Navbar
             user={user}
             onLogout={handleLogout}
+            onNavigate={handleViewChange}
             onMobileMenuToggle={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
           />
           {/* Important Dates Bar - Shows for all users */}
