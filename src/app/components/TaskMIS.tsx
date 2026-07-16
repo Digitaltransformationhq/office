@@ -3,9 +3,10 @@ import { tasksAPI } from '../services/api';
 import { ReassignTaskModal } from './ReassignTaskModal';
 import { EditTaskModal } from './EditTaskModal';
 import { SendForBillingModal } from './SendForBillingModal';
+import { CreateTaskModal } from './CreateTaskModal';
 import {
   Search, SlidersHorizontal, Check, X, Repeat2, Receipt,
-  RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp,
+  RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp, Plus,
 } from 'lucide-react';
 
 interface Task {
@@ -81,6 +82,7 @@ export function TaskMIS({ user }: TaskMISProps) {
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showBillingModal, setShowBillingModal] = useState(false);
+  const [showCreateTask, setShowCreateTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -263,6 +265,14 @@ export function TaskMIS({ user }: TaskMISProps) {
               Clear
             </button>
           )}
+          {/* Creating work from the Tasks section is the obvious place to look
+              for it; previously it existed only on some dashboards. */}
+          <button
+            onClick={() => setShowCreateTask(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#1b365d] px-4 py-2 text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]"
+          >
+            <Plus size={15} /> New Task
+          </button>
         </div>
       </div>
 
@@ -480,6 +490,17 @@ export function TaskMIS({ user }: TaskMISProps) {
         <SendForBillingModal task={selectedTask}
           onClose={() => { setShowBillingModal(false); setSelectedTask(null); }}
           onSuccess={loadTasks} />
+      )}
+      {showCreateTask && (
+        <CreateTaskModal
+          currentUserRole={user.role}
+          currentUser={user}
+          onClose={() => setShowCreateTask(false)}
+          onTaskCreated={() => {
+            setShowCreateTask(false);
+            loadTasks({ silent: true });
+          }}
+        />
       )}
     </div>
   );

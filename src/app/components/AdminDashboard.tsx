@@ -9,6 +9,7 @@ import { inquiriesAPI } from '../services/api';
 import { AddUserModal } from './AddUserModal';
 import { EditUserModal } from './EditUserModal';
 import { AddClientModal } from './AddClientModal';
+import { CreateTaskModal } from './CreateTaskModal';
 import { EditClientModal } from './EditClientModal';
 import { ViewClientModal } from './ViewClientModal';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -57,6 +58,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
 
+  const [showCreateTask, setShowCreateTask] = useState(false);
   const [showAddClient, setShowAddClient] = useState(false);
   const [showEditClient, setShowEditClient] = useState(false);
   const [showViewClient, setShowViewClient] = useState(false);
@@ -236,6 +238,13 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
               <UserPlus size={15} /> Add User
             </button>
             <button
+              onClick={() => setShowCreateTask(true)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#E7EDF4] bg-white px-4 py-2 text-sm font-medium transition-colors hover:bg-[#F4F6F9]"
+              style={{ color: NAVY }}
+            >
+              <ClipboardList size={15} /> New Task
+            </button>
+            <button
               onClick={() => setShowAddClient(true)}
               className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#E7EDF4] bg-white px-4 py-2 text-sm font-medium transition-colors hover:bg-[#F4F6F9]"
               style={{ color: NAVY }}
@@ -375,6 +384,19 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
           onCancel={() => {
             setShowDeleteConfirm(false);
             setUserToDelete(null);
+          }}
+        />
+      )}
+
+      {showCreateTask && user && (
+        <CreateTaskModal
+          currentUserRole={user.role}
+          currentUser={user}
+          onClose={() => setShowCreateTask(false)}
+          onTaskCreated={() => {
+            showSuccess('Task created and assigned!');
+            setShowCreateTask(false);
+            loadDataSilently();
           }}
         />
       )}
