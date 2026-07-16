@@ -6,6 +6,7 @@ import {
   MessageCircle, HelpCircle, Database, Menu,
   X, type LucideIcon,
 } from 'lucide-react';
+import { normalizeRole, roleLabel } from '../utils/roles';
 
 interface User {
   id: string;
@@ -110,7 +111,9 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
     ],
   };
 
-  const currentMenu = menuItems[user.role as keyof typeof menuItems] || menuItems.partner;
+  // Fail closed: an unrecognized role gets the least-privileged menu, never the
+  // partner menu it used to fall back to.
+  const currentMenu = menuItems[normalizeRole(user.role) ?? ''] || menuItems['team-member'];
   const filteredMenu = currentMenu.filter((item) => {
     if (item.id === 'billing' || item.id === 'billing-reports') return hasBillingAccess;
     return true;
@@ -135,7 +138,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
   };
 
   const compact = isCollapsed && !isMobile;
-  const roleLabel = user.role === 'team-leader' ? 'Accounts' : user.role.replace('-', ' ');
+  const displayRole = roleLabel(user.role);
 
   return (
     <>
@@ -244,7 +247,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-white/95">{user.name}</p>
-                <p className="truncate text-xs capitalize text-white/45">{roleLabel}</p>
+                <p className="truncate text-xs text-white/45">{displayRole}</p>
               </div>
             </div>
           ) : (

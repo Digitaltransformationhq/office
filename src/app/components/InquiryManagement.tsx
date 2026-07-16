@@ -4,7 +4,7 @@ import { ReviewInquiryModalEnhanced } from './ReviewInquiryModalEnhanced';
 import { useToast } from './Toast';
 import { inquiriesAPI } from '../services/api';
 import {
-  Search, RotateCw, ChevronDown, ArrowUp, ArrowDown,
+  Search, ChevronDown, ArrowUp, ArrowDown,
   Inbox, Clock, CheckCircle2, PauseCircle, XCircle, Mail, Phone,
 } from 'lucide-react';
 
@@ -50,20 +50,26 @@ export function InquiryManagement({ userId, userName }: InquiryManagementProps) 
 
   useEffect(() => { loadData(); }, []);
 
-  const loadData = async () => {
+  // Auto-refresh in the background, replacing the manual refresh button.
+  useEffect(() => {
+    const interval = setInterval(() => loadData({ silent: true }), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadData = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await inquiriesAPI.getAll();
       if (response.success) {
         setInquiries(response.data || []);
-      } else {
+      } else if (!silent) {
         showError(response.error || 'Failed to load inquiries');
       }
     } catch (error) {
       console.error('Error loading inquiries:', error);
-      showError('Failed to load inquiries');
+      if (!silent) showError('Failed to load inquiries');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -144,9 +150,6 @@ export function InquiryManagement({ userId, userName }: InquiryManagementProps) 
                   Clear filters
                 </button>
               )}
-              <button onClick={loadData} title="Refresh" className="flex h-8 w-8 items-center justify-center rounded-full border border-[#E7EDF4] text-muted-foreground transition-colors hover:bg-[#F4F6F9]">
-                <RotateCw size={15} />
-              </button>
             </div>
           </div>
 

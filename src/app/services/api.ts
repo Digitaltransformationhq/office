@@ -1,4 +1,5 @@
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { normalizeRole } from '../utils/roles';
 
 const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-0abfa7cf`;
 
@@ -42,7 +43,7 @@ function transformUser(user: any) {
     id: user.id,
     name: user.name,
     email: user.email,
-    role: user.role,
+    role: normalizeRole(user.role) ?? user.role,
     status: user.status,
     lastLogin: user.last_login,
     createdAt: user.created_at,

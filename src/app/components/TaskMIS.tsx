@@ -4,7 +4,7 @@ import { ReassignTaskModal } from './ReassignTaskModal';
 import { EditTaskModal } from './EditTaskModal';
 import { SendForBillingModal } from './SendForBillingModal';
 import {
-  Search, SlidersHorizontal, RotateCw, Check, X, Repeat2, Receipt,
+  Search, SlidersHorizontal, Check, X, Repeat2, Receipt,
   RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
@@ -106,9 +106,15 @@ export function TaskMIS({ user }: TaskMISProps) {
 
   useEffect(() => { loadTasks(); }, [user]);
 
-  const loadTasks = async () => {
+  // Auto-refresh in the background, replacing the manual refresh button.
+  useEffect(() => {
+    const interval = setInterval(() => loadTasks({ silent: true }), 60000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  const loadTasks = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await tasksAPI.getAll();
       let all = response.data || [];
       if (!isPartnerOrAdmin) all = all.filter((t: Task) => t.assignedToId === user.id);
@@ -116,7 +122,7 @@ export function TaskMIS({ user }: TaskMISProps) {
     } catch (e) {
       console.error('Error loading tasks:', e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -257,9 +263,6 @@ export function TaskMIS({ user }: TaskMISProps) {
               Clear
             </button>
           )}
-          <button onClick={loadTasks} title="Refresh" className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E7EDF4] bg-white text-muted-foreground transition-colors hover:bg-[#F4F6F9]">
-            <RotateCw size={15} />
-          </button>
         </div>
       </div>
 

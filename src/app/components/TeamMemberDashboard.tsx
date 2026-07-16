@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { Badge } from './Badge';
-import { Button } from './Button';
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from './Card';
+import { KPICard } from './KPICard';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
 import { tasksAPI } from '../services/api';
 import { CreateInquiryModal } from './CreateInquiryModal';
 import { CreateTaskModal } from './CreateTaskModal';
 import { EditTaskModal } from './EditTaskModal';
-import { AnnouncementBar } from './AnnouncementBar';
+import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
+import { Loader2, Plus, MessageSquarePlus, RotateCcw } from 'lucide-react';
 
 interface TeamMemberDashboardProps {
   user?: {
@@ -16,6 +18,8 @@ interface TeamMemberDashboardProps {
     role: string;
   };
 }
+
+const NAVY = '#1b365d';
 
 const statusColor: Record<string, string> = {
   'Pending': 'bg-slate-100 text-slate-700',
@@ -34,11 +38,116 @@ const priorityColor: Record<string, string> = {
   'Low': 'bg-slate-100 text-slate-600',
 };
 
-function Chip({ label, color }: { label: string; color?: string }) {
+/** Compact bordered buttons, for the desktop table's Action column. */
+const actionBtn = 'whitespace-nowrap rounded border px-2 py-0.5 text-[10px] font-medium';
+
+/** Solid fills, for the mobile card's footer — never mistakable for a status tag. */
+const cardActionTone: Record<string, string> = {
+  navy: 'bg-[#1b365d] text-white hover:bg-[#142a4a]',
+  green: 'bg-[#3d8a22] text-white hover:bg-[#347618]',
+  orange: 'bg-orange-600 text-white hover:bg-orange-700',
+};
+const tableActionTone: Record<string, string> = {
+  navy: 'border-blue-300 bg-blue-100 text-blue-700 hover:bg-blue-200',
+  green: 'border-green-300 bg-green-100 text-green-700 hover:bg-green-200',
+  orange: 'border-orange-300 bg-orange-100 text-orange-700 hover:bg-orange-200',
+};
+
+interface TaskAction {
+  key: string;
+  /** Full label for the mobile card's button. */
+  label: string;
+  /** Terse label for the dense desktop table. */
+  short: string;
+  tone: keyof typeof cardActionTone;
+  run: () => void;
+}
+
+const shortDate = (d?: string) =>
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—';
+
+function Chip({ label, color, className = '' }: { label: string; color?: string; className?: string }) {
   return (
-    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${color || 'bg-slate-100 text-slate-600'}`}>
+    <span
+      title={label}
+      className={`inline-block max-w-full truncate rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap ${color || 'bg-slate-100 text-slate-600'} ${className}`}
+    >
       {label}
     </span>
+  );
+}
+
+/**
+ * The mobile presentation of a task. Deliberately not the generic
+ * `.responsive-table` label/value treatment: that rendered the action button in
+ * the same slot and shape as the status chip, so it read as another tag rather
+ * than something to press. Here status stays a tag in the header and the action
+ * is a full-width filled button in its own footer.
+ */
+function TaskCard({ task, actions, isRejected, busy }: {
+  task: any; actions: TaskAction[]; isRejected: boolean; busy: boolean;
+}) {
+  const frame =
+    isRejected ? 'border-orange-200 bg-orange-50/50' :
+    task.status === 'Overdue' ? 'border-red-200 bg-red-50/50' :
+    'border-[#E7EDF4] bg-white';
+
+  return (
+    <div className={`rounded-xl border p-4 ${frame}`}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 flex-1 text-sm font-semibold leading-snug" style={{ color: NAVY }}>
+          {task.client}
+        </p>
+        <Chip
+          label={task.status || 'Pending'}
+          color={statusColor[task.status] || 'bg-slate-100 text-slate-600'}
+        />
+      </div>
+
+      <p className="mt-1.5 text-sm leading-snug text-foreground/75">{task.task}</p>
+
+      {/* Fixed columns rather than justify-between: that distributed leftover
+          space, so the gaps moved with each card's chip widths. These tracks are
+          weighted to what each column carries — categories run long ("Project
+          Finance"), priorities are short — because equal thirds are too narrow
+          for a category and it bleeds into its neighbour. min-w-0 + the chip's
+          own truncate keep an unexpectedly long value inside its column. */}
+      <div className="mt-3 grid grid-cols-[1.25fr_0.8fr_1fr] items-center gap-x-1.5">
+        <span className="min-w-0 justify-self-start">
+          <Chip label={task.category || '—'} color="bg-blue-50 text-blue-700" />
+        </span>
+        <span className="min-w-0 justify-self-center">
+          <Chip
+            label={task.priority || 'Medium'}
+            color={priorityColor[task.priority] || 'bg-slate-100 text-slate-600'}
+          />
+        </span>
+        <span className="min-w-0 justify-self-end truncate whitespace-nowrap text-right text-xs text-muted-foreground">
+          Due {shortDate(task.targetDate)}
+        </span>
+      </div>
+
+      {actions.length > 0 && (
+        <div className="mt-4 flex gap-2 border-t border-black/[0.06] pt-3">
+          {actions.map(a => (
+            <button
+              key={a.key}
+              onClick={a.run}
+              disabled={busy}
+              className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${cardActionTone[a.tone]}`}
+            >
+              {busy ? 'Saving…' : a.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {task.status === 'Pending Approval' && (
+        <p className="mt-3 border-t border-black/[0.06] pt-3 text-xs italic text-yellow-700">
+          Awaiting partner approval…
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -48,7 +157,14 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [showCreateInquiry, setShowCreateInquiry] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<any | null>(null);
-  const { showSuccess } = useToast();
+  /** Tasks with an in-flight status write, so their buttons can't be double-fired. */
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  /** Mirror of busyIds readable from the poll timer, which closes over stale state. */
+  const busyRef = useRef(false);
+  busyRef.current = busyIds.size > 0;
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const timeAgo = useTimeAgo(lastRefresh);
+  const { showSuccess, showError } = useToast();
 
   const isRejectedTask = (task: any) =>
     task.comments?.includes('[Rejected by ') || task.status === 'Rejected';
@@ -64,217 +180,299 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
 
   useEffect(() => { loadMyTasks(); }, [user]);
 
-  const loadMyTasks = async () => {
+  // Keep the dashboard live without a manual refresh. Mirrors the 60s cadence
+  // the other dashboards already use.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Never refetch over an in-flight status write: the response would
+      // clobber the optimistic row and make the status flicker back.
+      if (busyRef.current) return;
+      loadMyTasks({ silent: true });
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  /**
+   * `silent` refetches in the background without tearing the page down to the
+   * loading state — used after modal saves, where a full-page spinner for an
+   * already-confirmed change is just a flash.
+   */
+  const loadMyTasks = async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!user) return;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await tasksAPI.getAll();
       const userTasks = response.data.filter(
         (task: any) => task.assignedToId === user.id || task.assignedTo === user.name
       );
       setTasks(userTasks);
+      setLastRefresh(new Date());
     } catch (error) {
       console.error('Error loading tasks:', error);
+      if (!silent) showError('Failed to load tasks');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
+  /**
+   * Apply the new status locally at once, then reconcile that single row with
+   * what the server stored. No refetch and no loading state: re-fetching every
+   * task to change one field made the whole dashboard blink on every click.
+   * Rolls back if the write fails, so the UI never claims success falsely.
+   */
   const handleStatusUpdate = async (taskId: string, newStatus: string) => {
+    if (busyIds.has(taskId)) return;
+    const snapshot = tasks;
+    setBusyIds(prev => new Set(prev).add(taskId));
+    setTasks(ts => ts.map(t => (t.id === taskId ? { ...t, status: newStatus } : t)));
+
     try {
-      await tasksAPI.update(taskId, { status: newStatus });
-      loadMyTasks();
+      const res = await tasksAPI.update(taskId, { status: newStatus });
+      // fetchAPI resolves (never throws) on a non-2xx, so a failed write has to
+      // be detected here — otherwise the optimistic status would stand and the
+      // UI would claim a save that never happened.
+      if (!res?.success) throw new Error(res?.error || 'Update failed');
+      if (res.data) {
+        // Only merge fields the server actually returned: transformTask emits a
+        // key for every column, so a partial row would otherwise blank the rest.
+        const patch = Object.fromEntries(
+          Object.entries(res.data).filter(([, v]) => v !== undefined)
+        );
+        setTasks(ts => ts.map(t => (t.id === taskId ? { ...t, ...patch } : t)));
+      }
+      setLastRefresh(new Date());
     } catch {
-      alert('Failed to update task status');
+      setTasks(snapshot);
+      showError('Failed to update task status');
+    } finally {
+      setBusyIds(prev => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
     }
   };
-
-  const activeTasks = tasks.filter(t => t.status !== 'Completed');
-  const returnedTasks = tasks.filter(isRejectedTask);
-
-  const stats = [
-    { label: 'Active', value: tasks.filter(t => t.status !== 'Completed' && t.status !== 'Rejected').length, color: 'text-slate-700' },
-    { label: 'Pending', value: tasks.filter(t => t.status === 'Pending').length, color: 'text-slate-500' },
-    { label: 'In Progress', value: tasks.filter(t => t.status === 'In Progress').length, color: 'text-blue-600' },
-    { label: 'Approval', value: tasks.filter(t => t.status === 'Pending Approval').length, color: 'text-yellow-600' },
-    { label: 'Done', value: tasks.filter(t => t.status === 'Completed').length, color: 'text-green-600' },
-    { label: 'Returned', value: returnedTasks.length, color: 'text-orange-600' },
-  ];
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-sm text-muted-foreground">Loading tasks…</p>
+      <div className="flex h-full items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <Loader2 className="h-7 w-7 animate-spin" style={{ color: NAVY }} />
+          <p className="text-sm">Loading tasks…</p>
+        </div>
       </div>
     );
   }
 
+  const activeTasks = tasks.filter(t => t.status !== 'Completed');
+  const returnedTasks = tasks.filter(isRejectedTask);
+  const count = (status: string) => tasks.filter(t => t.status === status).length;
+
+  /** One definition of what a task offers, rendered two ways (card + table). */
+  const taskActions = (task: any): TaskAction[] => {
+    const out: TaskAction[] = [];
+    if (isRejectedTask(task)) {
+      out.push({
+        key: 'edit', label: 'Edit & Resubmit', short: 'Edit', tone: 'orange',
+        run: () => setTaskToEdit(task),
+      });
+    } else if (task.status === 'Pending') {
+      out.push({
+        key: 'start', label: 'Start Task', short: 'Start', tone: 'navy',
+        run: () => handleStatusUpdate(task.id, 'In Progress'),
+      });
+    }
+    if (task.status === 'In Progress') {
+      out.push({
+        key: 'done', label: 'Mark Done', short: 'Done', tone: 'green',
+        run: () => handleStatusUpdate(task.id, 'Completed'),
+      });
+    }
+    return out;
+  };
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <AnnouncementBar />
-
-      <div className="flex flex-col gap-2 p-3 overflow-y-auto flex-1">
-
-        {/* Header row */}
-        <div className="flex items-center justify-between">
+    <div className="space-y-0">
+      {/* AnnouncementBar is rendered once by App.tsx, with the user's role. */}
+      {/* No padding here — <main> in App.tsx already pads the page. */}
+      <div className="space-y-6">
+        {/* ── Header ── */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-foreground leading-tight">My Tasks</p>
-            <p className="text-[11px] text-muted-foreground">{user?.name}</p>
-          </div>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => setShowCreateTask(true)}
-              className="text-[11px] px-2 py-1 bg-primary text-primary-foreground rounded hover:opacity-90 transition"
-            >
-              + Task
-            </button>
-            <button
-              onClick={() => setShowCreateInquiry(true)}
-              className="text-[11px] px-2 py-1 bg-secondary text-secondary-foreground rounded hover:opacity-90 transition border border-border"
-            >
-              + Inquiry
-            </button>
-            <button
-              onClick={loadMyTasks}
-              className="text-[11px] px-2 py-1 bg-secondary text-secondary-foreground rounded hover:opacity-90 transition border border-border"
-              title="Refresh"
-            >
-              ↻
-            </button>
-          </div>
-        </div>
-
-        {/* Stats strip */}
-        <div className="grid grid-cols-6 gap-1.5">
-          {stats.map(s => (
-            <div key={s.label} className="bg-card border border-border rounded px-2 py-1.5 text-center">
-              <p className={`text-sm font-bold leading-none ${s.color}`}>{s.value}</p>
-              <p className="text-[9px] text-muted-foreground mt-0.5">{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Returned tasks alert */}
-        {returnedTasks.length > 0 && (
-          <div className="border border-orange-300 bg-orange-50 dark:bg-orange-950/30 rounded p-2">
-            <p className="text-[11px] font-semibold text-orange-700 dark:text-orange-400 mb-1.5">
-              ↩ {returnedTasks.length} task{returnedTasks.length > 1 ? 's' : ''} returned for correction
+            <h1 className="text-[1.6rem] font-semibold tracking-tight" style={{ color: NAVY }}>
+              My Tasks
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {user?.name} · updated {timeAgo} ago
             </p>
-            <div className="flex flex-col gap-1">
+          </div>
+        </div>
+
+        {/* Quick actions — aligned to the stat-tile columns below */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <button
+            onClick={() => setShowCreateTask(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#1b365d] px-4 py-2 text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]"
+          >
+            <Plus size={15} /> New Task
+          </button>
+          <button
+            onClick={() => setShowCreateInquiry(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#E7EDF4] bg-white px-4 py-2 text-sm font-medium transition-colors hover:bg-[#F4F6F9]"
+            style={{ color: NAVY }}
+          >
+            <MessageSquarePlus size={15} /> New Inquiry
+          </button>
+        </div>
+
+        {/* ── Stat tiles ── */}
+        {/* No icons: at 2-up on a narrow screen the icon leaves too little room
+            for the title, which then overflows into it. */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <KPICard
+            title="Active"
+            value={tasks.filter(t => t.status !== 'Completed' && t.status !== 'Rejected').length}
+          />
+          <KPICard title="In Progress" value={count('In Progress')} />
+          <KPICard title="Awaiting Approval" value={count('Pending Approval')} variant="warning" />
+          <KPICard title="Completed" value={count('Completed')} variant="success" />
+        </div>
+
+        {/* ── Returned for correction ── */}
+        {returnedTasks.length > 0 && (
+          <section className="rounded-xl border border-orange-200 bg-orange-50/60 p-5">
+            <div className="flex items-center gap-2">
+              <RotateCcw size={16} className="shrink-0 text-orange-600" />
+              <h3 className="text-sm font-semibold text-orange-800">
+                {returnedTasks.length} task{returnedTasks.length > 1 ? 's' : ''} returned for correction
+              </h3>
+            </div>
+            <div className="mt-4 space-y-2">
               {returnedTasks.map((task: any) => {
-                const note = task.comments?.split('\n').filter((l: string) => l.startsWith('[Rejected by ')).pop() || '';
+                const note = task.comments
+                  ?.split('\n')
+                  .filter((l: string) => l.startsWith('[Rejected by '))
+                  .pop() || '';
                 return (
-                  <div key={task.id} className="flex items-center justify-between gap-2 bg-white/60 dark:bg-black/20 rounded px-2 py-1">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-medium truncate">{task.task}</p>
-                      <p className="text-[10px] text-muted-foreground truncate">{task.client} {note && <span className="text-orange-600 italic">· {note}</span>}</p>
+                  <div
+                    key={task.id}
+                    className="flex flex-col gap-2 rounded-lg bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium" style={{ color: NAVY }}>{task.task}</p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {task.client}
+                        {note && <span className="italic text-orange-600"> · {note}</span>}
+                      </p>
                     </div>
                     <button
                       onClick={() => setTaskToEdit(task)}
-                      className="text-[10px] px-2 py-0.5 bg-orange-100 text-orange-700 rounded border border-orange-300 hover:bg-orange-200 whitespace-nowrap"
+                      className="shrink-0 self-start rounded-full border border-orange-300 bg-orange-100 px-3 py-1.5 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-200 sm:self-auto"
                     >
-                      Edit & Resubmit
+                      Edit &amp; Resubmit
                     </button>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Main tasks table */}
-        <div className="bg-card border border-border rounded overflow-hidden flex-1">
-          <div className="overflow-x-hidden overflow-y-auto max-h-[calc(100vh-280px)]">
-            <table className="w-full text-[11px] border-collapse table-fixed">
-              <colgroup>
-                <col style={{ width: '18%' }} />
-                <col style={{ width: '22%' }} />
-                <col style={{ width: '13%' }} />
-                <col style={{ width: '9%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '13%' }} />
-                <col style={{ width: '14%' }} />
-              </colgroup>
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-muted-foreground">Client</th>
-                  <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-muted-foreground">Task</th>
-                  <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-muted-foreground">Category</th>
-                  <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-muted-foreground">Priority</th>
-                  <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-muted-foreground">Due</th>
-                  <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-muted-foreground">Status</th>
-                  <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-muted-foreground">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeTasks.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center text-muted-foreground py-8 text-xs">
-                      No active tasks. All caught up! 🎉
-                    </td>
-                  </tr>
-                ) : (
-                  activeTasks.map((task: any) => (
-                    <tr
+        {/* ── Active tasks ── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Active Tasks</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {activeTasks.length === 0 ? (
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                No active tasks. All caught up! 🎉
+              </p>
+            ) : (
+              <>
+                {/* Mobile — purpose-built cards */}
+                <div className="space-y-3 p-4 md:hidden">
+                  {activeTasks.map((task: any) => (
+                    <TaskCard
                       key={task.id}
-                      className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${
-                        isRejectedTask(task) ? 'bg-orange-50/40 dark:bg-orange-950/10' :
-                        task.status === 'Overdue' ? 'bg-red-50/40' : ''
-                      }`}
-                    >
-                      <td className="px-2 py-1.5 truncate font-medium" title={task.client}>{task.client}</td>
-                      <td className="px-2 py-1.5 truncate" title={task.task}>{task.task}</td>
-                      <td className="px-2 py-1.5">
-                        <Chip label={task.category || '—'} color="bg-blue-50 text-blue-700" />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <Chip label={task.priority || 'Med'} color={priorityColor[task.priority] || 'bg-slate-100 text-slate-600'} />
-                      </td>
-                      <td className="px-2 py-1.5 text-muted-foreground whitespace-nowrap">
-                        {task.targetDate ? new Date(task.targetDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <Chip label={task.status || 'Pending'} color={statusColor[task.status] || 'bg-slate-100 text-slate-600'} />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <div className="flex gap-1">
-                          {isRejectedTask(task) && (
-                            <button
-                              onClick={() => setTaskToEdit(task)}
-                              className="text-[10px] px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded border border-orange-300 hover:bg-orange-200 whitespace-nowrap"
-                            >
-                              Edit
-                            </button>
-                          )}
-                          {!isRejectedTask(task) && task.status === 'Pending' && (
-                            <button
-                              onClick={() => handleStatusUpdate(task.id, 'In Progress')}
-                              className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded border border-blue-300 hover:bg-blue-200 whitespace-nowrap"
-                            >
-                              Start
-                            </button>
-                          )}
-                          {task.status === 'In Progress' && (
-                            <button
-                              onClick={() => handleStatusUpdate(task.id, 'Completed')}
-                              className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded border border-green-300 hover:bg-green-200 whitespace-nowrap"
-                            >
-                              Done
-                            </button>
-                          )}
-                          {task.status === 'Pending Approval' && (
-                            <span className="text-[10px] text-yellow-600 italic">Awaiting…</span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                      task={task}
+                      actions={taskActions(task)}
+                      isRejected={isRejectedTask(task)}
+                      busy={busyIds.has(task.id)}
+                    />
+                  ))}
+                </div>
 
+                {/* Desktop — the table already labels its Action column */}
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Task</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Priority</TableHead>
+                        <TableHead>Due</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {activeTasks.map((task: any) => (
+                        <TableRow
+                          key={task.id}
+                          className={
+                            isRejectedTask(task) ? 'bg-orange-50/40' :
+                            task.status === 'Overdue' ? 'bg-red-50/40' : ''
+                          }
+                        >
+                          <TableCell className="font-medium">{task.client}</TableCell>
+                          <TableCell>{task.task}</TableCell>
+                          <TableCell>
+                            <Chip label={task.category || '—'} color="bg-blue-50 text-blue-700" />
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={task.priority || 'Medium'}
+                              color={priorityColor[task.priority] || 'bg-slate-100 text-slate-600'}
+                            />
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-muted-foreground">
+                            {shortDate(task.targetDate)}
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={task.status || 'Pending'}
+                              color={statusColor[task.status] || 'bg-slate-100 text-slate-600'}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {taskActions(task).map(a => (
+                                <button
+                                  key={a.key}
+                                  onClick={a.run}
+                                  disabled={busyIds.has(task.id)}
+                                  className={`${actionBtn} disabled:cursor-not-allowed disabled:opacity-60 ${tableActionTone[a.tone]}`}
+                                >
+                                  {a.short}
+                                </button>
+                              ))}
+                              {task.status === 'Pending Approval' && (
+                                <span className="text-[10px] italic text-yellow-600">Awaiting…</span>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {showCreateTask && user && (
@@ -285,7 +483,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
           onTaskCreated={() => {
             showSuccess('Task submitted for Partner approval!');
             setShowCreateTask(false);
-            loadMyTasks();
+            loadMyTasks({ silent: true });
           }}
         />
       )}
@@ -297,7 +495,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
           onSuccess={() => {
             showSuccess('Task updated and resubmitted for approval!');
             setTaskToEdit(null);
-            loadMyTasks();
+            loadMyTasks({ silent: true });
           }}
         />
       )}

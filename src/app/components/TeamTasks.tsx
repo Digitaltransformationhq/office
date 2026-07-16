@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { tasksAPI, usersAPI } from '../services/api';
-import { RotateCw, ChevronDown, Users } from 'lucide-react';
+import { ChevronDown, Users } from 'lucide-react';
 import { UserManagement } from './UserManagement';
 
 interface Task {
@@ -71,16 +71,22 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
 
   useEffect(() => { loadData(); }, []);
 
-  const loadData = async () => {
+  // Auto-refresh in the background, replacing the manual refresh button.
+  useEffect(() => {
+    const interval = setInterval(() => loadData({ silent: true }), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadData = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [tasksResponse, usersResponse] = await Promise.all([tasksAPI.getAll(), usersAPI.getAll()]);
       setTasks(tasksResponse.data || []);
       setUsers(usersResponse.data || []);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -99,11 +105,6 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
             {isAdmin && tab === 'users' ? 'Manage staff accounts and access' : 'Pending workload across your team members'}
           </p>
         </div>
-        {(!isAdmin || tab === 'workload') && (
-          <button onClick={loadData} title="Refresh" className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E7EDF4] bg-white text-muted-foreground transition-colors hover:bg-[#F4F6F9]">
-            <RotateCw size={15} />
-          </button>
-        )}
       </div>
 
       {/* Tabs (admin: Workload | Users) */}

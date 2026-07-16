@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { loginAPI } from '../services/api';
-import { History, RotateCw, MapPin, Globe, Check, X } from 'lucide-react';
+import { History, MapPin, Globe, Check, X } from 'lucide-react';
 
 interface LoginHistoryProps {
   userId: string;
@@ -27,15 +27,22 @@ export function LoginHistory({ userId }: LoginHistoryProps) {
     if (expanded) loadHistory();
   }, [expanded, userId]);
 
-  const loadHistory = async () => {
+  // Auto-refresh only while the panel is open — no point polling a collapsed one.
+  useEffect(() => {
+    if (!expanded) return;
+    const interval = setInterval(() => loadHistory({ silent: true }), 60000);
+    return () => clearInterval(interval);
+  }, [expanded, userId]);
+
+  const loadHistory = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await loginAPI.getLoginHistory(userId);
       setHistory(response.data || []);
     } catch (error) {
       console.error('Error loading login history:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -54,9 +61,6 @@ export function LoginHistory({ userId }: LoginHistoryProps) {
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <button onClick={loadHistory} title="Refresh" className="flex h-8 w-8 items-center justify-center rounded-full border border-[#E7EDF4] text-muted-foreground transition-colors hover:bg-[#F4F6F9]">
-              <RotateCw size={14} />
-            </button>
             <button onClick={() => setExpanded(false)} className="rounded-full border border-[#E7EDF4] px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-foreground">
               Close
             </button>

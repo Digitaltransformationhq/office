@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('Admin', 'Partner', 'Staff', 'Team Member')),
+  -- Canonical kebab-case roles. Legacy TitleCase values ('Admin', 'Staff',
+  -- 'Team Member', 'Partner') are migrated by database-add-staff-FIXED.sql;
+  -- new environments should only ever carry the values below.
+  role TEXT NOT NULL CHECK (role IN ('admin', 'partner', 'team-leader', 'team-member')),
   status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive')),
   last_login TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -107,22 +110,22 @@ CREATE TRIGGER update_tasks_updated_at
 -- ============================================
 INSERT INTO users (id, name, email, role, status, last_login, created_at) VALUES
   -- Admin
-  ('user:12', 'KAPS Admin', 'office@kapsca.in', 'Admin', 'Active', NOW(), NOW()),
+  ('user:12', 'KAPS Admin', 'office@kapsca.in', 'admin', 'Active', NOW(), NOW()),
 
   -- Partners
-  ('user:10', 'Abhishek Patel', 'apm@kapsca.in', 'Partner', 'Active', NOW(), NOW()),
-  ('user:11', 'Brijesh Pitroda', 'brijesh@kapsca.in', 'Partner', 'Active', NOW(), NOW()),
+  ('user:10', 'Abhishek Patel', 'apm@kapsca.in', 'partner', 'Active', NOW(), NOW()),
+  ('user:11', 'Brijesh Pitroda', 'brijesh@kapsca.in', 'partner', 'Active', NOW(), NOW()),
 
   -- Staff Members
-  ('user:1', 'Rajesh Panchal', 'caoffice.sahaj@gmail.com', 'Staff', 'Active', NOW(), NOW()),
-  ('user:2', 'Krunal Roy', 'caoffice@kapsca.in', 'Staff', 'Active', NOW(), NOW()),
-  ('user:3', 'Harshangi Prajapati', 'gst1@kapsca.in', 'Staff', 'Active', NOW(), NOW()),
-  ('user:4', 'Shruti Pitroda', 'pitrodashruti44@gmail.com', 'Staff', 'Active', NOW(), NOW()),
-  ('user:5', 'Rashmin Parmar', 'assurance@kapsca.in', 'Staff', 'Active', NOW(), NOW()),
-  ('user:6', 'Vishwanath Patel', 'vrppatel284@gmail.com', 'Staff', 'Active', NOW(), NOW()),
-  ('user:7', 'Anjali Vasava', 'audit1@kapsca.in', 'Staff', 'Active', NOW(), NOW()),
-  ('user:8', 'Kishan Solanki', 'kishansolanki3732@gmail.com', 'Staff', 'Active', NOW(), NOW()),
-  ('user:9', 'Ankit Patel', 'advisory@kapsca.in', 'Staff', 'Active', NOW(), NOW())
+  ('user:1', 'Rajesh Panchal', 'caoffice.sahaj@gmail.com', 'team-member', 'Active', NOW(), NOW()),
+  ('user:2', 'Krunal Roy', 'caoffice@kapsca.in', 'team-member', 'Active', NOW(), NOW()),
+  ('user:3', 'Harshangi Prajapati', 'gst1@kapsca.in', 'team-member', 'Active', NOW(), NOW()),
+  ('user:4', 'Shruti Pitroda', 'pitrodashruti44@gmail.com', 'team-member', 'Active', NOW(), NOW()),
+  ('user:5', 'Rashmin Parmar', 'assurance@kapsca.in', 'team-member', 'Active', NOW(), NOW()),
+  ('user:6', 'Vishwanath Patel', 'vrppatel284@gmail.com', 'team-member', 'Active', NOW(), NOW()),
+  ('user:7', 'Anjali Vasava', 'audit1@kapsca.in', 'team-member', 'Active', NOW(), NOW()),
+  ('user:8', 'Kishan Solanki', 'kishansolanki3732@gmail.com', 'team-member', 'Active', NOW(), NOW()),
+  ('user:9', 'Ankit Patel', 'advisory@kapsca.in', 'team-member', 'Active', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================

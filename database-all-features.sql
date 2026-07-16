@@ -238,7 +238,7 @@ SELECT
     name,
     EXTRACT(YEAR FROM CURRENT_DATE)
 FROM users
-WHERE role IN ('Staff', 'Team Leader', 'Admin', 'Partner')
+WHERE role IN ('team-member', 'team-leader', 'admin', 'partner')
 ON CONFLICT (user_id) DO NOTHING;
 
 -- ============================================

@@ -7,7 +7,7 @@ import { AddUserModal } from './AddUserModal';
 import { EditUserModal } from './EditUserModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './Toast';
-import { UserPlus, Search, RotateCw, ChevronDown } from 'lucide-react';
+import { UserPlus, Search, ChevronDown } from 'lucide-react';
 
 const NAVY = '#1b365d';
 
@@ -25,15 +25,21 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => { load(); }, []);
 
-  const load = async () => {
+  // Auto-refresh in the background, replacing the manual refresh button.
+  useEffect(() => {
+    const interval = setInterval(() => load({ silent: true }), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const load = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const r = await usersAPI.getAll();
       setUsers(r.data || []);
     } catch {
-      showError('Failed to load users');
+      if (!silent) showError('Failed to load users');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -84,9 +90,6 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, email, role…" className="w-full rounded-lg border border-[#E7EDF4] bg-white py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15" />
             </div>
-            <button onClick={load} title="Refresh" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#E7EDF4] text-muted-foreground transition-colors hover:bg-[#F4F6F9]">
-              <RotateCw size={15} />
-            </button>
             <button onClick={() => setShowAdd(true)} className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full bg-[#1b365d] px-3.5 py-2 text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]">
               <UserPlus size={15} /> Add
             </button>

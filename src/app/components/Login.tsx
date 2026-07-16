@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 import { loginAPI } from '../services/api';
+import { normalizeRole } from '../utils/roles';
 
 interface LoginProps {
   onLogin: (user: { id: string; name: string; email: string; role: string }) => void;
@@ -87,7 +88,14 @@ export function Login({ onLogin, onForgotPassword }: LoginProps) {
       const response = await loginAPI.login({ email, password });
 
       if (response.success && response.data) {
-        if (mode === 'admin' && response.data.role !== 'admin') {
+        // The login endpoint returns the stored role verbatim, so normalize it
+        // here the same way transformUser does for every other read.
+        const role = normalizeRole(response.data.role);
+        if (!role) {
+          setError('This account has an unrecognized role. Contact an administrator.');
+          return;
+        }
+        if (mode === 'admin' && role !== 'admin') {
           setError('This account is not an administrator.');
           return;
         }
@@ -95,7 +103,7 @@ export function Login({ onLogin, onForgotPassword }: LoginProps) {
           id: response.data.id,
           name: response.data.name,
           email: response.data.email,
-          role: response.data.role,
+          role,
         });
       } else {
         const msg = response.error || response.message || 'Invalid email or password';

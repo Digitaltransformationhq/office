@@ -214,7 +214,8 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     <div className="space-y-0">
       <AnnouncementBar />
 
-      <div className="space-y-6 p-4 md:p-6">
+      {/* No padding here — <main> in App.tsx already pads the page. */}
+      <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-[1.6rem] font-semibold tracking-tight" style={{ color: '#1b365d' }}>

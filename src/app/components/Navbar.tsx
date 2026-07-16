@@ -1,6 +1,7 @@
 import React from 'react';
 import { Menu, LogOut } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
+import { roleLabel } from '../utils/roles';
 
 interface NavbarProps {
   user: {
@@ -53,7 +54,7 @@ export function Navbar({ user, onLogout, onMobileMenuToggle }: NavbarProps) {
         <NotificationBell userId={user.id} />
         <div className="hidden text-right leading-tight sm:block">
           <p className="text-sm font-medium" style={{ color: NAVY }}>{user.name}</p>
-          <p className="text-xs capitalize text-muted-foreground">{user.role.replace('-', ' ')}</p>
+          <p className="text-xs text-muted-foreground">{roleLabel(user.role)}</p>
         </div>
         <div
           className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium text-white ring-2 ring-white shadow-[0_2px_8px_-2px_rgba(78,167,46,0.6)]"

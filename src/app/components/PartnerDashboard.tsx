@@ -9,7 +9,7 @@ import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { AnnouncementBar } from './AnnouncementBar';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { KPICard } from './KPICard';
-import { ChevronLeft, ChevronRight, ChevronDown, RefreshCw, Plus, Users, ClipboardList, Mail, AlertTriangle, CheckCircle2, Clock, X, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, AlertTriangle, CheckCircle2, Clock, X, Search } from 'lucide-react';
 
 const NAVY = '#1b365d';
 const GREEN = '#4ea72e';
@@ -240,13 +240,6 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
             <p className="mt-1 text-sm text-muted-foreground">Refreshed {timeAgo} ago</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={loadData}
-              title="Refresh"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E7EDF4] bg-white text-muted-foreground transition-colors hover:bg-[#F4F6F9]"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
             <button
               onClick={() => setShowAddStaff(true)}
               className="inline-flex items-center gap-1.5 rounded-full border border-[#E7EDF4] bg-white px-3 py-2 text-sm font-medium transition-colors hover:bg-[#F4F6F9]"
