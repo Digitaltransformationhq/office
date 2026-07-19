@@ -38,8 +38,8 @@ const priorityColor: Record<string, string> = {
   'Low': 'bg-slate-100 text-slate-600',
 };
 
-/** Compact bordered buttons, for the desktop table's Action column. */
-const actionBtn = 'whitespace-nowrap rounded border px-2 py-0.5 text-[10px] font-medium';
+/** Compact solid buttons, for the desktop table's Action column. */
+const actionBtn = 'whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold shadow-sm transition-colors';
 
 /** Solid fills, for the mobile card's footer — never mistakable for a status tag. */
 const cardActionTone: Record<string, string> = {
@@ -47,10 +47,15 @@ const cardActionTone: Record<string, string> = {
   green: 'bg-[#3d8a22] text-white hover:bg-[#347618]',
   orange: 'bg-orange-600 text-white hover:bg-orange-700',
 };
+/**
+ * Solid too, for the same reason as the cards: the pale tinted-and-bordered
+ * variant these used to have was the same shape, weight and palette as the
+ * status chip two columns over, so the Action column read as another tag.
+ */
 const tableActionTone: Record<string, string> = {
-  navy: 'border-blue-300 bg-blue-100 text-blue-700 hover:bg-blue-200',
-  green: 'border-green-300 bg-green-100 text-green-700 hover:bg-green-200',
-  orange: 'border-orange-300 bg-orange-100 text-orange-700 hover:bg-orange-200',
+  navy: 'bg-[#1b365d] text-white hover:bg-[#142a4a]',
+  green: 'bg-[#3d8a22] text-white hover:bg-[#347618]',
+  orange: 'bg-orange-600 text-white hover:bg-orange-700',
 };
 
 interface TaskAction {
