@@ -13,6 +13,9 @@ interface MarkAsBilledModalProps {
     task: string;
     assignedTo: string;
     completionDate: string;
+    /** Captured earlier at "Send for Billing"; used to prefill the amount below. */
+    taxableAmount?: number | string;
+    billingFees?: number | string;
   };
   user: {
     id: string;
@@ -25,7 +28,14 @@ interface MarkAsBilledModalProps {
 export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBilledModalProps) {
   const [billNumber, setBillNumber] = useState('');
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
-  const [taxableAmount, setTaxableAmount] = useState('');
+  // Prefill with the amount captured at "Send for Billing" so it isn't retyped
+  // from memory — re-entry is how the task figure and the invoice figure drift.
+  const capturedAmount = task.taxableAmount ?? task.billingFees;
+  const [taxableAmount, setTaxableAmount] = useState(
+    capturedAmount !== undefined && capturedAmount !== null && Number(capturedAmount) > 0
+      ? String(capturedAmount)
+      : '',
+  );
   const [remarks, setRemarks] = useState('');
   const [loading, setLoading] = useState(false);
   const [showDatabaseSetupModal, setShowDatabaseSetupModal] = useState(false);
@@ -204,7 +214,9 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                This is a required field
+                {capturedAmount && Number(capturedAmount) > 0
+                  ? 'Prefilled from the amount entered when this task was sent for billing — edit it if the invoice differs.'
+                  : 'This is a required field'}
               </p>
             </div>
 
