@@ -2323,6 +2323,14 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
       billedAt: new Date().toISOString(),
       budgetedFee: task.budgeted_fee || 0,
       hoursLogged: task.hours_logged || 0,
+      // Payment stage. A new invoice starts unpaid and only counts as revenue
+      // once it is marked paid. Records written before this field existed have
+      // no paymentStatus at all and are treated as paid by the client.
+      paymentStatus: 'Pending',
+      paymentDate: null,
+      paidAmount: 0,
+      paidBy: null,
+      paidById: null,
     };
 
     console.log('Storing billing record in KV store...');
@@ -2406,6 +2414,50 @@ app.get('/make-server-0abfa7cf/billing-records/:recordId', async (c) => {
   } catch (error) {
     console.log('Error fetching billing record:', error);
     return c.json({ success: false, error: 'Failed to fetch billing record' }, 500);
+  }
+});
+
+// Mark a billing record as paid — the step that turns an invoice into revenue
+app.post('/make-server-0abfa7cf/billing-records/:recordId/mark-paid', async (c) => {
+  try {
+    const recordId = c.req.param('recordId');
+    const body = await c.req.json();
+    const { paymentDate, paidAmount, paidBy, paidById } = body;
+
+    const record = await kvStore.get(recordId);
+    if (!record) {
+      return c.json({ success: false, error: 'Billing record not found' }, 404);
+    }
+
+    const billingData = typeof record === 'string' ? JSON.parse(record) : record;
+
+    if (billingData.paymentStatus === 'Paid') {
+      return c.json({ success: false, error: 'This invoice is already marked as paid' }, 400);
+    }
+
+    const updated = {
+      ...billingData,
+      paymentStatus: 'Paid',
+      paymentDate: paymentDate || new Date().toISOString().split('T')[0],
+      // Default to the invoiced amount so the common case needs no re-entry.
+      paidAmount: paidAmount !== undefined && paidAmount !== null
+        ? paidAmount
+        : (billingData.taxableAmount || 0),
+      paidBy: paidBy || null,
+      paidById: paidById || null,
+      paidAt: new Date().toISOString(),
+    };
+
+    await kvStore.set(recordId, updated);
+
+    return c.json({ success: true, data: updated, message: 'Payment recorded successfully' });
+  } catch (error: any) {
+    console.log('Error marking billing record as paid:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to record payment',
+      details: error?.message || String(error),
+    }, 500);
   }
 });
 

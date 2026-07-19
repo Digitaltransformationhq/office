@@ -3,12 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { KPICard } from './KPICard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
 import { Button } from './Button';
-import { tasksAPI, usersAPI } from '../services/api';
+import { billingAPI, tasksAPI, usersAPI } from '../services/api';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { ApprovalQueue } from './ApprovalQueue';
 import { useToast } from './Toast';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
-import { Loader2, X, IndianRupee } from 'lucide-react';
+import { MarkAsPaidModal } from './MarkAsPaidModal';
+import {
+  awaitingPaymentRecords, formatINR, invoiceAgeInDays, type BillingRecord,
+} from '../utils/revenue';
+import { Loader2, X, IndianRupee, Wallet } from 'lucide-react';
 
 interface TeamLeaderDashboardProps {
   user?: {
@@ -44,6 +48,8 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [showApprovalQueue, setShowApprovalQueue] = useState(false);
   const [selectedTaskForBilling, setSelectedTaskForBilling] = useState<any>(null);
+  const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
+  const [recordToPay, setRecordToPay] = useState<BillingRecord | null>(null);
   const timeAgo = useTimeAgo(lastRefresh);
   const { showError } = useToast();
 
@@ -59,12 +65,14 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   }, [autoRefresh]);
 
   const fetchData = async () => {
-    const [tasksRes, usersRes] = await Promise.all([
+    const [tasksRes, usersRes, billingRes] = await Promise.all([
       tasksAPI.getAll(),
       usersAPI.getAll(),
+      billingAPI.getAll(),
     ]);
     setAllTasks(tasksRes.data);
     setUsers(usersRes.data);
+    setBillingRecords(billingRes.data || []);
     setLastRefresh(new Date());
   };
 
@@ -112,6 +120,13 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
       const dateB = b.completionDate ? new Date(b.completionDate).getTime() : 0;
       return dateB - dateA;
     });
+
+  // Invoiced but unpaid — the stage after billing, oldest first so the most
+  // overdue gets chased first.
+  const awaitingPayment = awaitingPaymentRecords(billingRecords)
+    .slice()
+    .sort((a, b) => (invoiceAgeInDays(b) ?? 0) - (invoiceAgeInDays(a) ?? 0));
+  const outstanding = awaitingPayment.reduce((sum, r) => sum + (Number(r.taxableAmount) || 0), 0);
 
   // Roles are normalized in transformUser, so a single comparison is enough.
   const staffMembers = users.filter(u => u.role === 'team-member');
@@ -199,6 +214,71 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Awaiting Payment — the stage after billing ── */}
+        {awaitingPayment.length > 0 && (
+          <Card className="border-blue-200 bg-blue-50/40">
+            <CardHeader>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <Wallet size={16} className="shrink-0 text-blue-600" />
+                  <CardTitle className="text-blue-800">Awaiting Payment</CardTitle>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {awaitingPayment.length} invoice{awaitingPayment.length !== 1 ? 's' : ''} · {formatINR(outstanding)} outstanding
+                </p>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Bill No.</TableHead>
+                    <TableHead>Bill Date</TableHead>
+                    <TableHead>Age</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {awaitingPayment.map((rec) => {
+                    const age = invoiceAgeInDays(rec);
+                    const overdue = (age ?? 0) > 30;
+                    return (
+                      <TableRow key={rec.id}>
+                        <TableCell className="rt-title font-medium">{rec.clientName}</TableCell>
+                        <TableCell className="font-mono text-xs">{rec.billNumber}</TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {shortDate(rec.billDate)}
+                        </TableCell>
+                        <TableCell
+                          className="whitespace-nowrap tabular-nums"
+                          style={overdue ? { color: '#B45309', fontWeight: 600 } : { color: 'inherit' }}
+                        >
+                          {age === null ? '—' : `${age}d`}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap font-medium tabular-nums">
+                          {formatINR(rec.taxableAmount)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end md:justify-start">
+                            <button
+                              onClick={() => setRecordToPay(rec)}
+                              className="whitespace-nowrap rounded border border-blue-300 bg-blue-100 px-3.5 py-2 text-xs font-medium text-blue-700 hover:bg-blue-200 md:px-2 md:py-0.5 md:text-[10px]"
+                            >
+                              Mark Paid
+                            </button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -360,6 +440,16 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
             </Card>
           </div>
         </div>
+      )}
+
+      {/* Record Payment Modal */}
+      {recordToPay && user && (
+        <MarkAsPaidModal
+          record={recordToPay}
+          user={{ id: user.id, name: user.name }}
+          onClose={() => setRecordToPay(null)}
+          onSuccess={loadDataSilently}
+        />
       )}
 
       {/* Mark as Billed Modal */}
