@@ -4,8 +4,15 @@ import { KPICard } from './KPICard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
 import { Badge } from './Badge';
 import { Button } from './Button';
-import { usersAPI, clientsAPI, tasksAPI } from '../services/api';
+import { usersAPI, clientsAPI, tasksAPI, billingAPI } from '../services/api';
 import { inquiriesAPI } from '../services/api';
+import { RevenueBreakdownCard } from './RevenueBreakdown';
+import {
+  filterByRange, financialYearLabel, formatINRCompact, monthOverMonth, padSlices,
+  paidRecords, pendingBilling, pendingPayments, revenueByCategory, revenueByPerson,
+  totals, type BillingRecord,
+} from '../utils/revenue';
+import { TASK_CATEGORIES } from '../utils/taskCategories';
 import { AddUserModal } from './AddUserModal';
 import { EditUserModal } from './EditUserModal';
 import { AddClientModal } from './AddClientModal';
@@ -37,6 +44,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
   const [clients, setClients] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [inquiries, setInquiries] = useState<any[]>([]);
+  const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
@@ -81,11 +89,12 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [usersResult, clientsResult, tasksResult, inquiriesResult] = await Promise.allSettled([
+      const [usersResult, clientsResult, tasksResult, inquiriesResult, billingResult] = await Promise.allSettled([
         usersAPI.getAll(),
         clientsAPI.getAll(),
         tasksAPI.getAll(),
         inquiriesAPI.getPending(),
+        billingAPI.getAll(),
       ]);
       if (usersResult.status === 'fulfilled') setUsers(usersResult.value.data || []);
       else console.error('Error loading users:', usersResult.reason);
@@ -95,6 +104,8 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
       else console.error('Error loading tasks:', tasksResult.reason);
       if (inquiriesResult.status === 'fulfilled') setInquiries(inquiriesResult.value.data || []);
       else console.error('Error loading inquiries:', inquiriesResult.reason);
+      if (billingResult.status === 'fulfilled') setBillingRecords(billingResult.value.data || []);
+      else console.error('Error loading billing records:', billingResult.reason);
       setLastRefresh(new Date());
     } catch (error) {
       console.error('Error loading admin data:', error);
@@ -106,16 +117,18 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
 
   const loadDataSilently = async () => {
     try {
-      const [usersResult, clientsResult, tasksResult, inquiriesResult] = await Promise.allSettled([
+      const [usersResult, clientsResult, tasksResult, inquiriesResult, billingResult] = await Promise.allSettled([
         usersAPI.getAll(),
         clientsAPI.getAll(),
         tasksAPI.getAll(),
         inquiriesAPI.getPending(),
+        billingAPI.getAll(),
       ]);
       if (usersResult.status === 'fulfilled') setUsers(usersResult.value.data || []);
       if (clientsResult.status === 'fulfilled') setClients(clientsResult.value.data || []);
       if (tasksResult.status === 'fulfilled') setTasks(tasksResult.value.data || []);
       if (inquiriesResult.status === 'fulfilled') setInquiries(inquiriesResult.value.data || []);
+      if (billingResult.status === 'fulfilled') setBillingRecords(billingResult.value.data || []);
       setLastRefresh(new Date());
     } catch (error) {
       console.error('Error refreshing admin data:', error);
@@ -187,18 +200,22 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     avgTime: data.count > 0 ? `${(data.totalHours / data.count).toFixed(1)} hrs` : '0 hrs',
   }));
 
-  // Control-panel overview data
-  const roleCount = (roles: string[]) => users.filter(u => roles.includes(u.role)).length;
-  const roleTiles = [
-    { label: 'Partners', count: roleCount(['partner', 'Partner']) },
-    { label: 'Accounts', count: roleCount(['team-leader', 'Accounts', 'Team Leader']) },
-    { label: 'Staff', count: roleCount(['team-member', 'Staff', 'Team Member']) },
-    { label: 'Admins', count: roleCount(['admin', 'Admin']) },
-  ];
-  const activeUsers = users.filter(u => u.status === 'Active').length;
-  const inactiveUsers = users.length - activeUsers;
-  const activeClients = clients.filter(c => c.status === 'Active').length;
   const NAVY = '#1b365d';
+
+  // ── Revenue roll-ups ──
+  // Revenue counts PAID invoices only, bucketed by payment date. Unpaid invoices
+  // sit in "pending payments"; work not yet invoiced sits in "pending billing".
+  const paid = paidRecords(billingRecords);
+  const fyRecords = filterByRange(paid, 'fy');
+  const fyTotals = totals(fyRecords);
+  const mom = monthOverMonth(paid);
+  const awaitingPayment = pendingPayments(billingRecords);
+  const pending = pendingBilling(tasks);
+  // Pad against the full roster so everyone appears, even on ₹0 this year.
+  const activeUserNames = users.filter(u => u.status === 'Active').map(u => u.name);
+  const personSeries = padSlices(revenueByPerson(fyRecords), activeUserNames);
+  const categorySeries = padSlices(revenueByCategory(fyRecords), TASK_CATEGORIES);
+  const fyLabel = financialYearLabel();
 
   const uq = userSearch.trim().toLowerCase();
   const filteredUsers = users.filter(u => !uq ||
@@ -254,44 +271,45 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
           </div>
 
           {/* Stat tiles */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <KPICard title="Total Users" value={users.length} />
-            <KPICard title="Active Clients" value={activeClients} variant="success" />
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+            <KPICard
+              title={`Total revenue · ${fyLabel}`}
+              value={formatINRCompact(fyTotals.revenue)}
+              variant="success"
+              note="Payments received"
+            />
+            <KPICard
+              title="Revenue this month"
+              value={formatINRCompact(mom.current)}
+              trend={mom.change === null ? undefined : {
+                value: `${Math.abs(mom.change).toFixed(0)}% vs last month`,
+                isPositive: mom.change >= 0,
+              }}
+            />
+            {/* Invoiced, money not yet in. */}
+            <KPICard
+              title="Pending payments"
+              value={formatINRCompact(awaitingPayment.amount)}
+              variant="warning"
+              note={`${awaitingPayment.count} invoice${awaitingPayment.count === 1 ? '' : 's'} unpaid`}
+            />
+            {/* Sent for billing, invoice not yet raised. */}
+            <KPICard
+              title="Pending billing"
+              value={formatINRCompact(pending.amount)}
+              variant="warning"
+              note={`${pending.count} task${pending.count === 1 ? '' : 's'} awaiting invoice`}
+            />
             <KPICard title="Total Tasks" value={tasks.length} />
-            <KPICard title="Pending Inquiries" value={inquiries.length} variant="warning" />
           </div>
 
-          {/* Team composition + account status */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <section className="rounded-xl border border-[#E7EDF4] bg-white p-5 lg:col-span-2">
-              <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Team composition</h3>
-              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {roleTiles.map(r => (
-                  <div key={r.label}>
-                    <p className="text-[1.7rem] font-semibold leading-none" style={{ color: NAVY }}>{r.count}</p>
-                    <p className="mt-1.5 text-xs uppercase tracking-[0.08em] text-muted-foreground">{r.label}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-            <section className="rounded-xl border border-[#E7EDF4] bg-white p-5">
-              <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Account status</h3>
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-2 text-sm text-foreground/80">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#4ea72e' }} /> Active
-                  </span>
-                  <span className="text-sm font-semibold" style={{ color: NAVY }}>{activeUsers}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-2 text-sm text-foreground/80">
-                    <span className="h-2 w-2 rounded-full bg-slate-400" /> Inactive
-                  </span>
-                  <span className="text-sm font-semibold" style={{ color: NAVY }}>{inactiveUsers}</span>
-                </div>
-              </div>
-            </section>
-          </div>
+          {/* Revenue breakdown — person / category, toggled */}
+          <RevenueBreakdownCard
+            person={personSeries}
+            category={categorySeries}
+            caption={fyLabel}
+            emptyMessage="No revenue billed this financial year."
+          />
         </div>
 
 

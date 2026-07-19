@@ -1,9 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './Card';
+import { KPICard } from './KPICard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
 import { Button } from './Button';
 import { Input } from './Input';
-import { clientsAPI } from '../services/api';
+import { billingAPI, clientsAPI, tasksAPI, usersAPI } from '../services/api';
+import { RevenueBreakdownCard } from './RevenueBreakdown';
+import {
+  RANGE_OPTIONS, awaitingPaymentRecords, filterByRange, formatINR, formatINRCompact,
+  invoiceAgeInDays, monthOverMonth, padSlices, paidRecords, pendingBilling, pendingPayments,
+  revenueByCategory, revenueByClient, revenueByMonth, revenueByPerson, totals,
+  type BillingRecord, type RangeId, type RevenueSlice,
+} from '../utils/revenue';
+import { TASK_CATEGORIES } from '../utils/taskCategories';
+import { MarkAsPaidModal } from './MarkAsPaidModal';
+import { Loader2, RefreshCw, Download } from 'lucide-react';
+
+const NAVY = '#1b365d';
 
 interface BillingProps {
   user?: {
@@ -14,26 +27,101 @@ interface BillingProps {
   };
 }
 
+type TabId = 'revenue' | 'fees';
+
 export function Billing({ user }: BillingProps) {
+  const [records, setRecords] = useState<BillingRecord[]>([]);
   const [clients, setClients] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<TabId>('revenue');
+  const [range, setRange] = useState<RangeId>('fy');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [recordToPay, setRecordToPay] = useState<BillingRecord | null>(null);
 
   useEffect(() => {
-    loadClients();
+    loadData();
   }, []);
 
-  const loadClients = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const response = await clientsAPI.getAll();
-      setClients(response.data || []);
-    } catch (error) {
-      console.error('Error loading clients:', error);
+      const [billingResult, clientsResult, usersResult, tasksResult] = await Promise.allSettled([
+        billingAPI.getAll(),
+        clientsAPI.getAll(),
+        usersAPI.getAll(),
+        tasksAPI.getAll(),
+      ]);
+      if (tasksResult.status === 'fulfilled') setTasks(tasksResult.value.data || []);
+      else console.error('Error loading tasks:', tasksResult.reason);
+      if (billingResult.status === 'fulfilled') setRecords(billingResult.value.data || []);
+      else console.error('Error loading billing records:', billingResult.reason);
+      if (clientsResult.status === 'fulfilled') setClients(clientsResult.value.data || []);
+      else console.error('Error loading clients:', clientsResult.reason);
+      if (usersResult.status === 'fulfilled') setUsers(usersResult.value.data || []);
+      else console.error('Error loading users:', usersResult.reason);
     } finally {
       setLoading(false);
     }
+  };
+
+  /* ── revenue roll-ups for the active range ── */
+  // Revenue counts PAID invoices only, bucketed by payment date.
+  const paid = useMemo(() => paidRecords(records), [records]);
+  const scoped = useMemo(() => filterByRange(paid, range), [paid, range]);
+  const summary = useMemo(() => totals(scoped), [scoped]);
+  const mom = useMemo(() => monthOverMonth(paid), [paid]);
+  const awaitingPayment = useMemo(() => pendingPayments(records), [records]);
+  const pending = useMemo(() => pendingBilling(tasks), [tasks]);
+  // Backlog, so never period-filtered. Oldest first — chase those first.
+  const unpaidInvoices = useMemo(
+    () => awaitingPaymentRecords(records)
+      .slice()
+      .sort((a, b) => (invoiceAgeInDays(b) ?? 0) - (invoiceAgeInDays(a) ?? 0)),
+    [records],
+  );
+  const byClient = useMemo(() => revenueByClient(scoped), [scoped]);
+
+  // Pad against the full roster so everyone appears, even on ₹0 for this period.
+  const activeUserNames = useMemo(
+    () => users.filter(u => u.status === 'Active').map(u => u.name),
+    [users],
+  );
+  const byPerson = useMemo(
+    () => padSlices(revenueByPerson(scoped), activeUserNames),
+    [scoped, activeUserNames],
+  );
+  const byCategory = useMemo(
+    () => padSlices(revenueByCategory(scoped), TASK_CATEGORIES),
+    [scoped],
+  );
+
+  const rangeLabel = RANGE_OPTIONS.find(o => o.id === range)?.label ?? '';
+  const momTrend = mom.change === null
+    ? undefined
+    : { value: `${Math.abs(mom.change).toFixed(0)}% vs last month`, isPositive: mom.change >= 0 };
+
+  const exportBreakdown = () => {
+    const rows: string[][] = [['Dimension', 'Name', 'Revenue', 'Budgeted', 'Bills', 'Hours']];
+    const push = (dimension: string, slices: RevenueSlice[]) =>
+      slices.forEach(s => rows.push([
+        dimension, s.label, String(Math.round(s.revenue)), String(Math.round(s.budgeted)),
+        String(s.count), s.hours.toFixed(1),
+      ]));
+    push('Person', byPerson);
+    push('Category', byCategory);
+    push('Month', revenueByMonth(scoped));
+    push('Client', byClient);
+
+    const csv = rows.map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `revenue-${range}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const filteredClients = clients.filter(client =>
@@ -43,17 +131,12 @@ export function Billing({ user }: BillingProps) {
     client.firmName?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const formatCurrency = (amount: number) => {
-    if (!amount) return '₹0';
-    return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="text-4xl mb-4">⏳</div>
-          <p className="text-muted-foreground">Loading billing data...</p>
+      <div className="flex h-full items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <Loader2 className="h-7 w-7 animate-spin" style={{ color: NAVY }} />
+          <p className="text-sm">Loading billing data…</p>
         </div>
       </div>
     );
@@ -61,175 +144,359 @@ export function Billing({ user }: BillingProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-foreground mb-2">Billing & Fee Management</h1>
-          <p className="text-muted-foreground">Client fee structure and billing details</p>
+          <h1 className="text-[1.6rem] font-semibold tracking-tight" style={{ color: NAVY }}>
+            Billing &amp; Revenue
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Revenue by person and category — plus the client fee structure
+          </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={loadClients}>
-            🔄 Refresh
+          <Button size="sm" variant="secondary" onClick={exportBreakdown}>
+            <Download size={14} className="mr-1.5 inline" /> Export CSV
+          </Button>
+          <Button size="sm" variant="secondary" onClick={loadData}>
+            <RefreshCw size={14} className="mr-1.5 inline" /> Refresh
           </Button>
         </div>
       </div>
 
-      {/* Search Bar */}
-      <Card>
-        <CardContent className="pt-6">
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-[#E7EDF4]">
+        {([
+          { id: 'revenue' as TabId, label: 'Revenue analytics' },
+          { id: 'fees' as TabId, label: 'Client fee structure' },
+        ]).map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+              tab === t.id
+                ? 'border-[#1b365d] text-[#1b365d]'
+                : 'border-transparent text-muted-foreground hover:text-foreground/80'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'revenue' ? (
+        <div className="space-y-4">
+          {/* Range filter — one row above the charts */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-xs uppercase tracking-[0.1em] text-muted-foreground">Period</span>
+            {RANGE_OPTIONS.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setRange(opt.id)}
+                className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                  range === opt.id
+                    ? 'border-[#1b365d] bg-[#1b365d] text-white'
+                    : 'border-[#E7EDF4] bg-white text-foreground/70 hover:bg-[#F4F6F9]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Headline numbers */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+            <KPICard
+              title={`Revenue · ${rangeLabel}`}
+              value={formatINRCompact(summary.revenue)}
+              variant="success"
+              trend={range === 'month' ? momTrend : undefined}
+              note="Payments received"
+            />
+            {/* Both backlogs ignore the period filter — outstanding is outstanding. */}
+            <KPICard
+              title="Pending payments"
+              value={formatINRCompact(awaitingPayment.amount)}
+              variant="warning"
+              note={`${awaitingPayment.count} invoice${awaitingPayment.count === 1 ? '' : 's'} unpaid`}
+            />
+            <KPICard
+              title="Pending billing"
+              value={formatINRCompact(pending.amount)}
+              variant="warning"
+              note={`${pending.count} task${pending.count === 1 ? '' : 's'} awaiting invoice`}
+            />
+            {/* On the month range the revenue tile above already IS this month. */}
+            {range === 'month' ? (
+              <KPICard title="Hours logged" value={summary.hours.toFixed(1)} />
+            ) : (
+              <KPICard title="Revenue this month" value={formatINRCompact(mom.current)} trend={momTrend} />
+            )}
+            <KPICard
+              title="Average per bill"
+              value={formatINRCompact(summary.average)}
+              note={`${summary.count} paid bill${summary.count === 1 ? '' : 's'}`}
+            />
+          </div>
+
+          {/* Awaiting payment — the queue that turns invoices into revenue */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Awaiting payment</CardTitle>
+                <span className="text-sm text-muted-foreground">
+                  {unpaidInvoices.length === 0
+                    ? 'All invoices settled'
+                    : `${unpaidInvoices.length} unpaid · ${formatINR(awaitingPayment.amount)} outstanding`}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[180px]">Client</TableHead>
+                      <TableHead className="min-w-[120px]">Bill No.</TableHead>
+                      <TableHead className="min-w-[110px]">Bill Date</TableHead>
+                      <TableHead className="text-right">Age</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {unpaidInvoices.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                          Nothing outstanding — every invoice has been paid.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      unpaidInvoices.map(rec => {
+                        const age = invoiceAgeInDays(rec);
+                        const overdue = (age ?? 0) > 30;
+                        return (
+                          <TableRow key={rec.id} className="hover:bg-muted/50">
+                            <TableCell className="font-medium">{rec.clientName}</TableCell>
+                            <TableCell className="font-mono text-xs">{rec.billNumber}</TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {/* Explicit month — d/m/yyyy is ambiguous and these dates carry money. */}
+                              {rec.billDate
+                                ? new Date(rec.billDate).toLocaleDateString('en-IN', {
+                                    day: '2-digit', month: 'short', year: 'numeric',
+                                  })
+                                : '—'}
+                            </TableCell>
+                            <TableCell
+                              className="text-right tabular-nums"
+                              style={overdue ? { color: '#B45309', fontWeight: 600 } : undefined}
+                            >
+                              {age === null ? '—' : `${age}d`}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold tabular-nums" style={{ color: NAVY }}>
+                              {formatINR(rec.taxableAmount)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button size="sm" onClick={() => setRecordToPay(rec)}>
+                                Mark paid
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Revenue breakdown — person / category, toggled */}
+          <RevenueBreakdownCard
+            person={byPerson}
+            category={byCategory}
+            caption={rangeLabel}
+            emptyMessage="No revenue billed in this period."
+          />
+
+          {/* Top clients */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Top clients by revenue</CardTitle>
+                <span className="text-sm text-muted-foreground">
+                  {byClient.length > 10 ? `Top 10 of ${byClient.length} · ` : ''}{rangeLabel}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[220px]">Client</TableHead>
+                      <TableHead className="text-right">Bills</TableHead>
+                      <TableHead className="text-right">Revenue</TableHead>
+                      <TableHead className="text-right">Share</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {byClient.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                          No revenue billed in this period.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      byClient.slice(0, 10).map(slice => (
+                        <TableRow key={slice.key} className="hover:bg-muted/50">
+                          <TableCell className="font-medium">{slice.label}</TableCell>
+                          <TableCell className="text-right tabular-nums">{slice.count}</TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums" style={{ color: NAVY }}>
+                            {formatINR(slice.revenue)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {summary.revenue > 0 ? `${((slice.revenue / summary.revenue) * 100).toFixed(1)}%` : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Contracted annual fees per client. This is the agreed fee structure, not billed revenue.
+          </p>
+
           <Input
             type="text"
-            placeholder="Search by Client Name, File Number, PAN, or Firm Name..."
+            placeholder="Search by Client Name, File Number, PAN, or Firm Name…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full"
           />
-        </CardContent>
-      </Card>
 
-      {/* Client Fee Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-3xl mb-2">👥</div>
-              <div className="text-2xl font-bold text-foreground">{clients.length}</div>
-              <div className="text-sm text-muted-foreground">Total Clients</div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-3xl mb-2">💰</div>
-              <div className="text-2xl font-bold text-foreground">
-                {formatCurrency(clients.reduce((sum, c) => sum + (c.totalFees || 0), 0))}
-              </div>
-              <div className="text-sm text-muted-foreground">Total Fee Structure</div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-3xl mb-2">📊</div>
-              <div className="text-2xl font-bold text-foreground">
-                {formatCurrency(clients.reduce((sum, c) => sum + (c.totalFees || 0), 0) / (clients.length || 1))}
-              </div>
-              <div className="text-sm text-muted-foreground">Average Per Client</div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-3xl mb-2">✅</div>
-              <div className="text-2xl font-bold text-foreground">
-                {clients.filter(c => c.status === 'Active').length}
-              </div>
-              <div className="text-sm text-muted-foreground">Active Clients</div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Client Billing Table */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Client Fee Details</CardTitle>
-            <span className="text-sm text-muted-foreground">
-              {filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''}
-            </span>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <KPICard title="Total Clients" value={clients.length} />
+            <KPICard
+              title="Total Fee Structure"
+              value={formatINRCompact(clients.reduce((sum, c) => sum + (c.totalFees || 0), 0))}
+            />
+            <KPICard
+              title="Average Per Client"
+              value={formatINRCompact(clients.reduce((sum, c) => sum + (c.totalFees || 0), 0) / (clients.length || 1))}
+            />
+            <KPICard
+              title="Active Clients"
+              value={clients.filter(c => c.status === 'Active').length}
+              variant="success"
+            />
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[80px]">File No.</TableHead>
-                  <TableHead className="min-w-[200px]">Client Name</TableHead>
-                  <TableHead className="min-w-[150px]">Firm Name</TableHead>
-                  <TableHead className="min-w-[120px]">PAN</TableHead>
-                  <TableHead className="min-w-[150px]">GSTIN</TableHead>
-                  <TableHead className="min-w-[100px] text-right">ITR Fees</TableHead>
-                  <TableHead className="min-w-[100px] text-right">GST Fees</TableHead>
-                  <TableHead className="min-w-[120px] text-right">GST Annual</TableHead>
-                  <TableHead className="min-w-[120px] text-right">Accounting</TableHead>
-                  <TableHead className="min-w-[100px] text-right">Audit</TableHead>
-                  <TableHead className="min-w-[120px] text-right">Company Act</TableHead>
-                  <TableHead className="min-w-[100px] text-right">TDS</TableHead>
-                  <TableHead className="min-w-[140px] text-right">PF/ESIC/PT</TableHead>
-                  <TableHead className="min-w-[120px] text-right">Consultancy</TableHead>
-                  <TableHead className="min-w-[120px] text-right bg-accent font-bold">Total Fees</TableHead>
-                  <TableHead className="min-w-[120px]">Mobile</TableHead>
-                  <TableHead className="min-w-[200px]">Email</TableHead>
-                  <TableHead className="min-w-[100px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredClients.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={18} className="text-center text-muted-foreground py-8">
-                      {searchTerm ? 'No clients found matching your search.' : 'No clients available.'}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredClients.map((client) => (
-                    <TableRow key={client.id} className="hover:bg-muted/50">
-                      <TableCell className="font-mono text-xs">{client.fileNumber || '-'}</TableCell>
-                      <TableCell className="font-medium">{client.name}</TableCell>
-                      <TableCell>{client.firmName || '-'}</TableCell>
-                      <TableCell className="font-mono text-xs">{client.pan || '-'}</TableCell>
-                      <TableCell className="font-mono text-xs">{client.gst || '-'}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(client.itrFees || 0)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(client.gstFees || 0)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(client.gstAnnualReturnFees || 0)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(client.accountingFees || 0)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(client.auditFees || 0)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(client.companyActFees || 0)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(client.tdsFees || 0)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(client.pfEsicPtLabourFees || 0)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(client.consultancyFees || 0)}</TableCell>
-                      <TableCell className="text-right font-bold text-primary bg-accent/50">{formatCurrency(client.totalFees || 0)}</TableCell>
-                      <TableCell>{client.mobileNumber || client.contact || '-'}</TableCell>
-                      <TableCell className="text-sm">{client.emailId || client.email || '-'}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setSelectedClient(client)}
-                        >
-                          View
-                        </Button>
-                      </TableCell>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Client Fee Details</CardTitle>
+                <span className="text-sm text-muted-foreground">
+                  {filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[80px]">File No.</TableHead>
+                      <TableHead className="min-w-[200px]">Client Name</TableHead>
+                      <TableHead className="min-w-[150px]">Firm Name</TableHead>
+                      <TableHead className="min-w-[120px]">PAN</TableHead>
+                      <TableHead className="min-w-[150px]">GSTIN</TableHead>
+                      <TableHead className="min-w-[100px] text-right">ITR Fees</TableHead>
+                      <TableHead className="min-w-[100px] text-right">GST Fees</TableHead>
+                      <TableHead className="min-w-[120px] text-right">GST Annual</TableHead>
+                      <TableHead className="min-w-[120px] text-right">Accounting</TableHead>
+                      <TableHead className="min-w-[100px] text-right">Audit</TableHead>
+                      <TableHead className="min-w-[120px] text-right">Company Act</TableHead>
+                      <TableHead className="min-w-[100px] text-right">TDS</TableHead>
+                      <TableHead className="min-w-[140px] text-right">PF/ESIC/PT</TableHead>
+                      <TableHead className="min-w-[120px] text-right">Consultancy</TableHead>
+                      <TableHead className="min-w-[120px] bg-accent text-right font-bold">Total Fees</TableHead>
+                      <TableHead className="min-w-[120px]">Mobile</TableHead>
+                      <TableHead className="min-w-[200px]">Email</TableHead>
+                      <TableHead className="min-w-[100px]">Actions</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredClients.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={18} className="py-8 text-center text-muted-foreground">
+                          {searchTerm ? 'No clients found matching your search.' : 'No clients available.'}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredClients.map((client) => (
+                        <TableRow key={client.id} className="hover:bg-muted/50">
+                          <TableCell className="font-mono text-xs">{client.fileNumber || '-'}</TableCell>
+                          <TableCell className="font-medium">{client.name}</TableCell>
+                          <TableCell>{client.firmName || '-'}</TableCell>
+                          <TableCell className="font-mono text-xs">{client.pan || '-'}</TableCell>
+                          <TableCell className="font-mono text-xs">{client.gst || '-'}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{formatINR(client.itrFees || 0)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{formatINR(client.gstFees || 0)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{formatINR(client.gstAnnualReturnFees || 0)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{formatINR(client.accountingFees || 0)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{formatINR(client.auditFees || 0)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{formatINR(client.companyActFees || 0)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{formatINR(client.tdsFees || 0)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{formatINR(client.pfEsicPtLabourFees || 0)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{formatINR(client.consultancyFees || 0)}</TableCell>
+                          <TableCell className="bg-accent/50 text-right font-bold text-primary">{formatINR(client.totalFees || 0)}</TableCell>
+                          <TableCell>{client.mobileNumber || client.contact || '-'}</TableCell>
+                          <TableCell className="text-sm">{client.emailId || client.email || '-'}</TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="secondary" onClick={() => setSelectedClient(client)}>
+                              View
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Record payment against an invoice */}
+      {recordToPay && user && (
+        <MarkAsPaidModal
+          record={recordToPay}
+          user={{ id: user.id, name: user.name }}
+          onClose={() => setRecordToPay(null)}
+          onSuccess={loadData}
+        />
+      )}
 
       {/* Client Detail Modal */}
       {selectedClient && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+          <Card className="max-h-[90vh] w-full max-w-3xl overflow-y-auto">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Client Billing Details</CardTitle>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setSelectedClient(null)}
-                >
+                <Button size="sm" variant="secondary" onClick={() => setSelectedClient(null)}>
                   ✕ Close
                 </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Client Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <div className="text-sm text-muted-foreground">File Number</div>
@@ -265,9 +532,9 @@ export function Billing({ user }: BillingProps) {
                 </div>
               </div>
 
-              {/* Fee Breakdown */}
+              {/* Contracted fee breakdown */}
               <div>
-                <h3 className="font-semibold mb-4">Fee Structure</h3>
+                <h3 className="mb-4 font-semibold">Fee Structure</h3>
                 <div className="space-y-2">
                   {[
                     { label: 'ITR Fees', value: selectedClient.itrFees },
@@ -280,16 +547,43 @@ export function Billing({ user }: BillingProps) {
                     { label: 'PF/ESIC/PT/Labour Fees', value: selectedClient.pfEsicPtLabourFees },
                     { label: 'Consultancy Fees', value: selectedClient.consultancyFees },
                   ].map((fee, idx) => (
-                    <div key={idx} className="flex justify-between items-center py-2 border-b border-border">
+                    <div key={idx} className="flex items-center justify-between border-b border-border py-2">
                       <span className="text-sm">{fee.label}</span>
-                      <span className="font-mono font-medium">{formatCurrency(fee.value || 0)}</span>
+                      <span className="font-mono font-medium">{formatINR(fee.value || 0)}</span>
                     </div>
                   ))}
-                  <div className="flex justify-between items-center py-3 bg-accent rounded px-3 mt-2">
+                  <div className="mt-2 flex items-center justify-between rounded bg-accent px-3 py-3">
                     <span className="font-bold">Total Fees</span>
-                    <span className="font-mono font-bold text-lg text-primary">{formatCurrency(selectedClient.totalFees || 0)}</span>
+                    <span className="font-mono text-lg font-bold text-primary">{formatINR(selectedClient.totalFees || 0)}</span>
                   </div>
                 </div>
+              </div>
+
+              {/* Actual billed revenue for this client */}
+              <div>
+                <h3 className="mb-4 font-semibold">Billed revenue ({rangeLabel})</h3>
+                {(() => {
+                  const slice = byClient.find(s => s.key === selectedClient.name);
+                  if (!slice) {
+                    return <p className="text-sm text-muted-foreground">No bills raised for this client in this period.</p>;
+                  }
+                  return (
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <div className="text-sm text-muted-foreground">Revenue</div>
+                        <div className="font-semibold" style={{ color: NAVY }}>{formatINR(slice.revenue)}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm text-muted-foreground">Bills</div>
+                        <div className="font-semibold" style={{ color: NAVY }}>{slice.count}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm text-muted-foreground">Hours</div>
+                        <div className="font-semibold" style={{ color: NAVY }}>{slice.hours.toFixed(1)}</div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>

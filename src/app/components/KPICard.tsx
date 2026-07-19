@@ -8,6 +8,8 @@ interface KPICardProps {
     value: string;
     isPositive: boolean;
   };
+  /** Muted caption under the value — context, not a direction (unlike `trend`). */
+  note?: string;
   variant?: 'default' | 'danger' | 'success' | 'warning';
 }
 
@@ -20,7 +22,7 @@ const accent: Record<NonNullable<KPICardProps['variant']>, string> = {
   warning: '#F59E0B',
 };
 
-export function KPICard({ title, value, icon, trend, variant = 'default' }: KPICardProps) {
+export function KPICard({ title, value, icon, trend, note, variant = 'default' }: KPICardProps) {
   const color = accent[variant];
 
   return (
@@ -49,6 +51,7 @@ export function KPICard({ title, value, icon, trend, variant = 'default' }: KPIC
           {trend.isPositive ? '↑' : '↓'} {trend.value}
         </p>
       )}
+      {note && <p className="mt-2 text-xs text-muted-foreground">{note}</p>}
     </div>
   );
 }
