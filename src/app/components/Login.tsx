@@ -69,6 +69,30 @@ function KapsLogo({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
   );
 }
 
+/**
+ * The browser's position, or null.
+ *
+ * Resolves rather than rejects on every failure path — denied permission, no
+ * hardware, a slow fix — because location is a nice-to-have on the login audit
+ * and must never stop someone signing in. The timeout is deliberately short for
+ * the same reason.
+ */
+function getPosition(timeoutMs = 4000): Promise<{ latitude: number; longitude: number } | null> {
+  return new Promise((resolve) => {
+    if (!('geolocation' in navigator)) return resolve(null);
+    let settled = false;
+    const done = (v: { latitude: number; longitude: number } | null) => {
+      if (!settled) { settled = true; resolve(v); }
+    };
+    const timer = setTimeout(() => done(null), timeoutMs);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { clearTimeout(timer); done({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }); },
+      () => { clearTimeout(timer); done(null); },
+      { enableHighAccuracy: false, timeout: timeoutMs, maximumAge: 5 * 60 * 1000 },
+    );
+  });
+}
+
 export function Login({ onLogin, onForgotPassword }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -85,7 +109,9 @@ export function Login({ onLogin, onForgotPassword }: LoginProps) {
     setLoading(true);
 
     try {
-      const response = await loginAPI.login({ email, password });
+      // Best-effort; resolves to null if the user declines or it takes too long.
+      const pos = await getPosition();
+      const response = await loginAPI.login({ email, password, ...(pos || {}) });
 
       if (response.success && response.data) {
         // The login endpoint returns the stored role verbatim, so normalize it

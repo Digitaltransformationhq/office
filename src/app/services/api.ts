@@ -268,6 +268,10 @@ export const loginAPI = {
   login: async (credentials: {
     email: string;
     password: string;
+    /** Optional: only the browser can obtain these, and only with permission.
+     *  IP and device are read from the request headers server-side. */
+    latitude?: number;
+    longitude?: number;
   }) => {
     return fetchAPI('/login', {
       method: 'POST',

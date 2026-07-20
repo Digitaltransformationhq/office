@@ -220,7 +220,47 @@ app.get("/make-server-0abfa7cf/health", (c) => {
 app.post('/make-server-0abfa7cf/login', async (c) => {
   try {
     const body = await c.req.json();
-    const { email, password, latitude, longitude, location, ipAddress, userAgent } = body;
+    const { email, password, latitude, longitude } = body;
+
+    /**
+     * IP and device come from the request, not the client payload.
+     *
+     * They used to be sent in the body — the browser asked api.ipify.org for
+     * its own IP and passed navigator.userAgent along. That was lost when the
+     * login screen was rewritten to send only email and password, so every
+     * sign-in since has recorded blank IP, device and location. Reading the
+     * headers here cannot be lost the same way, needs no third-party call, and
+     * is harder to spoof than a value the client chooses.
+     *
+     * x-forwarded-for is a comma-separated chain; the client is the first hop.
+     */
+    const ipAddress =
+      (c.req.header('x-forwarded-for') || '').split(',')[0].trim() ||
+      c.req.header('x-real-ip') ||
+      body.ipAddress ||
+      null;
+    const userAgent = c.req.header('user-agent') || body.userAgent || null;
+
+    /**
+     * Coordinates still have to come from the browser — only it can ask for
+     * them, and only with the user's permission. Turn them into a place name
+     * here, best-effort: a failed or slow lookup must never hold up a login.
+     */
+    let location = body.location || null;
+    if (!location && latitude != null && longitude != null) {
+      try {
+        const geo = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`,
+          { headers: { 'User-Agent': 'kaps-office/1.0' }, signal: AbortSignal.timeout(2500) },
+        );
+        const j = await geo.json();
+        const a = j?.address || {};
+        location = [a.city || a.town || a.village || a.county, a.state, a.country]
+          .filter(Boolean).join(', ') || j?.display_name || null;
+      } catch (e) {
+        console.log('Reverse geocode failed (login continues):', e);
+      }
+    }
 
     console.log('=== LOGIN REQUEST ===');
     console.log('Login attempt for email:', email);
