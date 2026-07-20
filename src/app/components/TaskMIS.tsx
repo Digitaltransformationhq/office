@@ -148,11 +148,23 @@ export function TaskMIS({ user }: TaskMISProps) {
   };
 
   const handleReopen = async (task: Task) => {
+    // Reopening something already invoiced does not un-invoice it: the bill has
+    // been raised and still counts as revenue. Say so, rather than letting a
+    // partner discover the mismatch later.
+    if (isFinishedTask(task.status) && !confirm(
+      `"${task.task}" has already been billed. Reopening puts it back in progress ` +
+      `but does NOT cancel the invoice — delete the billing record for that.\n\nContinue?`
+    )) return;
+
     const reason = prompt('Reason for reopening:');
     if (!reason?.trim()) return;
+
+    // Append rather than replace: this used to overwrite the field, discarding
+    // every earlier comment and rejection note on the task.
+    const note = `[Reopened by ${user.name} on ${new Date().toLocaleDateString('en-IN')}] ${reason.trim()}`;
     const r = await tasksAPI.update(task.id, {
       status: 'In Progress',
-      comments: `Task reopened by ${user.name}. Reason: ${reason}`,
+      comments: task.comments ? `${task.comments}\n${note}` : note,
     });
     r.success ? loadTasks() : alert(r.error);
   };
@@ -251,11 +263,14 @@ export function TaskMIS({ user }: TaskMISProps) {
           <IconBtn icon={<Repeat2 size={14} />} tone="default" title="Reassign" onClick={() => { setSelectedTask(task); setShowReassignModal(true); }} />
         )}
         {/* No "Send for billing" here any more: approving a completed task moves
-            it to Pending for Billing on its own, and 'Completed' now means the
-            bill has already been raised — offering it would push billed work
-            back into the billing queue. Reopen stays as the partner's escape
-            hatch. */}
-        {task.status === TASK_STATUS.completed && isPartnerOrAdmin && (
+            it to Pending for Billing on its own, and a finished task has already
+            been invoiced — offering it would push billed work back into the
+            billing queue. Reopen stays as the partner's escape hatch.
+
+            Matched on isFinishedTask, not on one status: the terminal state
+            moved from 'Completed' to 'Billed', and this was left comparing
+            against 'Completed', so a billed task showed no action at all. */}
+        {isFinishedTask(task.status) && isPartnerOrAdmin && (
           <IconBtn icon={<RotateCcw size={14} />} tone="amber" title="Reopen" onClick={() => handleReopen(task)} />
         )}
         <IconBtn icon={<Pencil size={14} />} tone="default" title={canEdit ? 'Edit task' : 'No permission'} disabled={!canEdit} onClick={() => { setSelectedTask(task); setShowEditModal(true); }} />
