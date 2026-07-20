@@ -478,8 +478,9 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
               </CardHeader>
               <CardContent>
                 <TaskApprovalQueue
-                  userId={parseInt(user.id)}
+                  userId={user.id}
                   userName={user.name}
+                  userRole={user.role}
                 />
               </CardContent>
             </Card>

@@ -8,7 +8,7 @@ import { CreateTaskModal } from './CreateTaskModal';
 import { EditTaskModal } from './EditTaskModal';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
-import { TASK_STATUS, statusColor, statusLabel, isAwaitingApproval } from '../utils/taskStatus';
+import { TASK_STATUS, statusColor, statusLabel, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import { Loader2, Plus, MessageSquarePlus, RotateCcw } from 'lucide-react';
 
 interface TeamMemberDashboardProps {
@@ -263,7 +263,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
     );
   }
 
-  const activeTasks = tasks.filter(t => t.status !== 'Completed');
+  const activeTasks = tasks.filter(t => isOpenTask(t.status));
   const returnedTasks = tasks.filter(isRejectedTask);
   const count = (status: string) => tasks.filter(t => t.status === status).length;
 
@@ -330,7 +330,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <KPICard
             title="Active"
-            value={tasks.filter(t => t.status !== 'Completed' && t.status !== 'Rejected').length}
+            value={activeTasks.length}
           />
           <KPICard title="In Progress" value={count('In Progress')} />
           <KPICard
@@ -338,7 +338,11 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
             value={tasks.filter(t => isAwaitingApproval(t.status)).length}
             variant="warning"
           />
-          <KPICard title="Completed" value={count('Completed')} variant="success" />
+          <KPICard
+            title="Completed"
+            value={tasks.filter(t => isFinishedTask(t.status)).length}
+            variant="success"
+          />
         </div>
 
         {/* ── Returned for correction ── */}

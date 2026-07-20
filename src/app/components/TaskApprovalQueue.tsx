@@ -2,12 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { ReviewTaskModal } from './ReviewTaskModal';
 import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
-import { TASK_STATUS } from '../utils/taskStatus';
+import { TASK_STATUS, canApproveTask } from '../utils/taskStatus';
 import { ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 
 interface TaskApprovalQueueProps {
-  userId: number;
+  /**
+   * The real user id ('user:7'), not a numeric extraction. It is written to
+   * tasks.approved_by_id, which carries a foreign key to users(id) — a bare
+   * number would violate it.
+   */
+  userId: string;
   userName: string;
+  userRole: string;
 }
 
 const NAVY = '#1b365d';
@@ -18,7 +24,7 @@ function priorityClass(p: string) {
   return 'bg-slate-100 text-slate-600';
 }
 
-export function TaskApprovalQueue({ userId, userName }: TaskApprovalQueueProps) {
+export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQueueProps) {
   const [pendingTasks, setPendingTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -69,7 +75,9 @@ export function TaskApprovalQueue({ userId, userName }: TaskApprovalQueueProps) 
         {pendingTasks.length} task{pendingTasks.length > 1 ? 's' : ''} awaiting your approval
       </p>
 
-      {pendingTasks.map((task) => (
+      {pendingTasks.map((task) => {
+        const mine = canApproveTask(task, { id: userId, role: userRole });
+        return (
         <div key={task.id} className="rounded-xl border border-[#E7EDF4] p-4 transition-all hover:border-[#d5dfea] hover:shadow-[0_10px_30px_-20px_rgba(10,23,40,0.5)]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
@@ -97,12 +105,23 @@ export function TaskApprovalQueue({ userId, userName }: TaskApprovalQueueProps) 
               </div>
             </div>
 
-            <button
-              onClick={() => setSelectedTask(task)}
-              className="shrink-0 rounded-full bg-[#1b365d] px-4 py-1.5 text-xs font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a] hover:shadow-[0_12px_26px_-10px_rgba(27,54,93,0.7)]"
-            >
-              Review
-            </button>
+            {/* Routed tasks stay visible to everyone so nothing looks lost when
+                the named approver is away — but only they can act on it. */}
+            {mine ? (
+              <button
+                onClick={() => setSelectedTask(task)}
+                className="shrink-0 rounded-full bg-[#1b365d] px-4 py-1.5 text-xs font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a] hover:shadow-[0_12px_26px_-10px_rgba(27,54,93,0.7)]"
+              >
+                Review
+              </button>
+            ) : (
+              <span
+                className="shrink-0 rounded-full bg-[#F4F6F9] px-3 py-1.5 text-[11px] font-medium text-muted-foreground"
+                title={`Only ${task.approverName} can approve this task`}
+              >
+                For {task.approverName}
+              </span>
+            )}
           </div>
 
           {task.createdBy && (
@@ -111,7 +130,8 @@ export function TaskApprovalQueue({ userId, userName }: TaskApprovalQueueProps) 
             </p>
           )}
         </div>
-      ))}
+        );
+      })}
 
       {selectedTask && (
         <ReviewTaskModal

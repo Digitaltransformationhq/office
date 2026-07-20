@@ -7,7 +7,8 @@ import { X, ClipboardCheck, Pencil, Check, ChevronDown } from 'lucide-react';
 
 interface ReviewTaskModalProps {
   task: any;
-  approverId: number;
+  /** Real user id ('user:7') — written to approved_by_id, which has an FK. */
+  approverId: string;
   approverName: string;
   onClose: () => void;
   onSuccess: () => void;
@@ -32,6 +33,14 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
     priority: task.priority || 'Medium',
     targetDate: task.targetDate || '',
   });
+  /**
+   * Captured when approving finished work: the approver sets the fee at the
+   * moment they release it to Accounts, so billing never has to guess.
+   */
+  const [billingAmount, setBillingAmount] = useState(
+    task.taxableAmount != null ? String(task.taxableAmount) : ''
+  );
+  const [billingNote, setBillingNote] = useState(task.billingDescription || '');
   const { showSuccess, showError } = useToast();
 
   /**
@@ -51,6 +60,17 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
     : TASK_STATUS.pending;
 
   const handleApprove = async () => {
+    // The amount travels with the approval, so Accounts receives a task that is
+    // already priced. Guarded here because the field is the whole point of the
+    // completion gate.
+    let amount = 0;
+    if (isCompletionReview) {
+      amount = parseFloat(billingAmount);
+      if (!billingAmount.trim() || isNaN(amount) || amount < 0) {
+        showError('Enter the billing amount before approving');
+        return;
+      }
+    }
     setLoading(true);
     try {
       const response = await tasksAPI.update(task.id, {
@@ -58,10 +78,17 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
         approvedBy: approverName,
         approvedById: approverId,
         approvedAt: new Date().toISOString(),
+        // Claim an unrouted task, so every later step has someone to go back to.
+        ...(task.approverId ? {} : { approverId, approverName }),
+        ...(isCompletionReview ? {
+          taxableAmount: amount,
+          billingFees: amount,
+          billingDescription: billingNote.trim(),
+        } : {}),
       });
       if (response.success) {
         showSuccess(isCompletionReview
-          ? 'Completion approved. Task moved to Pending for Billing.'
+          ? 'Approved and sent to Accounts for billing.'
           : `Task approved and assigned to ${task.assignedTo}`);
         onSuccess();
       } else {
@@ -87,6 +114,7 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
         approvedBy: approverName,
         approvedById: approverId,
         approvedAt: new Date().toISOString(),
+        ...(task.approverId ? {} : { approverId, approverName }),
       });
       if (response.success) {
         showSuccess('Task updated and approved successfully');
@@ -171,6 +199,43 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
                 </Row>
                 {task.comments && <Row label="Comments" value={task.comments} multiline />}
               </dl>
+
+              {/* The completion gate is where the fee is set. Accounts bills what
+                  is agreed here, so the task reaches them already priced rather
+                  than needing a separate send-for-billing step. */}
+              {isCompletionReview && (
+                <div className="mt-5 space-y-4 rounded-xl border border-[#E7EDF4] bg-[#FAFBFD] p-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+                      Billing amount <span className="text-[#c0392b]">*</span>
+                    </label>
+                    <input
+                      className={inputCls}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={billingAmount}
+                      onChange={e => setBillingAmount(e.target.value)}
+                      placeholder="0.00"
+                    />
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Sent to Accounts with the task when you approve.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+                      Billing note <span className="font-normal text-muted-foreground">(optional)</span>
+                    </label>
+                    <input
+                      className={inputCls}
+                      value={billingNote}
+                      onChange={e => setBillingNote(e.target.value)}
+                      placeholder="What the invoice should say…"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-4">

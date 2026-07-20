@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { tasksAPI, usersAPI, clientsAPI } from '../services/api';
 import { CreateClientModal } from './CreateClientModal';
+import { TASK_STATUS } from '../utils/taskStatus';
 import { X, ClipboardList, ChevronDown, Plus, Info, Search } from 'lucide-react';
 
 interface CreateTaskModalProps {
@@ -23,6 +24,9 @@ const inputCls =
 export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, currentUser }: CreateTaskModalProps) {
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
+  const [approvers, setApprovers] = useState<any[]>([]);
+  /** Partners and admins sign tasks off, so their own need no approval gate. */
+  const isApproverRole = ['partner', 'admin', 'Partner', 'Admin'].includes(currentUserRole || '');
   const [clients, setClients] = useState<any[]>([]);
   const [showCreateClient, setShowCreateClient] = useState(false);
 
@@ -41,6 +45,8 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
     taskDate: new Date().toISOString().split('T')[0],
     completionDate: '',
     comments: '',
+    /** Blank is meaningful: any partner or admin may pick the approval up. */
+    approverId: '',
   });
 
   const taskCategories = [
@@ -70,6 +76,10 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
         u.role === 'partner' || u.role === 'Partner' ||
         u.role === 'team-leader' || u.role === 'Accounts' || u.role === 'Team Leader'
       ));
+      // Partners and admins are the people who can sign a task off.
+      setApprovers(usersRes.data.filter((u: any) =>
+        ['partner', 'admin', 'Partner', 'Admin'].includes(u.role)
+      ));
       setClients(clientsRes.data);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -88,7 +98,17 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
         return;
       }
 
-      const isStaff = currentUserRole === 'team-member' || currentUserRole === 'Staff' || currentUserRole === 'Team Member';
+      /**
+       * A partner or admin creating a task is the authority on it, so it starts
+       * at 'Pending' and needs no sign-off — and they become its approver, so
+       * the completion approval comes back to them. Anyone else is proposing
+       * work, so it starts at the approval gate; they may nominate an approver,
+       * and if they leave it blank whoever approves claims it.
+       */
+      const isApprover = isApproverRole;
+      const chosenApprover = approvers.find(u => u.id === formData.approverId);
+      const approverId = isApprover ? (currentUser?.id || '') : formData.approverId;
+      const approverName = isApprover ? (currentUser?.name || '') : (chosenApprover?.name || '');
 
       const taskData = {
         task: formData.taskName,
@@ -97,7 +117,7 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
         assignedTo: selectedUser.name,
         assignedToId: formData.assignedToId,
         priority: formData.priority,
-        status: isStaff ? 'Pending Approval' : 'Pending',
+        status: isApprover ? TASK_STATUS.pending : TASK_STATUS.pendingNewTaskApproval,
         startDate: formData.taskDate,
         targetDate: formData.completionDate,
         comments: formData.comments,
@@ -105,6 +125,8 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
         budgetedFee: 0,
         createdBy: currentUser?.name || 'Unknown',
         createdById: currentUser?.id || '',
+        approverId,
+        approverName,
       };
 
       const response = await tasksAPI.create(taskData);
@@ -118,9 +140,11 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
         return;
       }
 
-      const message = isStaff
-        ? `Task "${formData.taskName}" submitted for Partner approval`
-        : `Task "${formData.taskName}" assigned to ${selectedUser.name} successfully!`;
+      const message = isApprover
+        ? `Task "${formData.taskName}" assigned to ${selectedUser.name} successfully!`
+        : approverName
+          ? `Task "${formData.taskName}" sent to ${approverName} for approval`
+          : `Task "${formData.taskName}" submitted for approval`;
 
       alert(message);
       onTaskCreated();
@@ -293,6 +317,28 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
                 {['Low', 'Medium', 'High', 'Urgent'].map(p => <option key={p} value={p}>{p}</option>)}
               </SelectField>
             </Field>
+
+            {/* Only shown to those whose tasks need signing off. A partner or
+                admin approves their own tasks by definition, so asking them
+                would be noise. */}
+            {!isApproverRole && (
+              <Field
+                label="Send for approval to"
+                hint="Optional — leave blank and any partner can approve it"
+              >
+                <SelectField
+                  value={formData.approverId}
+                  onChange={e => setFormData({ ...formData, approverId: e.target.value })}
+                >
+                  <option value="">Any partner or admin</option>
+                  {approvers.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} · {a.role === 'admin' || a.role === 'Admin' ? 'Admin' : 'Partner'}
+                    </option>
+                  ))}
+                </SelectField>
+              </Field>
+            )}
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Assignment date" required>

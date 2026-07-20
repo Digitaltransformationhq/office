@@ -3,7 +3,7 @@ import { KPICard } from './KPICard';
 import { tasksAPI, clientsAPI, usersAPI, billingAPI } from '../services/api';
 import { useToast } from './Toast';
 import { ClipboardList, Wallet, BarChart3, Download, IndianRupee, Users, TrendingUp, ChevronDown, Receipt, Search, X, Clock } from 'lucide-react';
-import { statusColor, statusLabel } from '../utils/taskStatus';
+import { statusColor, statusLabel, isFinishedTask } from '../utils/taskStatus';
 
 interface ReportsProps {
   user?: { id: string; name: string; email: string; role: string };
@@ -75,7 +75,7 @@ export function Reports({ user }: ReportsProps) {
       const headers = 'Team Member,Total Tasks,Completed,In Progress,Completion Rate\n';
       const rows = users.map(u => {
         const userTasks = tasks.filter(t => t.assignedToId === u.id);
-        const completed = userTasks.filter(t => t.status === 'Completed').length;
+        const completed = userTasks.filter(t => isFinishedTask(t.status)).length;
         const rate = userTasks.length > 0 ? ((completed / userTasks.length) * 100).toFixed(1) : '0';
         return `"${u.name}","${userTasks.length}","${completed}","${userTasks.filter(t => t.status === 'In Progress').length}","${rate}%"`;
       }).join('\n');
@@ -103,7 +103,7 @@ export function Reports({ user }: ReportsProps) {
 
   const performanceReport = users.map(u => {
     const userTasks = tasks.filter(t => t.assignedToId === u.id);
-    const completed = userTasks.filter(t => t.status === 'Completed').length;
+    const completed = userTasks.filter(t => isFinishedTask(t.status)).length;
     const inProgress = userTasks.filter(t => t.status === 'In Progress').length;
     const completionRate = userTasks.length > 0 ? ((completed / userTasks.length) * 100).toFixed(1) : '0';
     return { name: u.name, role: u.role, totalTasks: userTasks.length, completed, inProgress, completionRate };

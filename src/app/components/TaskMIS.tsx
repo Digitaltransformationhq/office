@@ -3,7 +3,7 @@ import { tasksAPI } from '../services/api';
 import { ReassignTaskModal } from './ReassignTaskModal';
 import { EditTaskModal } from './EditTaskModal';
 import { CreateTaskModal } from './CreateTaskModal';
-import { TASK_STATUS, statusColor, statusLabel } from '../utils/taskStatus';
+import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import {
   Search, SlidersHorizontal, Check, X, Repeat2,
   RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp, Plus,
@@ -181,8 +181,8 @@ export function TaskMIS({ user }: TaskMISProps) {
     priorityFilter !== 'all' || assignedToFilter || statusFilter !== 'all' ||
     assignmentStatusFilter !== 'all';
 
-  const completedTasks = tasks.filter(t => t.status === 'Completed');
-  const pendingTasks = tasks.filter(t => t.status !== 'Completed');
+  const completedTasks = tasks.filter(t => isFinishedTask(t.status));
+  const pendingTasks = tasks.filter(t => isOpenTask(t.status));
   const pendingAcceptanceTasks = tasks.filter(t => t.assignmentStatus === 'Pending Acceptance');
 
   const baseList =
@@ -250,7 +250,7 @@ export function TaskMIS({ user }: TaskMISProps) {
         {isMine && isLive && task.status === 'In Progress' && (
           <IconBtn icon={<CheckCheck size={14} />} tone="green" title="Mark done" onClick={() => handleStatusUpdate(task, TASK_STATUS.pendingCompletionApproval)} />
         )}
-        {assign !== 'Pending Acceptance' && assign !== 'Rejected' && task.status !== 'Completed' && task.assignedToId === user.id && (
+        {assign !== 'Pending Acceptance' && assign !== 'Rejected' && isOpenTask(task.status) && task.assignedToId === user.id && (
           <IconBtn icon={<Repeat2 size={14} />} tone="default" title="Reassign" onClick={() => { setSelectedTask(task); setShowReassignModal(true); }} />
         )}
         {/* No "Send for billing" here any more: approving a completed task moves

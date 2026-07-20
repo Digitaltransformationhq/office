@@ -33,6 +33,14 @@ function transformTask(task: any) {
     reassignedAt: task.reassigned_at,
     createdBy: task.created_by,
     createdById: task.created_by_id,
+    // Who the approval is routed to. Null means any partner may take it — the
+    // approval queue relies on that distinction to decide who can act.
+    approverId: task.approver_id,
+    approverName: task.approver_name,
+    // Who actually signed it off, which may differ from who it was routed to.
+    approvedById: task.approved_by_id,
+    approvedBy: task.approved_by_name,
+    approvedAt: task.approved_at,
     createdAt: task.created_at,
     updatedAt: task.updated_at,
   };

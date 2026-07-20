@@ -306,6 +306,9 @@ app.post('/make-server-0abfa7cf/tasks', async (c) => {
     // Add created_by fields if provided
     if (body.createdBy !== undefined) task.created_by = body.createdBy;
     if (body.createdById !== undefined) task.created_by_id = body.createdById;
+    // Who the approval is routed to. Null is meaningful: any partner may take it.
+    if (body.approverId !== undefined) task.approver_id = body.approverId || null;
+    if (body.approverName !== undefined) task.approver_name = body.approverName || null;
 
     console.log('Task object to insert:', JSON.stringify(task, null, 2));
 
@@ -390,6 +393,15 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
     if (body.billingFees !== undefined) updates.billing_fees = body.billingFees;
     if (body.taxableAmount !== undefined) updates.taxable_amount = body.taxableAmount;
     if (body.billingDescription !== undefined) updates.billing_description = body.billingDescription;
+
+    // Approval routing. These were previously accepted from the client and
+    // silently discarded, so nothing recorded who a task was routed to or who
+    // signed it off — and the completion approval had no one to go back to.
+    if (body.approverId !== undefined) updates.approver_id = body.approverId || null;
+    if (body.approverName !== undefined) updates.approver_name = body.approverName || null;
+    if (body.approvedById !== undefined) updates.approved_by_id = body.approvedById || null;
+    if (body.approvedBy !== undefined) updates.approved_by_name = body.approvedBy || null;
+    if (body.approvedAt !== undefined) updates.approved_at = body.approvedAt || null;
 
     // Reassignment fields - only add if provided
     if (body.assignedTo !== undefined) updates.assigned_to = body.assignedTo;
@@ -2272,13 +2284,13 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
     }
 
     // Raising the bill is the last step of the lifecycle, so the task lands on
-    // 'Completed'. (It used to stop at 'Billed'; that value is retained in the
-    // CHECK constraint only so pre-existing rows still render.)
-    console.log('Updating task status to Completed...');
+    // 'Billed' — the terminal state. completion_date is stamped here because
+    // nothing else sets it, leaving billing reports without a date.
+    console.log('Updating task status to Billed...');
     const { data: updatedTask, error: updateError } = await supabase
       .from('tasks')
       .update({ 
-        status: 'Completed',
+        status: 'Billed',
         completion_date: new Date().toISOString().split('T')[0],
         updated_at: new Date().toISOString()
       })

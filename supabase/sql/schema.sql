@@ -61,9 +61,19 @@ CREATE TABLE IF NOT EXISTS tasks (
   budgeted_fee DECIMAL(10, 2) DEFAULT 0,
   estimated_hours INTEGER DEFAULT 0,
   comments TEXT,
+  -- Who the approval is routed to. NULL means any partner may take it, and
+  -- whoever approves claims it. See add-task-approver-routing.sql.
+  approver_id TEXT,
+  approver_name TEXT,
+  -- Who actually signed off, which can differ from who it was routed to.
+  approved_by_id TEXT,
+  approved_by_name TEXT,
+  approved_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  FOREIGN KEY (assigned_to_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (assigned_to_id) REFERENCES users(id) ON DELETE CASCADE,
+  -- SET NULL, not CASCADE: losing a partner must not delete the firm's tasks.
+  FOREIGN KEY (approver_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 -- ============================================

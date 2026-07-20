@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { tasksAPI, usersAPI } from '../services/api';
 import { ChevronDown, Users } from 'lucide-react';
 import { UserManagement } from './UserManagement';
-import { statusColor, statusLabel } from '../utils/taskStatus';
+import { statusColor, statusLabel, isOpenTask } from '../utils/taskStatus';
 
 interface Task {
   id: string;
@@ -82,7 +82,7 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
   };
 
   const staffMembers = users.filter(u => u.role === 'team-member' || u.role === 'team-leader');
-  const pendingTasks = tasks.filter(t => t.status !== 'Completed');
+  const pendingTasks = tasks.filter(t => isOpenTask(t.status));
   const filteredTasks = selectedUser === 'all' ? pendingTasks : pendingTasks.filter(t => t.assignedToId === selectedUser);
   const isHigh = (p: string) => p === 'High' || p === 'Urgent';
 

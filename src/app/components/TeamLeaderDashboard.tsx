@@ -7,7 +7,7 @@ import { billingAPI, tasksAPI, usersAPI } from '../services/api';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { ApprovalQueue } from './ApprovalQueue';
 import { useToast } from './Toast';
-import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isAwaitingApproval } from '../utils/taskStatus';
+import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isAwaitingApproval, isFinishedTask } from '../utils/taskStatus';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
 import { MarkAsPaidModal } from './MarkAsPaidModal';
 import {
@@ -211,7 +211,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
           <KPICard title="Pending Approvals" value={approvalQueue.length} variant="warning" />
           <KPICard
             title="Completed"
-            value={allTasks.filter(t => t.status === 'Completed').length}
+            value={allTasks.filter(t => isFinishedTask(t.status)).length}
             variant="success"
           />
         </div>

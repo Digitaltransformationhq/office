@@ -9,7 +9,7 @@ import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { AnnouncementBar } from './AnnouncementBar';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { KPICard } from './KPICard';
-import { statusColor, statusLabel, isAwaitingApproval } from '../utils/taskStatus';
+import { statusColor, statusLabel, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, AlertTriangle, CheckCircle2, Clock, X, Search } from 'lucide-react';
 
 const NAVY = '#1b365d';
@@ -173,7 +173,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   };
 
-  const pendingTasks = tasks.filter(t => t.status !== 'Completed').map(t => ({ ...t, aging: calculateAging(t.targetDate) }));
+  const pendingTasks = tasks.filter(t => isOpenTask(t.status)).map(t => ({ ...t, aging: calculateAging(t.targetDate) }));
   const uniqueCategories = Array.from(new Set(tasks.map((t: any) => t.category).filter(Boolean)));
   const uniqueStatuses = Array.from(new Set(tasks.map((t: any) => t.status).filter(Boolean)));
 
@@ -198,8 +198,8 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
 
   const taskApprovalCount = tasks.filter(t => isAwaitingApproval(t.status)).length;
   const overdueCount = pendingTasks.filter(t => t.aging > 0).length;
-  const completedCount = tasks.filter(t => t.status === 'Completed').length;
-  const activeCount = tasks.filter(t => t.status !== 'Completed').length;
+  const completedCount = tasks.filter(t => isFinishedTask(t.status)).length;
+  const activeCount = tasks.filter(t => isOpenTask(t.status)).length;
 
   // Week label
   const weekStart = weekDates[0];
@@ -315,7 +315,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                 const key = toKey(date);
                 const today = isToday(date);
                 const dueTasks = tasksDueOn(date);
-                const overdueDue = dueTasks.filter(t => t.status !== 'Completed');
+                const overdueDue = dueTasks.filter(t => isOpenTask(t.status));
                 return (
                   <div
                     key={key}
@@ -636,7 +636,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-              <TaskApprovalQueue userId={extractNumericId(currentUser.id)} userName={currentUser.name} />
+              <TaskApprovalQueue userId={currentUser.id} userName={currentUser.name} userRole={currentUser.role} />
             </div>
           </div>
         </div>

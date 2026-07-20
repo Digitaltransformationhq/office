@@ -7,7 +7,7 @@ import { UploadDocumentModal } from './UploadDocumentModal';
 import { CreateQueryModal } from './CreateQueryModal';
 import { ViewQueryModal } from './ViewQueryModal';
 import { useToast } from './Toast';
-import { statusLabel } from '../utils/taskStatus';
+import { statusLabel, isFinishedTask } from '../utils/taskStatus';
 
 interface ClientPortalProps {
   clientId: number;
@@ -306,7 +306,7 @@ export function ClientPortal({ clientId, clientName }: ClientPortalProps) {
                         </TableCell>
                         <TableCell>
                           <Badge variant={
-                            task.status === 'Completed' ? 'success' :
+                            isFinishedTask(task.status) ? 'success' :
                             task.status === 'In Progress' ? 'info' :
                             'warning'
                           }>
