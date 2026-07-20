@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './Card';
-import { Input, Select } from './Input';
 import { Button } from './Button';
 import { tasksAPI, usersAPI, clientsAPI } from '../services/api';
+import { TASK_STATUS, statusLabel } from '../utils/taskStatus';
+import { X } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -63,13 +63,28 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
     'MCA Work',
   ];
 
-  const taskStatuses = [
-    'Pending',
-    'In Progress',
-    'Completed',
-    'On Hold',
-    'Pending for Billing',
+  /**
+   * Only statuses the database actually accepts.
+   *
+   * 'On Hold' was offered here and is NOT in the tasks_status_check constraint,
+   * so choosing it failed the save outright with a Postgres 23514. 'Completed'
+   * was retired when the lifecycle moved its terminal state to 'Billed'.
+   *
+   * The two approval gates are left out on purpose: they both read as "Pending
+   * for Approval", so a dropdown would show the same label twice, and moving a
+   * task into a gate by hand skips the routing that decides who it goes to.
+   */
+  const EDITABLE_STATUSES = [
+    TASK_STATUS.pending,
+    TASK_STATUS.inProgress,
+    TASK_STATUS.pendingForBilling,
+    TASK_STATUS.billed,
   ];
+  // Whatever the task is now stays selectable, so opening a task that sits at a
+  // gate and pressing save does not quietly move it somewhere else.
+  const taskStatuses = EDITABLE_STATUSES.includes(formData.status as any)
+    ? EDITABLE_STATUSES
+    : [formData.status, ...EDITABLE_STATUSES];
 
   useEffect(() => {
     loadData();
@@ -178,231 +193,242 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
     client.name.toLowerCase().includes(clientSearch.toLowerCase())
   );
 
+  const NAVY = '#1b365d';
+  const fieldCls =
+    'w-full rounded-lg border border-[#E7EDF4] bg-white px-3.5 py-2.5 text-[0.92rem] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
+  const labelCls = 'mb-1.5 block text-sm font-medium';
+
+  /** One dropdown row, shared by the client and assignee lists below. */
+  const optionRow = (title: string, sub: string, onClick: () => void, key: string) => (
+    <button
+      key={key}
+      type="button"
+      onClick={onClick}
+      className="w-full px-3 py-2 text-left transition-colors hover:bg-[#F4F6F9]"
+    >
+      <div className="text-sm font-medium" style={{ color: NAVY }}>{title}</div>
+      <div className="text-xs text-muted-foreground">{sub}</div>
+    </button>
+  );
+
+  const roleGroups: [string, (u: any) => boolean][] = [
+    ['Partners', (u) => ['partner', 'Partner', 'admin', 'Admin'].includes(u.role)],
+    ['Accounts', (u) => ['team-leader', 'Accounts', 'Team Leader'].includes(u.role)],
+    ['Staff', (u) => ['team-member', 'Staff', 'Team Member'].includes(u.role)],
+  ];
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{isResubmit ? '✏️ Edit & Resubmit Task' : 'Edit Task'}</CardTitle>
-            <button
-              onClick={onClose}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              ✕
-            </button>
+    /**
+     * Capped height with a scrolling body and a pinned footer, matching the
+     * other modals. This was an unbounded stack of full-width fields, so on a
+     * laptop the form ran past the bottom of the screen and Update Task could
+     * only be reached by scrolling the modal itself.
+     */
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1728]/60 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]">
+        {/* Header - fixed */}
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-[#E7EDF4] px-6 py-4">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight" style={{ color: NAVY }}>
+              {isResubmit ? 'Edit & Resubmit Task' : 'Edit Task'}
+            </h2>
+            {isResubmit && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Goes back for approval once you save.
+              </p>
+            )}
           </div>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              label="Task Name"
-              type="text"
-              value={formData.taskName}
-              onChange={(e) => setFormData({ ...formData, taskName: e.target.value })}
-              placeholder="Enter task name"
-              required
-            />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-[#1b365d]"
+          >
+            <X size={16} />
+          </button>
+        </div>
 
-            <Select
-              label="Category"
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              required
-            >
-              <option value="">Select Category</option>
-              {taskCategories.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </Select>
-
-            {/* Client Search Field */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm text-foreground">
-                Client <span className="text-destructive">*</span>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          {/* Body - the only scrolling region */}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+            <div>
+              <label className={labelCls} style={{ color: NAVY }}>
+                Task name <span className="text-[#c0392b]">*</span>
               </label>
-              <div className="relative client-dropdown-container">
-                <input
-                  type="text"
-                  value={clientSearch}
-                  onChange={(e) => {
-                    setClientSearch(e.target.value);
-                    setShowClientDropdown(true);
-                  }}
-                  onFocus={() => setShowClientDropdown(true)}
-                  placeholder="Search or select client..."
-                  className="w-full px-3 py-2 bg-input-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-ring"
-                  required={!formData.client}
-                />
-                {showClientDropdown && (
-                  <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {filteredClients.length === 0 ? (
-                      <div className="p-3 text-sm text-muted-foreground text-center">
-                        No clients found
-                      </div>
-                    ) : (
-                      filteredClients.map((client) => (
-                        <button
-                          key={client.id}
-                          type="button"
-                          onClick={() => handleClientSelect(client.name)}
-                          className="w-full px-3 py-2 text-left hover:bg-muted text-sm"
-                        >
-                          <div>{client.name}</div>
-                          <div className="text-xs text-muted-foreground">{client.industry}</div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Assign To Search Field */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm text-foreground">
-                Assign To (Partner/Staff/Accountant) <span className="text-destructive">*</span>
-              </label>
-              <div className="relative assign-dropdown-container">
-                <input
-                  type="text"
-                  value={assignSearch}
-                  onChange={(e) => {
-                    setAssignSearch(e.target.value);
-                    setShowAssignDropdown(true);
-                  }}
-                  onFocus={() => setShowAssignDropdown(true)}
-                  placeholder="Search or select person..."
-                  className="w-full px-3 py-2 bg-input-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-ring"
-                  required={!formData.assignedToId}
-                />
-                {showAssignDropdown && (
-                  <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {filteredUsers.length === 0 ? (
-                      <div className="p-3 text-sm text-muted-foreground text-center">
-                        No users found
-                      </div>
-                    ) : (
-                      <>
-                        {/* Partners Section */}
-                        {filteredUsers.some(u => u.role === 'partner' || u.role === 'Partner') && (
-                          <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
-                            PARTNERS
-                          </div>
-                        )}
-                        {filteredUsers.filter(u => u.role === 'partner' || u.role === 'Partner').map((user) => (
-                          <button
-                            key={user.id}
-                            type="button"
-                            onClick={() => handleUserSelect(user)}
-                            className="w-full px-3 py-2 text-left hover:bg-muted text-sm"
-                          >
-                            <div>{user.name}</div>
-                            <div className="text-xs text-muted-foreground">{user.email}</div>
-                          </button>
-                        ))}
-
-                        {/* Accountants Section */}
-                        {filteredUsers.some(u => u.role === 'team-leader' || u.role === 'Accounts' || u.role === 'Team Leader') && (
-                          <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
-                            ACCOUNTANTS
-                          </div>
-                        )}
-                        {filteredUsers.filter(u => u.role === 'team-leader' || u.role === 'Accounts' || u.role === 'Team Leader').map((user) => (
-                          <button
-                            key={user.id}
-                            type="button"
-                            onClick={() => handleUserSelect(user)}
-                            className="w-full px-3 py-2 text-left hover:bg-muted text-sm"
-                          >
-                            <div>{user.name}</div>
-                            <div className="text-xs text-muted-foreground">{user.email}</div>
-                          </button>
-                        ))}
-
-                        {/* Staff Section */}
-                        {filteredUsers.some(u => u.role === 'team-member' || u.role === 'Staff' || u.role === 'Team Member') && (
-                          <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
-                            STAFF
-                          </div>
-                        )}
-                        {filteredUsers.filter(u => u.role === 'team-member' || u.role === 'Staff' || u.role === 'Team Member').map((user) => (
-                          <button
-                            key={user.id}
-                            type="button"
-                            onClick={() => handleUserSelect(user)}
-                            className="w-full px-3 py-2 text-left hover:bg-muted text-sm"
-                          >
-                            <div>{user.name}</div>
-                            <div className="text-xs text-muted-foreground">{user.email}</div>
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <Select
-              label="Priority"
-              value={formData.priority}
-              onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-              required
-            >
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-              <option value="Urgent">Urgent</option>
-            </Select>
-
-            <Select
-              label="Status"
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-              required
-            >
-              {taskStatuses.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </Select>
-
-            <Input
-              label="Task Assignment Date"
-              type="date"
-              value={formData.taskDate}
-              onChange={(e) => setFormData({ ...formData, taskDate: e.target.value })}
-              required
-            />
-
-            <Input
-              label="Expected Completion Date"
-              type="date"
-              value={formData.completionDate}
-              onChange={(e) => setFormData({ ...formData, completionDate: e.target.value })}
-              required
-            />
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm text-foreground">Comments (Optional)</label>
-              <textarea
-                value={formData.comments}
-                onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
-                placeholder="Add any additional comments or instructions..."
-                className="px-3 py-2 bg-input-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-ring min-h-[100px]"
+              <input
+                type="text"
+                value={formData.taskName}
+                onChange={(e) => setFormData({ ...formData, taskName: e.target.value })}
+                placeholder="What needs doing"
+                required
+                className={fieldCls}
               />
             </div>
 
-            <div className="flex gap-3 pt-4">
-              <Button type="submit" disabled={loading} className="flex-1">
-                {loading ? 'Updating Task...' : 'Update Task'}
-              </Button>
-              <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
-                Cancel
-              </Button>
+            {/* Client - searchable */}
+            <div className="client-dropdown-container relative">
+              <label className={labelCls} style={{ color: NAVY }}>
+                Client <span className="text-[#c0392b]">*</span>
+              </label>
+              <input
+                type="text"
+                value={clientSearch}
+                onChange={(e) => { setClientSearch(e.target.value); setShowClientDropdown(true); }}
+                onFocus={() => setShowClientDropdown(true)}
+                placeholder="Search or select client"
+                required={!formData.client}
+                className={fieldCls}
+              />
+              {showClientDropdown && (
+                <div className="absolute z-20 mt-1.5 max-h-56 w-full overflow-y-auto rounded-lg border border-[#E7EDF4] bg-white shadow-[0_20px_50px_-20px_rgba(10,23,40,0.45)]">
+                  {filteredClients.length === 0 ? (
+                    <div className="p-3 text-center text-sm text-muted-foreground">No clients found</div>
+                  ) : filteredClients.map((client) =>
+                    optionRow(client.name, client.industry, () => handleClientSelect(client.name), client.id)
+                  )}
+                </div>
+              )}
             </div>
-          </form>
-        </CardContent>
-      </Card>
+
+            {/* Assignee - searchable, grouped by role */}
+            <div className="assign-dropdown-container relative">
+              <label className={labelCls} style={{ color: NAVY }}>
+                Assign to <span className="text-[#c0392b]">*</span>
+              </label>
+              <input
+                type="text"
+                value={assignSearch}
+                onChange={(e) => { setAssignSearch(e.target.value); setShowAssignDropdown(true); }}
+                onFocus={() => setShowAssignDropdown(true)}
+                placeholder="Search partner, accounts or staff"
+                required={!formData.assignedToId}
+                className={fieldCls}
+              />
+              {showAssignDropdown && (
+                <div className="absolute z-20 mt-1.5 max-h-56 w-full overflow-y-auto rounded-lg border border-[#E7EDF4] bg-white shadow-[0_20px_50px_-20px_rgba(10,23,40,0.45)]">
+                  {filteredUsers.length === 0 ? (
+                    <div className="p-3 text-center text-sm text-muted-foreground">No people found</div>
+                  ) : roleGroups.map(([heading, match]) => {
+                    const group = filteredUsers.filter(match);
+                    if (group.length === 0) return null;
+                    return (
+                      <div key={heading}>
+                        <div className="bg-[#F4F6F9] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {heading}
+                        </div>
+                        {group.map((u) => optionRow(u.name, u.email, () => handleUserSelect(u), u.id))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Short fields pair up rather than each taking a full row */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelCls} style={{ color: NAVY }}>
+                  Category <span className="text-[#c0392b]">*</span>
+                </label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  required
+                  className={fieldCls}
+                >
+                  <option value="">Select category</option>
+                  {taskCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelCls} style={{ color: NAVY }}>
+                  Priority <span className="text-[#c0392b]">*</span>
+                </label>
+                <select
+                  value={formData.priority}
+                  onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                  required
+                  className={fieldCls}
+                >
+                  {['Low', 'Medium', 'High', 'Urgent'].map((pr) => <option key={pr} value={pr}>{pr}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className={labelCls} style={{ color: NAVY }}>
+                Status <span className="text-[#c0392b]">*</span>
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                required
+                disabled={isResubmit}
+                className={fieldCls + ' disabled:cursor-not-allowed disabled:bg-[#F4F6F9] disabled:text-muted-foreground'}
+              >
+                {taskStatuses.map((status) => (
+                  <option key={status} value={status}>{statusLabel(status)}</option>
+                ))}
+              </select>
+              {isResubmit && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Set to await approval automatically when you resubmit.
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelCls} style={{ color: NAVY }}>
+                  Assigned on <span className="text-[#c0392b]">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={formData.taskDate}
+                  onChange={(e) => setFormData({ ...formData, taskDate: e.target.value })}
+                  required
+                  className={fieldCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls} style={{ color: NAVY }}>
+                  Due <span className="text-[#c0392b]">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={formData.completionDate}
+                  onChange={(e) => setFormData({ ...formData, completionDate: e.target.value })}
+                  required
+                  className={fieldCls}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className={labelCls} style={{ color: NAVY }}>
+                Comments <span className="font-normal text-muted-foreground">(optional)</span>
+              </label>
+              <textarea
+                value={formData.comments}
+                onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
+                placeholder="Anything the assignee should know"
+                rows={3}
+                className={fieldCls + ' resize-none'}
+              />
+            </div>
+          </div>
+
+          {/* Footer - always reachable, never scrolls away */}
+          <div className="flex shrink-0 items-center gap-3 border-t border-[#E7EDF4] px-6 py-4">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={loading} className="flex-1">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={loading} className="flex-1">
+              {loading ? 'Saving...' : isResubmit ? 'Resubmit' : 'Save changes'}
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
