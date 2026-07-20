@@ -272,12 +272,12 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
           </div>
 
           {/* Stat tiles */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <KPICard
               title={`Total revenue · ${fyLabel}`}
               value={formatINRCompact(fyTotals.revenue)}
               variant="success"
-              note="Payments received"
+              note="Invoices raised"
             />
             <KPICard
               title="Revenue this month"
@@ -295,6 +295,24 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
               note={`${pending.count} task${pending.count === 1 ? '' : 's'} awaiting invoice`}
             />
             <KPICard title="Total Tasks" value={tasks.length} />
+          </div>
+
+          {/* Approval queues, directly under the stat tiles: they are the two
+              things on this page that need acting on, so they belong with the
+              headline numbers rather than below the tables. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ApprovalCard
+              label="Pending Task Approvals"
+              count={tasks.filter(t => isAwaitingApproval(t.status)).length}
+              icon={<ClipboardCheck size={24} />}
+              onClick={() => setShowTaskApprovals(true)}
+            />
+            <ApprovalCard
+              label="Pending Inquiries"
+              count={inquiries.length}
+              icon={<Inbox size={24} />}
+              onClick={() => setShowInquiryApprovals(true)}
+            />
           </div>
 
           {/* Revenue breakdown — person / category, toggled */}
@@ -342,21 +360,6 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
           </CardContent>
         </Card>
 
-        {/* Approval Workflow Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <ApprovalCard
-            label="Pending Task Approvals"
-            count={tasks.filter(t => isAwaitingApproval(t.status)).length}
-            icon={<ClipboardCheck size={24} />}
-            onClick={() => setShowTaskApprovals(true)}
-          />
-          <ApprovalCard
-            label="Pending Inquiries"
-            count={inquiries.length}
-            icon={<Inbox size={24} />}
-            onClick={() => setShowInquiryApprovals(true)}
-          />
-        </div>
 
       </div>
 
