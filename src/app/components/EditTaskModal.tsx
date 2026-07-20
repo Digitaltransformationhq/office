@@ -120,9 +120,13 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
         usersAPI.getAll(),
         clientsAPI.getAll(),
       ]);
+      // Admins were missing from this list, so a task assigned to one could be
+      // opened but never saved: the submit guard could not resolve the
+      // assignee and aborted.
       setUsers(usersRes.data.filter((u: any) =>
         u.role === 'team-member' || u.role === 'Staff' || u.role === 'Team Member' ||
         u.role === 'partner' || u.role === 'Partner' ||
+        u.role === 'admin' || u.role === 'Admin' ||
         u.role === 'team-leader' || u.role === 'Accounts' || u.role === 'Team Leader'
       ));
       setClients(clientsRes.data);
@@ -136,10 +140,22 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
     setLoading(true);
 
     try {
+      /**
+       * Resolve the assignee's display name, falling back to what the task
+       * already carries.
+       *
+       * This used to abort the save whenever `users` could not resolve the id —
+       * which happens for a second after the modal opens, because the list is
+       * fetched asynchronously. Pressing Save in that window failed with
+       * "Please select a user", despite an assignee being shown in the field.
+       * Nothing about editing a task requires the roster to have arrived: the
+       * assignee is only needed for its name, and the task already has one.
+       */
       const selectedUser = users.find(u => u.id === formData.assignedToId);
+      const assignedToName = selectedUser?.name || formData.assignedTo || task.assignedTo;
 
-      if (!selectedUser) {
-        alert('Please select a user to assign the task to.');
+      if (!formData.assignedToId || !assignedToName) {
+        alert('Please select who this task is assigned to.');
         setLoading(false);
         return;
       }
@@ -148,7 +164,7 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
         task: formData.taskName,
         category: formData.category,
         client: formData.client,
-        assignedTo: selectedUser.name,
+        assignedTo: assignedToName,
         assignedToId: formData.assignedToId,
         priority: formData.priority,
         status: formData.status,
@@ -269,7 +285,19 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <form
+          onSubmit={handleSubmit}
+          /**
+           * Bring whatever failed validation into view. The body is its own
+           * scroll container, and a browser refusing to submit because of a
+           * required field below the fold gives no visible feedback at all —
+           * the click just appears to do nothing.
+           */
+          onInvalidCapture={(e) => {
+            (e.target as HTMLElement)?.scrollIntoView?.({ block: 'center' });
+          }}
+          className="flex min-h-0 flex-1 flex-col"
+        >
           {/* Body - the only scrolling region */}
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div>
