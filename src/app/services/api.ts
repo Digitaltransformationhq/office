@@ -322,6 +322,12 @@ export const notificationsAPI = {
       method: 'PUT',
     });
   },
+
+  dismiss: async (notificationId: string) => {
+    return fetchAPI(`/notifications/${encodeURIComponent(notificationId)}`, {
+      method: 'DELETE',
+    });
+  },
 };
 
 // Inquiries API

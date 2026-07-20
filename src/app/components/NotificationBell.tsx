@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, BellRing, ClipboardList, Megaphone, CheckCheck } from 'lucide-react';
+import { Bell, BellRing, ClipboardList, Megaphone, CheckCheck, X } from 'lucide-react';
 import { notificationsAPI } from '../services/api';
 import { enablePush, pushPermission } from '../services/push';
 import { viewForType } from '../utils/notifications';
@@ -101,6 +101,14 @@ export function NotificationBell({ userId, onNavigate }: {
    * happens alongside — it shouldn't be the only thing a click does — and isn't
    * awaited, so navigation is never held up by the write.
    */
+  /** Optimistic: the row goes at once and is restored if the delete fails. */
+  const dismiss = async (n: Notif) => {
+    const snapshot = items;
+    setItems(prev => prev.filter(x => x.id !== n.id));
+    const res = await notificationsAPI.dismiss(n.id);
+    if (!res?.success) setItems(snapshot);
+  };
+
   const openNotification = (n: Notif) => {
     const view = viewForType(n.type);
     markOne(n);
@@ -166,10 +174,15 @@ export function NotificationBell({ userId, onNavigate }: {
               </div>
             ) : (
               items.map((n) => (
-                <button
+                /* A row, not a button: the dismiss control is itself a button and
+                   nesting one inside another is invalid and breaks clicks. */
+                <div
                   key={n.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => openNotification(n)}
-                  className={`flex w-full items-start gap-3 border-b border-[#F1F4F8] px-4 py-3 text-left transition-colors hover:bg-[#F9FBFD] ${n.is_read ? '' : 'bg-[rgba(27,54,93,0.03)]'} ${viewForType(n.type) ? '' : 'cursor-default'}`}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openNotification(n); }}
+                  className={`group flex w-full items-start gap-3 border-b border-[#F1F4F8] px-4 py-3 text-left transition-colors hover:bg-[#F9FBFD] ${n.is_read ? '' : 'bg-[rgba(27,54,93,0.03)]'} ${viewForType(n.type) ? 'cursor-pointer' : 'cursor-default'}`}
                 >
                   <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${n.type === 'announcement' ? 'bg-[rgba(245,158,11,0.12)] text-[#b7791f]' : 'bg-[rgba(27,54,93,0.08)] text-[#1b365d]'}`}>
                     {iconFor(n.type)}
@@ -182,7 +195,17 @@ export function NotificationBell({ userId, onNavigate }: {
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">{n.message}</span>
                     <span className="mt-1 block text-[0.62rem] text-muted-foreground/70">{timeAgo(n.created_at)}</span>
                   </span>
-                </button>
+                  {/* Marking read only dims a row; dismissing removes it, so the
+                      list does not grow without end. */}
+                  <button
+                    type="button"
+                    aria-label="Dismiss notification"
+                    onClick={(e) => { e.stopPropagation(); dismiss(n); }}
+                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 opacity-0 transition-all hover:bg-[#F4F6F9] hover:text-[#c0392b] focus:opacity-100 group-hover:opacity-100"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
               ))
             )}
           </div>

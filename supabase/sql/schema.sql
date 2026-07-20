@@ -77,6 +77,48 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 -- ============================================
+-- NOTIFICATIONS
+-- ============================================
+-- Per-user, unlike announcements (which are broadcast and live in the KV store).
+-- Written by notifyUser() in the edge function at every lifecycle step, and read
+-- by the notification bell.
+--
+-- Previously declared only in archive/database-task-assignments.sql, so a fresh
+-- environment built from this file had no notifications table at all and every
+-- notification silently failed to insert.
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  -- Legacy, from the separate task_assignments flow. Never written by the edge
+  -- function, and deliberately not a foreign key here: that table is optional.
+  assignment_id TEXT,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(user_id, is_read);
+
+-- ============================================
+-- WEB PUSH SUBSCRIPTIONS
+-- ============================================
+-- One row per browser that opted in, so notifications can be delivered with the
+-- tab closed. Push degrades silently to in-app only when VAPID keys are unset.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  endpoint TEXT UNIQUE NOT NULL,
+  subscription TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+
+-- ============================================
 -- INDEXES FOR BETTER PERFORMANCE
 -- ============================================
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

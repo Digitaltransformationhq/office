@@ -81,6 +81,28 @@ async function notifyUser(userId: string, type: string, title: string, message: 
   await sendPush(userId, { title, body: message || title, url });
 }
 
+/**
+ * Fan a notification out to everyone holding one of these roles. Used when a
+ * step is owed to a desk rather than a named person: an approval nobody was
+ * routed to, or billing work, which always belongs to Accounts.
+ */
+async function notifyRoles(roles: string[], type: string, title: string, message: string) {
+  try {
+    const { data } = await supabase
+      .from('users').select('id').in('role', roles).eq('status', 'Active');
+    for (const u of data || []) {
+      await notifyUser(u.id, type, title, message);
+    }
+  } catch (e) {
+    console.log('notifyRoles failed:', e);
+  }
+}
+
+/** "GST return — ACME Ltd", the one-line description every notification uses. */
+function taskLabel(t: any) {
+  return `${t?.task || 'Task'}${t?.client ? ' — ' + t.client : ''}`;
+}
+
 // Enable logger
 app.use('*', logger(console.log));
 
@@ -330,10 +352,19 @@ app.post('/make-server-0abfa7cf/tasks', async (c) => {
 
     console.log('Task created successfully:', data);
 
-    // Notify the assignee (unless it still needs partner approval)
-    if (body.assignedToId && task.status !== 'Pending Approval') {
-      await notifyUser(body.assignedToId, 'task', 'New task assigned',
-        `${body.task}${body.client ? ' — ' + body.client : ''}`);
+    const newLabel = taskLabel(body);
+    if (task.status === 'Pending Approval') {
+      // Needs sign-off before work starts. The assignee is told nothing yet —
+      // it may never be approved — but the approver has to know it is waiting,
+      // which is exactly what used to be missing: a task could sit in the queue
+      // with nobody aware of it.
+      if (task.approver_id) {
+        await notifyUser(task.approver_id, 'task', 'Task awaiting your approval', newLabel);
+      } else {
+        await notifyRoles(['partner', 'admin'], 'task', 'Task awaiting approval', newLabel);
+      }
+    } else if (body.assignedToId) {
+      await notifyUser(body.assignedToId, 'assignment', 'New task assigned', newLabel);
     }
 
     return c.json({ success: true, data });
@@ -422,6 +453,12 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
 
     console.log('Updates object:', JSON.stringify(updates, null, 2));
 
+    // Read the row first: several notifications depend on what CHANGED, not on
+    // the new value alone. Approving finished work and rejecting it both leave
+    // the task in a plain status, and only the previous one tells them apart.
+    const { data: prev } = await supabase
+      .from('tasks').select('status, assigned_to_id').eq('id', taskId).maybeSingle();
+
     const { data, error } = await supabase
       .from('tasks')
       .update(updates)
@@ -441,10 +478,53 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
 
     console.log('Task updated successfully:', data);
 
-    // On approval (task released to the assignee), notify them
-    if (body.approvedBy && data?.status === 'Pending' && data?.assigned_to_id) {
-      await notifyUser(data.assigned_to_id, 'task', 'Task approved & assigned',
-        `${data.task}${data.client ? ' — ' + data.client : ''}`);
+    /**
+     * Lifecycle notifications. Every one is addressed to the person the next
+     * move belongs to — these are personal, unlike announcements, which are
+     * broadcast. Best-effort throughout: a notification must never fail the
+     * write that triggered it.
+     */
+    const label = taskLabel(data);
+    const statusChanged = data?.status !== prev?.status;
+
+    // Handed to someone else. Fires on reassignment as well as first assignment.
+    if (body.assignedToId && prev?.assigned_to_id && body.assignedToId !== prev.assigned_to_id) {
+      await notifyUser(body.assignedToId, 'assignment', 'Task assigned to you', label);
+    }
+
+    if (statusChanged) {
+      if (data?.status === 'Pending Approval - Completion') {
+        // Finished work needs sign-off. Routed to its approver, or to any
+        // partner if it was never routed to anyone.
+        if (data.approver_id) {
+          await notifyUser(data.approver_id, 'task', 'Work ready for your approval', label);
+        } else {
+          await notifyRoles(['partner', 'admin'], 'task', 'Work ready for approval', label);
+        }
+      } else if (data?.status === 'Pending for Billing') {
+        // Approved: tell the person who did the work, and the desk that bills it.
+        if (data.assigned_to_id) {
+          await notifyUser(data.assigned_to_id, 'task', 'Work approved, sent for billing', label);
+        }
+        await notifyRoles(['team-leader'], 'task', 'Task ready to bill', label);
+      } else if (data?.status === 'Pending' && data?.assigned_to_id) {
+        // Leaving the new-task gate: approved if a signature came with it,
+        // sent back if not.
+        if (body.approvedBy) {
+          await notifyUser(data.assigned_to_id, 'task', 'Task approved & assigned', label);
+        } else if (prev?.status === 'Pending Approval') {
+          await notifyUser(data.assigned_to_id, 'task_rejection', 'Task sent back', label);
+        }
+      } else if (
+        data?.status === 'In Progress' &&
+        prev?.status === 'Pending Approval - Completion' &&
+        data?.assigned_to_id
+      ) {
+        // The only way back to In Progress from the completion gate is a
+        // rejection — approving sends it to Pending for Billing instead.
+        await notifyUser(data.assigned_to_id, 'task_rejection',
+          'Work sent back for changes', label);
+      }
     }
 
     return c.json({ success: true, data });
@@ -1443,6 +1523,26 @@ app.put('/make-server-0abfa7cf/notifications/:userId/read-all', async (c) => {
   }
 });
 
+// Dismiss a notification outright. Marking read only dims it; a user who has
+// dealt with something wants it gone, and without this the list only ever grows.
+app.delete('/make-server-0abfa7cf/notifications/:notificationId', async (c) => {
+  try {
+    const notificationId = c.req.param('notificationId');
+
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notificationId);
+
+    if (error) throw error;
+
+    return c.json({ success: true, message: 'Notification deleted' });
+  } catch (error) {
+    console.log('Error deleting notification:', error);
+    return c.json({ success: false, error: 'Failed to delete notification' }, 500);
+  }
+});
+
 // ============================================
 // LEAVE MANAGEMENT
 // ============================================
@@ -2338,10 +2438,10 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
       billedAt: new Date().toISOString(),
       budgetedFee: task.budgeted_fee || 0,
       hoursLogged: task.hours_logged || 0,
-      // Payment stage. A new invoice starts unpaid and only counts as revenue
-      // once it is marked paid. Records written before this field existed have
-      // no paymentStatus at all and are treated as paid by the client.
-      paymentStatus: 'Pending',
+      // Vestigial: payment tracking was removed and revenue is recognised when
+      // the invoice is raised. Written only so older readers of these records
+      // still find the field they expect.
+      paymentStatus: 'Paid',
       paymentDate: null,
       paidAmount: 0,
       paidBy: null,
@@ -2355,6 +2455,19 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
     try {
       await kvStore.set(billingId, billingRecord);
       console.log('Billing record created successfully:', billingId);
+
+      // Billing closes the task out, so the people who carried it need telling:
+      // whoever did the work, and whoever approved it (skipped when they are
+      // the same person, or when they are the one raising the bill).
+      const billedLabel = taskLabel(task);
+      const billMsg = `${billedLabel} · Bill ${billNumber}`;
+      const told = new Set<string>([billedById]);
+      for (const uid of [task.assigned_to_id, task.approver_id]) {
+        if (uid && !told.has(uid)) {
+          told.add(uid);
+          await notifyUser(uid, 'task', 'Task billed', billMsg);
+        }
+      }
     } catch (kvError: any) {
       console.log('=== KV STORE ERROR ===');
       console.log('KV Error type:', typeof kvError);
