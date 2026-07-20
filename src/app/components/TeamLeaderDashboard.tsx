@@ -6,7 +6,6 @@ import { Button } from './Button';
 import { billingAPI, tasksAPI, usersAPI } from '../services/api';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useLiveData } from '../hooks/useLiveData';
-import { ApprovalQueue } from './ApprovalQueue';
 import { useToast } from './Toast';
 import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isAwaitingApproval, isFinishedTask } from '../utils/taskStatus';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
@@ -50,7 +49,6 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [autoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const [showApprovalQueue, setShowApprovalQueue] = useState(false);
   const [selectedTaskForBilling, setSelectedTaskForBilling] = useState<any>(null);
   const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -361,15 +359,20 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
 
         {/* ── Approvals + workload ── */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Parked alongside the sidebar item. Left visible so the feature is
+              discoverable, but View All is inert — otherwise this panel would be
+              a way straight into a section that is switched off everywhere else. */}
           <section className="rounded-xl border border-[#E7EDF4] bg-white p-5">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Leave Approval Queue</h3>
-              <Button size="sm" onClick={() => setShowApprovalQueue(true)}>View All</Button>
+              <h3 className="text-sm font-semibold text-muted-foreground">Leave Approval Queue</h3>
+              <span className="rounded px-1.5 py-0.5 text-[0.58rem] font-medium uppercase tracking-wide text-muted-foreground ring-1 ring-inset ring-[#E7EDF4]">
+                Soon
+              </span>
             </div>
             <div className="mt-4">
-              {approvalQueue.length === 0 ? (
+              {true ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  No pending approvals. All caught up.
+                  Leave approvals are not switched on yet.
                 </p>
               ) : (
                 <div className="flex items-baseline gap-2">
@@ -416,30 +419,6 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
       </div>
 
       {/* Approval Queue Modal */}
-      {showApprovalQueue && user && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#0a1728]/60 p-4 backdrop-blur-sm">
-          <div className="my-8 w-full max-w-6xl">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Approval Queue</CardTitle>
-                  <Button size="sm" variant="secondary" onClick={() => setShowApprovalQueue(false)}>
-                    <X size={15} />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ApprovalQueue
-                  userId={user.id}
-                  userName={user.name}
-                  userRole={user.role}
-                  showHeading={false}
-                />
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
 
       {/* Record Payment Modal */}
 

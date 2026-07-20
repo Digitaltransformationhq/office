@@ -52,6 +52,17 @@ const ICONS: Record<string, LucideIcon> = {
 
 type MenuItem = { label: string; id: string };
 
+/**
+ * Sections that are built but parked.
+ *
+ * They stay visible so the team can see the feature is coming, but are dimmed
+ * and inert — the item does not navigate and the route in App.tsx turns it away
+ * as well, so a stale link or a typed URL cannot reach it either.
+ *
+ * To bring one back: delete it from this set. Nothing else needs changing.
+ */
+const COMING_SOON = new Set(['leave', 'approvals']);
+
 export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen, onMobileClose }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -212,16 +223,21 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
         <nav className={`flex-1 overflow-y-auto pt-3 pb-2 ${compact ? 'px-2' : 'px-3'}`}>
           {filteredMenu.map((item) => {
             const Icon = ICONS[item.id] ?? LayoutDashboard;
-            const active = isActive(item.id);
+            const parked = COMING_SOON.has(item.id);
+            const active = !parked && isActive(item.id);
             return (
               <button
                 key={item.id}
-                onClick={() => handleMenuClick(item)}
-                title={compact ? item.label : undefined}
+                onClick={() => { if (!parked) handleMenuClick(item); }}
+                disabled={parked}
+                aria-disabled={parked}
+                title={parked ? `${item.label} — coming soon` : compact ? item.label : undefined}
                 className={`
                   group relative mb-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors
                   ${compact ? 'justify-center' : ''}
-                  ${active ? 'text-white' : 'text-white/65 hover:bg-white/[0.06] hover:text-white'}
+                  ${parked
+                    ? 'cursor-not-allowed text-white/25'
+                    : active ? 'text-white' : 'text-white/65 hover:bg-white/[0.06] hover:text-white'}
                 `}
                 style={active ? { backgroundColor: 'rgba(79,124,196,0.20)' } : undefined}
               >
@@ -237,7 +253,17 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
                   className="shrink-0"
                   style={active ? { color: '#9cbce6' } : undefined}
                 />
-                {!compact && <span className="truncate text-[0.9rem]">{item.label}</span>}
+                {!compact && (
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="truncate text-[0.9rem]">{item.label}</span>
+                    {/* Dimming alone reads as a bug; say why it cannot be clicked. */}
+                    {parked && (
+                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[0.58rem] font-medium uppercase tracking-wide text-white/40 ring-1 ring-inset ring-white/15">
+                        Soon
+                      </span>
+                    )}
+                  </span>
+                )}
               </button>
             );
           })}
