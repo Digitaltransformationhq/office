@@ -442,7 +442,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                     <span className="w-[3px] shrink-0 self-stretch rounded-full" style={{ backgroundColor: task.aging > 0 ? '#ef4444' : '#E7EDF4' }} />
                     <div className="min-w-0 flex-1">
                       <p className="text-[0.85rem] font-medium" style={{ color: NAVY }}>{task.client}</p>
-                      <span className={`mt-1.5 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[0.62rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
+                      <span className={`mt-1.5 inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.62rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                     </div>
                     <ChevronDown size={16} className={`mt-0.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
                   </button>
@@ -473,7 +473,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                         <span style={{ color: NAVY }}>{task.task}</span>
                       </CardRow>
                       <CardRow label="Status">
-                        <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
+                        <span className={`inline-block whitespace-nowrap rounded-md px-2.5 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                       </CardRow>
                     </dl>
                   )}
@@ -541,7 +541,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                     </td>
                     {/* Status */}
                     <td className="px-4 py-3.5" data-label="Status">
-                      <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
+                      <span className={`inline-block whitespace-nowrap rounded-md px-2.5 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                     </td>
                   </tr>
                 ))}

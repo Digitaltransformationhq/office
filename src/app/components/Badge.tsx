@@ -19,7 +19,10 @@ export function Badge({ children, variant = 'default', className = '' }: BadgePr
   };
 
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs ${variantClasses[variant]} ${className}`}>
+    /* rounded-md, not rounded-full: every task status chip is a rectangle, and
+       these carry leave, attendance, query and client statuses, so a pill here
+       made the same kind of information look like a different kind. */
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs ${variantClasses[variant]} ${className}`}>
       {children}
     </span>
   );
