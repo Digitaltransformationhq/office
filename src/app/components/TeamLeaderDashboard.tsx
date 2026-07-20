@@ -195,8 +195,17 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
         {/* ── Stat tiles ── */}
         {/* No icons: at 2-up on a narrow screen the icon leaves too little room
             for the title, which then overflows into it. */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <KPICard title="My Tasks" value={myTasks.length} />
+          {/* Billing is this desk's work, so it belongs in the headline numbers
+              rather than only in the table below. Reads straight off
+              pendingForBilling, so the two can never disagree, and it drops the
+              moment a bill is raised — the task leaves 'Pending for Billing'. */}
+          <KPICard
+            title="For Billing"
+            value={pendingForBilling.length}
+            variant="warning"
+          />
           <KPICard title="Team Tasks" value={teamTasks.length} />
           <KPICard title="Pending Approvals" value={approvalQueue.length} variant="warning" />
           <KPICard
