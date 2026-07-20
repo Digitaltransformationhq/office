@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS tasks (
   budgeted_fee DECIMAL(10, 2) DEFAULT 0,
   estimated_hours INTEGER DEFAULT 0,
   comments TEXT,
+  -- Reassignment. A handover sits at 'Pending Acceptance' until the new
+  -- assignee accepts or rejects it; see add-reassignment-columns.sql. Declared
+  -- only in an archived one-off before, so this database never had them and
+  -- every reassignment failed on the UPDATE.
+  assignment_status TEXT DEFAULT 'Accepted' CHECK (assignment_status IN ('Pending Acceptance', 'Accepted', 'Rejected')),
+  reassigned_from_id TEXT,
+  reassigned_from_name TEXT,
+  originally_assigned_by_id TEXT,
+  originally_assigned_by_name TEXT,
+  rejection_reason TEXT,
+  reassigned_at TIMESTAMP WITH TIME ZONE,
   -- Who the approval is routed to. NULL means any partner may take it, and
   -- whoever approves claims it. See add-task-approver-routing.sql.
   approver_id TEXT,

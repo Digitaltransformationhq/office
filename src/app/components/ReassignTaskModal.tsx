@@ -20,9 +20,20 @@ export function ReassignTaskModal({ task, currentUser, onClose, onSuccess }: Rea
   const [loading, setLoading] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [notes, setNotes] = useState('');
+  const [personSearch, setPersonSearch] = useState('');
+  const [showPersonDropdown, setShowPersonDropdown] = useState(false);
 
   useEffect(() => {
     loadUsers();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.person-dropdown-container')) setShowPersonDropdown(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const loadUsers = async () => {
@@ -108,6 +119,14 @@ export function ReassignTaskModal({ task, currentUser, onClose, onSuccess }: Rea
     </div>
   );
 
+  const matchedUsers = users.filter((u) =>
+    u.name.toLowerCase().includes(personSearch.toLowerCase()) ||
+    (u.email || '').toLowerCase().includes(personSearch.toLowerCase()) ||
+    // Once someone is picked the box holds their name, which would otherwise
+    // filter the list down to just them the next time it opens.
+    selectedUserId === u.id
+  );
+
   /** Group the roster so a long list is scannable rather than one flat block. */
   const roleGroups: [string, (u: any) => boolean][] = [
     ['Partners', (u) => ['partner', 'Partner', 'admin', 'Admin'].includes(u.role)],
@@ -161,32 +180,69 @@ export function ReassignTaskModal({ task, currentUser, onClose, onSuccess }: Rea
               : '')}
           </dl>
 
-          <div>
+          {/*
+            A searchable list rather than a native <select>. The native picker is
+            drawn by the OS, sized to its longest option and positioned outside
+            the page, so on a narrow screen it spilled past the viewport and off
+            the right edge — nothing in CSS can constrain it. This list lives
+            inside the modal, so it stays within the width it is given, scrolls,
+            and matches the pickers in the other task modals.
+          */}
+          <div className="person-dropdown-container relative">
             <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
               Reassign to <span className="text-[#c0392b]">*</span>
             </label>
             <div className="relative">
-              <select
-                value={selectedUserId}
-                onChange={(e) => setSelectedUserId(e.target.value)}
+              <input
+                type="text"
+                value={personSearch}
+                onChange={(e) => {
+                  setPersonSearch(e.target.value);
+                  setSelectedUserId('');
+                  setShowPersonDropdown(true);
+                }}
+                onFocus={() => setShowPersonDropdown(true)}
+                placeholder="Search or select a person"
                 disabled={loading}
-                className={fieldCls + ' appearance-none pr-9'}
-              >
-                <option value="">Select a person</option>
-                {roleGroups.map(([heading, match]) => {
-                  const group = users.filter(match);
-                  if (group.length === 0) return null;
-                  return (
-                    <optgroup key={heading} label={heading}>
-                      {group.map((u) => (
-                        <option key={u.id} value={u.id}>{u.name}</option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
-              </select>
+                className={fieldCls + ' pr-9'}
+              />
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
+
+            {showPersonDropdown && (
+              <div className="absolute z-20 mt-1.5 max-h-56 w-full overflow-y-auto rounded-lg border border-[#E7EDF4] bg-white shadow-[0_20px_50px_-20px_rgba(10,23,40,0.45)]">
+                {matchedUsers.length === 0 ? (
+                  <div className="p-3 text-center text-sm text-muted-foreground">No people found</div>
+                ) : roleGroups.map(([heading, match]) => {
+                  const group = matchedUsers.filter(match);
+                  if (group.length === 0) return null;
+                  return (
+                    <div key={heading}>
+                      <div className="bg-[#F4F6F9] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {heading}
+                      </div>
+                      {group.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedUserId(u.id);
+                            setPersonSearch(u.name);
+                            setShowPersonDropdown(false);
+                          }}
+                          className={`w-full px-3 py-2 text-left transition-colors hover:bg-[#F4F6F9] ${
+                            selectedUserId === u.id ? 'bg-[#F4F6F9]' : ''
+                          }`}
+                        >
+                          <div className="text-sm font-medium" style={{ color: NAVY }}>{u.name}</div>
+                          <div className="truncate text-xs text-muted-foreground">{u.email}</div>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div>
@@ -209,8 +265,8 @@ export function ReassignTaskModal({ task, currentUser, onClose, onSuccess }: Rea
             <p className="text-xs font-semibold" style={{ color: NAVY }}>What happens next</p>
             <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
               <li>The task moves to <strong>Pending Acceptance</strong> until they accept it.</li>
-              <li>They can accept or reject; a rejection comes back to you.</li>
-              <li>They, you, and the approving partner are notified.</li>
+              <li>They can accept or reject it, with a reason.</li>
+              <li>Either way you, the approving partner and the admins are told.</li>
             </ul>
           </div>
         </div>

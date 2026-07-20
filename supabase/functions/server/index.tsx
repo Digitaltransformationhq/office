@@ -557,7 +557,7 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
     // the new value alone. Approving finished work and rejecting it both leave
     // the task in a plain status, and only the previous one tells them apart.
     const { data: prev } = await supabase
-      .from('tasks').select('status, assigned_to_id').eq('id', taskId).maybeSingle();
+      .from('tasks').select('status, assigned_to_id, assignment_status').eq('id', taskId).maybeSingle();
 
     const { data, error } = await supabase
       .from('tasks')
@@ -598,6 +598,48 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
       await notifyUser(prev.assigned_to_id, 'assignment', 'Task reassigned away from you', label);
       if (data?.approver_id && data.approver_id !== body.assignedToId && data.approver_id !== prev.assigned_to_id) {
         await notifyUser(data.approver_id, 'assignment', 'Task reassigned', label);
+      }
+    }
+
+    /**
+     * A handover was answered. Everyone with a stake is told: the person who
+     * handed it over, the one who took or refused it, the partner approving the
+     * task, and the admins.
+     *
+     * Nothing was sent for this before — you could reassign a task and never
+     * learn whether it had been picked up or refused.
+     *
+     * `actedById` comes from the client so the person who just clicked Accept
+     * or Reject is not told about their own action.
+     */
+    const assignmentAnswered =
+      body.assignmentStatus !== undefined &&
+      prev?.assignment_status !== data?.assignment_status &&
+      (data?.assignment_status === 'Accepted' || data?.assignment_status === 'Rejected');
+
+    if (assignmentAnswered) {
+      const accepted = data.assignment_status === 'Accepted';
+      const who = data.assigned_to || 'The assignee';
+      const title = accepted ? 'Reassignment accepted' : 'Reassignment rejected';
+      const detail = accepted
+        ? `${who} accepted ${label}`
+        : `${who} rejected ${label}${body.rejectionReason ? ` — ${body.rejectionReason}` : ''}`;
+
+      const recipients = new Set<string>();
+      if (data.reassigned_from_id) recipients.add(data.reassigned_from_id);
+      if (data.assigned_to_id) recipients.add(data.assigned_to_id);
+      if (data.approver_id) recipients.add(data.approver_id);
+      try {
+        const { data: admins } = await supabase
+          .from('users').select('id').eq('role', 'admin').eq('status', 'Active');
+        for (const a of admins || []) recipients.add(a.id);
+      } catch (e) {
+        console.log('could not load admins for reassignment notice:', e);
+      }
+      recipients.delete(body.actedById);
+
+      for (const uid of recipients) {
+        await notifyUser(uid, accepted ? 'task_acceptance' : 'task_rejection', title, detail);
       }
     }
 

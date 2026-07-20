@@ -117,14 +117,18 @@ export function TaskMIS({ user }: TaskMISProps) {
 
   const handleAccept = async (task: Task) => {
     if (!confirm(`Accept task: ${task.task}?`)) return;
-    const r = await tasksAPI.update(task.id, { assignmentStatus: 'Accepted' });
+    // actedById lets the server leave you out of the notifications it sends
+    // about your own decision.
+    const r = await tasksAPI.update(task.id, { assignmentStatus: 'Accepted', actedById: user.id });
     r.success ? loadTasks() : alert(r.error);
   };
 
   const handleReject = async (task: Task) => {
     const reason = prompt('Reason for rejecting:');
     if (!reason?.trim()) return;
-    const r = await tasksAPI.update(task.id, { assignmentStatus: 'Rejected', rejectionReason: reason });
+    const r = await tasksAPI.update(task.id, {
+      assignmentStatus: 'Rejected', rejectionReason: reason, actedById: user.id,
+    });
     r.success ? loadTasks() : alert(r.error);
   };
 
