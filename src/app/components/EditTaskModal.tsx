@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { tasksAPI, usersAPI, clientsAPI } from '../services/api';
 import { TASK_STATUS, statusLabel } from '../utils/taskStatus';
-import { X } from 'lucide-react';
+import { X, ChevronDown } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -207,6 +207,18 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
     'w-full rounded-lg border border-[#E7EDF4] bg-white px-3.5 py-2.5 text-[0.92rem] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
   const labelCls = 'mb-1.5 block text-sm font-medium';
 
+  /**
+   * Selects everywhere else in the app hide the native arrow and draw their own
+   * inset one; these were left as bare selects, so their chevron sat tight
+   * against the field edge and looked unlike every other dropdown.
+   */
+  const selectWrap = (inner: React.ReactNode) => (
+    <div className="relative">
+      {inner}
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    </div>
+  );
+
   /** One dropdown row, shared by the client and assignee lists below. */
   const optionRow = (title: string, sub: string, onClick: () => void, key: string) => (
     <button
@@ -339,28 +351,32 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
                 <label className={labelCls} style={{ color: NAVY }}>
                   Category <span className="text-[#c0392b]">*</span>
                 </label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  required
-                  className={fieldCls}
-                >
-                  <option value="">Select category</option>
-                  {taskCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
+                {selectWrap(
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    required
+                    className={fieldCls + ' appearance-none pr-9'}
+                  >
+                    <option value="">Select category</option>
+                    {taskCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                )}
               </div>
               <div>
                 <label className={labelCls} style={{ color: NAVY }}>
                   Priority <span className="text-[#c0392b]">*</span>
                 </label>
-                <select
-                  value={formData.priority}
-                  onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                  required
-                  className={fieldCls}
-                >
-                  {['Low', 'Medium', 'High', 'Urgent'].map((pr) => <option key={pr} value={pr}>{pr}</option>)}
-                </select>
+                {selectWrap(
+                  <select
+                    value={formData.priority}
+                    onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                    required
+                    className={fieldCls + ' appearance-none pr-9'}
+                  >
+                    {['Low', 'Medium', 'High', 'Urgent'].map((pr) => <option key={pr} value={pr}>{pr}</option>)}
+                  </select>
+                )}
               </div>
             </div>
 
@@ -368,17 +384,19 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
               <label className={labelCls} style={{ color: NAVY }}>
                 Status <span className="text-[#c0392b]">*</span>
               </label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                required
-                disabled={isResubmit}
-                className={fieldCls + ' disabled:cursor-not-allowed disabled:bg-[#F4F6F9] disabled:text-muted-foreground'}
-              >
-                {taskStatuses.map((status) => (
-                  <option key={status} value={status}>{statusLabel(status)}</option>
-                ))}
-              </select>
+              {selectWrap(
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  required
+                  disabled={isResubmit}
+                  className={fieldCls + ' appearance-none pr-9 disabled:cursor-not-allowed disabled:bg-[#F4F6F9] disabled:text-muted-foreground'}
+                >
+                  {taskStatuses.map((status) => (
+                    <option key={status} value={status}>{statusLabel(status)}</option>
+                  ))}
+                </select>
+              )}
               {isResubmit && (
                 <p className="mt-1.5 text-xs text-muted-foreground">
                   Set to await approval automatically when you resubmit.
