@@ -65,6 +65,25 @@ export const STATUS_COLOR: Record<string, string> = {
   [TASK_STATUS.completed]: 'border border-green-300 bg-green-100 text-green-700',
 };
 
+/**
+ * The same palette as the chips, as raw hex, for dots and charts that cannot
+ * use Tailwind classes. Kept beside STATUS_COLOR so the two cannot drift: the
+ * week calendar had its own copy and ended up painting 'Completed' green while
+ * 'Billed' was teal — two colours for the same finished state.
+ */
+export const STATUS_HEX: Record<string, string> = {
+  [TASK_STATUS.pending]: '#94a3b8',
+  [TASK_STATUS.inProgress]: '#3b82f6',
+  [TASK_STATUS.pendingNewTaskApproval]: '#f59e0b',
+  [TASK_STATUS.pendingCompletionApproval]: '#f59e0b',
+  [TASK_STATUS.pendingForBilling]: '#8b5cf6',
+  [TASK_STATUS.billed]: '#4ea72e',
+  [TASK_STATUS.overdue]: '#ef4444',
+  [TASK_STATUS.completed]: '#4ea72e',
+};
+
+export const statusHex = (status?: string) => STATUS_HEX[status || ''] || '#94a3b8';
+
 /** Never leave a status unstyled — an unknown value still needs to read as a chip. */
 export const statusColor = (status?: string) =>
   STATUS_COLOR[status || ''] || 'border border-slate-300 bg-slate-100 text-slate-600';

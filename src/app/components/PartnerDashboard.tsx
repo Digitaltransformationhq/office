@@ -10,7 +10,7 @@ import { AnnouncementBar } from './AnnouncementBar';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { KPICard } from './KPICard';
 import { useLiveData } from '../hooks/useLiveData';
-import { statusColor, statusLabel, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
+import { statusColor, statusLabel, statusHex, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, AlertTriangle, CheckCircle2, Clock, X, Search } from 'lucide-react';
 
 const NAVY = '#1b365d';
@@ -51,17 +51,6 @@ function saveNotes(notes: Record<string, string>) {
 }
 
 /** A single dot colour per status — used in the compact calendar previews. */
-const STATUS_DOT: Record<string, string> = {
-  'Pending': '#94a3b8',
-  'In Progress': '#3b82f6',
-  'Completed': '#4ea72e',
-  'Overdue': '#ef4444',
-  'Pending Approval': '#f59e0b',
-  'Pending Approval - Completion': '#6366f1',
-  'Pending for Billing': '#8b5cf6',
-  'Billed': '#14b8a6',
-};
-
 function priorityDot(p: string) {
   if (p === 'Urgent' || p === 'High') return '#ef4444';
   if (p === 'Medium') return '#f59e0b';
@@ -192,7 +181,16 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
   const pagedTasks = filteredTasks.slice(pageStart, pageStart + PAGE_SIZE);
 
   // Tasks due on a given date
-  const tasksDueOn = (date: Date) => tasks.filter(t => t.targetDate && toKey(new Date(t.targetDate)) === toKey(date));
+  /**
+   * Only work that is still outstanding. A billed task's due date is history —
+   * it needs nothing from anyone — so listing it in a forward-looking week view
+   * is noise. It also made the day contradict itself: the "N due" badge already
+   * counted open tasks only, so a day could show a task chip while announcing
+   * that nothing was due.
+   */
+  const tasksDueOn = (date: Date) =>
+    tasks.filter(t =>
+      t.targetDate && toKey(new Date(t.targetDate)) === toKey(date) && isOpenTask(t.status));
 
   const taskApprovalCount = tasks.filter(t => isAwaitingApproval(t.status)).length;
   const overdueCount = pendingTasks.filter(t => t.aging > 0).length;
@@ -313,7 +311,6 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                 const key = toKey(date);
                 const today = isToday(date);
                 const dueTasks = tasksDueOn(date);
-                const overdueDue = dueTasks.filter(t => isOpenTask(t.status));
                 return (
                   <div
                     key={key}
@@ -341,9 +338,9 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                         >
                           Today
                         </span>
-                      ) : overdueDue.length > 0 ? (
+                      ) : dueTasks.length > 0 ? (
                         <span className="rounded px-1.5 py-0.5 text-[0.6rem] font-medium text-[#c0392b]" style={{ backgroundColor: '#FDECEC' }}>
-                          {overdueDue.length} due
+                          {dueTasks.length} due
                         </span>
                       ) : null}
                     </div>
@@ -357,7 +354,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                             title={`${t.client}: ${t.task}`}
                             className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 ${today ? 'bg-white shadow-sm' : 'bg-[#F4F6F9]'}`}
                           >
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: STATUS_DOT[t.status] || '#94a3b8' }} />
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: statusHex(t.status) }} />
                             <span className="truncate text-[0.62rem] font-medium" style={{ color: NAVY }}>{t.client}</span>
                           </div>
                         ))}
