@@ -433,6 +433,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                   userId={user.id}
                   userName={user.name}
                   userRole={user.role}
+                  showHeading={false}
                 />
               </CardContent>
             </Card>
