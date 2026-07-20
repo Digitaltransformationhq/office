@@ -7,6 +7,7 @@ import { CreateTaskModal } from './CreateTaskModal';
 import {
   Search, SlidersHorizontal, Check, X, Repeat2, Receipt,
   RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp, Plus,
+  Play, CheckCheck,
 } from 'lucide-react';
 
 interface Task {
@@ -141,6 +142,25 @@ export function TaskMIS({ user }: TaskMISProps) {
     r.success ? loadTasks() : alert(r.error);
   };
 
+  /**
+   * Start / end a task you've been assigned. This lives here as well as on the
+   * team-member dashboard because every other role (team-leader, and anyone whose
+   * role falls through to a dashboard without a task list) only ever reaches
+   * their own tasks through this screen — without it they can be assigned work
+   * and have no way to mark it done.
+   */
+  const handleStatusUpdate = async (task: Task, newStatus: string) => {
+    const snapshot = tasks;
+    setTasks(ts => ts.map(t => (t.id === task.id ? { ...t, status: newStatus } : t)));
+    const r = await tasksAPI.update(task.id, { status: newStatus });
+    if (!r?.success) {
+      setTasks(snapshot);
+      alert(r?.error || 'Failed to update task status');
+      return;
+    }
+    loadTasks({ silent: true });
+  };
+
   const handleReopen = async (task: Task) => {
     const reason = prompt('Reason for reopening:');
     if (!reason?.trim()) return;
@@ -220,6 +240,9 @@ export function TaskMIS({ user }: TaskMISProps) {
     const canEdit = isPartnerOrAdmin || task.createdById === user.id;
     const isPendingAcceptance = task.assignmentStatus === 'Pending Acceptance' && task.assignedToId === user.id;
     const assign = task.assignmentStatus || 'Accepted';
+    // The task is yours to work on: assigned to you, and past the accept/reject gate.
+    const isMine = task.assignedToId === user.id;
+    const isLive = assign !== 'Pending Acceptance' && assign !== 'Rejected';
     return (
       <div className="flex items-center gap-1">
         {isPendingAcceptance && (
@@ -227,6 +250,12 @@ export function TaskMIS({ user }: TaskMISProps) {
             <IconBtn icon={<Check size={14} />} tone="green" title="Accept" onClick={() => handleAccept(task)} />
             <IconBtn icon={<X size={14} />} tone="red" title="Reject" onClick={() => handleReject(task)} />
           </>
+        )}
+        {isMine && isLive && task.status === 'Pending' && (
+          <IconBtn icon={<Play size={14} />} tone="default" title="Start task" onClick={() => handleStatusUpdate(task, 'In Progress')} />
+        )}
+        {isMine && isLive && task.status === 'In Progress' && (
+          <IconBtn icon={<CheckCheck size={14} />} tone="green" title="Mark done" onClick={() => handleStatusUpdate(task, 'Completed')} />
         )}
         {assign !== 'Pending Acceptance' && assign !== 'Rejected' && task.status !== 'Completed' && task.assignedToId === user.id && (
           <IconBtn icon={<Repeat2 size={14} />} tone="default" title="Reassign" onClick={() => { setSelectedTask(task); setShowReassignModal(true); }} />

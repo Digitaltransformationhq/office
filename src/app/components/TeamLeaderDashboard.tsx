@@ -37,6 +37,15 @@ function StatusChip({ status }: { status?: string }) {
   );
 }
 
+/**
+ * Solid fills, matching TeamMemberDashboard's Action column — the pale tinted
+ * variant reads as another status tag next to the Status chip.
+ */
+const ACTION_TONE: Record<string, string> = {
+  navy: 'bg-[#1b365d] hover:bg-[#142a4a]',
+  green: 'bg-[#3d8a22] hover:bg-[#347618]',
+};
+
 const shortDate = (d?: string) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—';
 
@@ -50,6 +59,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const [selectedTaskForBilling, setSelectedTaskForBilling] = useState<any>(null);
   const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
   const [recordToPay, setRecordToPay] = useState<BillingRecord | null>(null);
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const timeAgo = useTimeAgo(lastRefresh);
   const { showError } = useToast();
 
@@ -94,6 +104,47 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
     } catch (error) {
       console.error('Error refreshing data:', error);
     }
+  };
+
+  /**
+   * Start / end a task assigned to this team leader. Mirrors TeamMemberDashboard:
+   * a team leader can be assigned work like anyone else, and their own My Tasks
+   * table used to be read-only, leaving them no way to progress it.
+   * Optimistic, rolling back if the write fails so the UI never claims a save
+   * that did not happen.
+   */
+  const handleStatusUpdate = async (taskId: string, newStatus: string) => {
+    if (busyIds.has(taskId)) return;
+    const snapshot = allTasks;
+    setBusyIds(prev => new Set(prev).add(taskId));
+    setAllTasks(ts => ts.map(t => (t.id === taskId ? { ...t, status: newStatus } : t)));
+    try {
+      const res = await tasksAPI.update(taskId, { status: newStatus });
+      if (!res?.success) throw new Error(res?.error || 'Update failed');
+      setLastRefresh(new Date());
+    } catch {
+      setAllTasks(snapshot);
+      showError('Failed to update task status');
+    } finally {
+      setBusyIds(prev => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+    }
+  };
+
+  /** The actions a task offers its assignee, gated on the accept/reject stage. */
+  const myTaskActions = (task: any) => {
+    const assign = task.assignmentStatus || 'Accepted';
+    if (assign === 'Pending Acceptance' || assign === 'Rejected') return [];
+    if (task.status === 'Pending') {
+      return [{ key: 'start', label: 'Start', tone: 'navy' as const, next: 'In Progress' }];
+    }
+    if (task.status === 'In Progress') {
+      return [{ key: 'done', label: 'Done', tone: 'green' as const, next: 'Completed' }];
+    }
+    return [];
   };
 
   if (loading) {
@@ -298,12 +349,13 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                   <TableHead>Task</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Due</TableHead>
+                  <TableHead>Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {myTasks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
                       No tasks assigned to you.
                     </TableCell>
                   </TableRow>
@@ -314,6 +366,20 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                     <TableCell><StatusChip status={task.status} /></TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
                       {shortDate(task.targetDate)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {myTaskActions(task).map(a => (
+                          <button
+                            key={a.key}
+                            onClick={() => handleStatusUpdate(task.id, a.next)}
+                            disabled={busyIds.has(task.id)}
+                            className={`whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${ACTION_TONE[a.tone]}`}
+                          >
+                            {busyIds.has(task.id) ? 'Saving…' : a.label}
+                          </button>
+                        ))}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
