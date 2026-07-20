@@ -20,7 +20,6 @@ import { LeaveManagement } from './components/LeaveManagement';
 import { AnnouncementManagement } from './components/AnnouncementManagement';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { ImportantDatesBar } from './components/ImportantDatesBar';
-import { AnnouncementBar } from './components/AnnouncementBar';
 import { MyInquiries } from './components/MyInquiries';
 import { InquiryManagement } from './components/InquiryManagement';
 import { ToastProvider } from './components/Toast';
@@ -347,9 +346,7 @@ export default function App() {
           />
           {/* Important Dates Bar - Shows for all users */}
           <ImportantDatesBar />
-          {/* Announcement Bar - Shows for all users */}
-          <AnnouncementBar userRole={user.role} />
-          <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          {/* Announcement Bar - Shows for all users */}          <main className="flex-1 overflow-y-auto p-4 md:p-6">
             {renderDashboard()}
           </main>
         </div>

@@ -6,7 +6,6 @@ import { CreateTaskModal } from './CreateTaskModal';
 import { AddStaffModal } from './AddStaffModal';
 import { TaskApprovalQueue } from './TaskApprovalQueue';
 import { InquiryApprovalQueue } from './InquiryApprovalQueue';
-import { AnnouncementBar } from './AnnouncementBar';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { KPICard } from './KPICard';
 import { useLiveData } from '../hooks/useLiveData';
@@ -214,10 +213,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
   }
 
   return (
-    <div className="flex flex-col min-h-full bg-background">
-      <AnnouncementBar />
-
-      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="flex flex-col min-h-full bg-background">      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
 
         {/* ── Header ── */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

@@ -22,7 +22,6 @@ import { ViewClientModal } from './ViewClientModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { TaskApprovalQueue } from './TaskApprovalQueue';
 import { InquiryApprovalQueue } from './InquiryApprovalQueue';
-import { AnnouncementBar } from './AnnouncementBar';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
 import { useLiveData } from '../hooks/useLiveData';
@@ -228,10 +227,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     (c.contact || c.mobileNumber || '').toLowerCase().includes(cq));
 
   return (
-    <div className="space-y-0">
-      <AnnouncementBar />
-
-      {/* No padding here — <main> in App.tsx already pads the page. */}
+    <div className="space-y-0">      {/* No padding here — <main> in App.tsx already pads the page. */}
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>

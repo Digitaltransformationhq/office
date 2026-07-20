@@ -5,7 +5,6 @@ import { Button } from './Button';
 import { Input } from './Input';
 import { Badge } from './Badge';
 import { billingAPI, clientsAPI, usersAPI } from '../services/api';
-import { AnnouncementBar } from './AnnouncementBar';
 
 interface BillingReportsProps {
   user?: {
@@ -184,10 +183,7 @@ export function BillingReports({ user }: BillingReportsProps) {
   const uniqueStaff = Array.from(new Set(billingRecords.map((r) => r.assignedTo))).sort();
 
   return (
-    <div className="space-y-0">
-      <AnnouncementBar />
-
-      <div className="space-y-6 p-4 md:p-6">
+    <div className="space-y-0">      <div className="space-y-6 p-4 md:p-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-foreground mb-2">Billing Reports</h1>

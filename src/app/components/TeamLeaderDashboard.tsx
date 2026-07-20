@@ -171,7 +171,6 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
 
   return (
     <div className="space-y-0">
-      {/* AnnouncementBar is rendered once by App.tsx, with the user's role. */}
       {/* No padding here — <main> in App.tsx already pads the page. */}
       <div className="space-y-6">
         {/* ── Header ── */}
