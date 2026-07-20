@@ -1234,8 +1234,37 @@ app.put('/make-server-0abfa7cf/announcements/:announcementId', async (c) => {
 app.delete('/make-server-0abfa7cf/announcements/:announcementId', async (c) => {
   try {
     const announcementId = c.req.param('announcementId');
+
+    /**
+     * Creating an announcement writes two things: the record itself, and one
+     * notification per recipient. Deleting only removed the record, so every
+     * user kept a bell entry for an announcement that no longer existed —
+     * clicking it took them to a page where it was gone.
+     *
+     * Read it before deleting so its text is still available to match on.
+     * Notifications carry no reference to what produced them, so title and
+     * message are the only handle there is; two announcements with identical
+     * text would clear each other's, which is the right outcome anyway.
+     */
+    const record = await kvStore.get(announcementId);
+    const a = typeof record === 'string' ? JSON.parse(record) : record;
+
+    if (a?.title) {
+      try {
+        await supabase
+          .from('notifications')
+          .delete()
+          .eq('type', 'announcement')
+          .eq('title', a.title)
+          .eq('message', a.message || a.title);
+      } catch (e) {
+        console.log('Could not clear announcement notifications:', e);
+      }
+    }
+
     await kvStore.del(announcementId);
     await broadcastChange('announcements');
+    await broadcastChange('notifications');
 
     return c.json({ success: true, message: 'Announcement deleted' });
   } catch (error) {
