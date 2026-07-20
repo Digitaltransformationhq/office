@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { Button } from './Button';
-import { Input } from './Input';
 import { billingAPI } from '../services/api';
 import { useToast } from './Toast';
 import { DatabaseSetupModal } from './DatabaseSetupModal';
+import { X } from 'lucide-react';
 
 interface MarkAsBilledModalProps {
   task: {
@@ -122,163 +121,144 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Mark Task as Billed</CardTitle>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={onClose}
-              disabled={loading}
-            >
-              ✕
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Task Details */}
-            <div className="bg-muted p-4 rounded-lg space-y-2">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs text-muted-foreground">Client Name</div>
-                  <div className="font-medium">{task.client}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Task Name</div>
-                  <div className="font-medium">{task.task}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Assigned To</div>
-                  <div className="font-medium">{task.assignedTo}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Completion Date</div>
-                  <div className="font-medium">
-                    {task.completionDate 
-                      ? new Date(task.completionDate).toLocaleDateString('en-IN') 
-                      : 'N/A'}
-                  </div>
-                </div>
-              </div>
-            </div>
+  const NAVY = '#1b365d';
+  const fieldCls =
+    'w-full rounded-lg border border-[#E7EDF4] bg-white px-3.5 py-2.5 text-[0.92rem] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
 
-            {/* Bill Number - Required */}
+  return (
+    /**
+     * Capped height with a scrolling body and a pinned footer. The modal used to
+     * be one unbounded Card, so on a short viewport the form simply ran off the
+     * bottom of the screen and the Mark as Billed button became unreachable.
+     */
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1728]/60 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]">
+        {/* Header — stays put while the body scrolls */}
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-[#E7EDF4] px-6 py-4">
+          <h2 className="text-base font-semibold tracking-tight" style={{ color: NAVY }}>
+            Mark Task as Billed
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-[#1b365d] disabled:opacity-40"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          {/* Body — the only scrolling region */}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+            {/* Task summary. Values fall back to a dash rather than rendering an
+                empty row, which reads as a broken layout. */}
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-[#F4F6F9] p-4">
+              {[
+                ['Client', task.client],
+                ['Task', task.task],
+                ['Assigned to', task.assignedTo],
+                ['Completion date', task.completionDate
+                  ? new Date(task.completionDate).toLocaleDateString('en-IN')
+                  : '—'],
+              ].map(([label, value]) => (
+                <div key={label as string} className="min-w-0">
+                  <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+                  <dd className="truncate text-sm font-medium" style={{ color: NAVY }} title={String(value || '—')}>
+                    {value || '—'}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Bill Number / Invoice Number <span className="text-red-500">*</span>
+              <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+                Bill / invoice number <span className="text-[#c0392b]">*</span>
               </label>
-              <Input
+              <input
                 type="text"
                 value={billNumber}
                 onChange={(e) => setBillNumber(e.target.value)}
-                placeholder="Enter bill/invoice number"
+                placeholder="e.g. INV-2026-014"
                 required
                 disabled={loading}
-                className="w-full"
+                className={fieldCls}
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                This is a required field
+            </div>
+
+            {/* Side by side: two short fields do not each deserve a full row. */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+                  Bill date
+                </label>
+                <input
+                  type="date"
+                  value={billDate}
+                  onChange={(e) => setBillDate(e.target.value)}
+                  disabled={loading}
+                  className={fieldCls}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+                  Taxable amount <span className="text-[#c0392b]">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={taxableAmount}
+                  onChange={(e) => setTaxableAmount(e.target.value)}
+                  placeholder="0.00"
+                  required
+                  disabled={loading}
+                  className={fieldCls}
+                />
+              </div>
+            </div>
+            {capturedAmount && Number(capturedAmount) > 0 && (
+              <p className="-mt-1 text-xs text-muted-foreground">
+                Amount prefilled from approval — edit it if the invoice differs.
               </p>
-            </div>
+            )}
 
-            {/* Bill Date - Optional */}
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Bill Date
-              </label>
-              <Input
-                type="date"
-                value={billDate}
-                onChange={(e) => setBillDate(e.target.value)}
-                disabled={loading}
-                className="w-full"
-              />
-            </div>
-
-            {/* Taxable Amount - Required */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Taxable Amount <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="text"
-                value={taxableAmount}
-                onChange={(e) => setTaxableAmount(e.target.value)}
-                placeholder="Enter taxable amount"
-                required
-                disabled={loading}
-                className="w-full"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                {capturedAmount && Number(capturedAmount) > 0
-                  ? 'Prefilled from the amount entered when this task was sent for billing — edit it if the invoice differs.'
-                  : 'This is a required field'}
-              </p>
-            </div>
-
-            {/* Remarks - Optional */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Remarks
+              <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+                Remarks <span className="font-normal text-muted-foreground">(optional)</span>
               </label>
               <textarea
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Add any additional notes or remarks (optional)"
+                placeholder="Any notes for this invoice…"
                 disabled={loading}
-                rows={3}
-                className="w-full px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                rows={2}
+                className={`${fieldCls} resize-none`}
               />
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-3 pt-4 border-t">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={onClose}
-                disabled={loading}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={loading || !billNumber.trim() || !taxableAmount.trim()}
-                className="flex-1"
-              >
-                {loading ? (
-                  <>
-                    <span className="inline-block animate-spin mr-2">⏳</span>
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    ✅ Mark as Billed
-                  </>
-                )}
-              </Button>
-            </div>
+            <p className="rounded-lg bg-[#FEF4E6] px-3 py-2.5 text-xs leading-relaxed text-[#8a5a00]">
+              The task moves to <strong>Billed</strong> and a billing record is created. Logged for audit.
+            </p>
+          </div>
 
-            {/* Warning Message */}
-            <div className="bg-warning/10 border border-warning/20 rounded-lg p-3">
-              <div className="flex items-start gap-2">
-                <span className="text-lg">⚠️</span>
-                <div className="text-sm">
-                  <p className="font-medium text-warning mb-1">Important</p>
-                  <p className="text-muted-foreground">
-                    Once marked as billed, the task status will be updated to "Billed" and a billing record will be created. This action will be logged for audit purposes.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          {/* Footer — always reachable, never scrolls away */}
+          <div className="flex shrink-0 items-center gap-3 border-t border-[#E7EDF4] px-6 py-4">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={loading} className="flex-1">
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading || !billNumber.trim() || !taxableAmount.trim()}
+              className="flex-1"
+            >
+              {loading ? 'Processing…' : 'Mark as Billed'}
+            </Button>
+          </div>
+        </form>
+      </div>
       {showDatabaseSetupModal && (
         <DatabaseSetupModal
           onClose={() => setShowDatabaseSetupModal(false)}

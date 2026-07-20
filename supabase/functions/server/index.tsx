@@ -2487,7 +2487,11 @@ app.delete('/make-server-0abfa7cf/billing-records/:recordId', async (c) => {
       return c.json({ success: false, error: 'Billing record not found' }, 404);
     }
 
-    const billingData = JSON.parse(record);
+    // kvStore.get returns the jsonb column already parsed, so calling
+    // JSON.parse on it throws and the whole delete fell into the catch below —
+    // deleting a billing record never once worked. Every other handler already
+    // guards on the type; this one did not.
+    const billingData = typeof record === 'string' ? JSON.parse(record) : record;
 
     // Deleting the bill undoes the step that completed the task, so the
     // completion date it stamped has to come off with it — otherwise the task

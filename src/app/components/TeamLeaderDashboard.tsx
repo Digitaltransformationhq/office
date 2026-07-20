@@ -9,11 +9,8 @@ import { ApprovalQueue } from './ApprovalQueue';
 import { useToast } from './Toast';
 import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isAwaitingApproval, isFinishedTask } from '../utils/taskStatus';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
-import { MarkAsPaidModal } from './MarkAsPaidModal';
-import {
-  awaitingPaymentRecords, formatINR, invoiceAgeInDays, type BillingRecord,
-} from '../utils/revenue';
-import { Loader2, X, IndianRupee, Wallet } from 'lucide-react';
+import { type BillingRecord } from '../utils/revenue';
+import { Loader2, X, IndianRupee } from 'lucide-react';
 
 interface TeamLeaderDashboardProps {
   user?: {
@@ -55,7 +52,6 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const [showApprovalQueue, setShowApprovalQueue] = useState(false);
   const [selectedTaskForBilling, setSelectedTaskForBilling] = useState<any>(null);
   const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
-  const [recordToPay, setRecordToPay] = useState<BillingRecord | null>(null);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const timeAgo = useTimeAgo(lastRefresh);
   const { showError } = useToast();
@@ -169,12 +165,6 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
       return dateB - dateA;
     });
 
-  // Invoiced but unpaid — the stage after billing, oldest first so the most
-  // overdue gets chased first.
-  const awaitingPayment = awaitingPaymentRecords(billingRecords)
-    .slice()
-    .sort((a, b) => (invoiceAgeInDays(b) ?? 0) - (invoiceAgeInDays(a) ?? 0));
-  const outstanding = awaitingPayment.reduce((sum, r) => sum + (Number(r.taxableAmount) || 0), 0);
 
   // Roles are normalized in transformUser, so a single comparison is enough.
   const staffMembers = users.filter(u => u.role === 'team-member');
@@ -252,9 +242,14 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end md:justify-start">
+                          {/* Solid fill, like every other action in the app: the
+                              pale tinted-and-bordered variant this used to have
+                              was the same shape, weight and palette as a status
+                              chip, so the Action column read as another tag
+                              rather than something to press. */}
                           <button
                             onClick={() => setSelectedTaskForBilling(task)}
-                            className="whitespace-nowrap rounded border border-green-300 bg-green-100 px-3.5 py-2 text-xs font-medium text-green-700 hover:bg-green-200 md:px-2 md:py-0.5 md:text-[10px]"
+                            className={`whitespace-nowrap rounded-md px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition-colors md:px-2.5 md:py-1 md:text-[11px] ${ACTION_TONE.green}`}
                           >
                             Mark Billed
                           </button>
@@ -262,71 +257,6 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                       </TableCell>
                     </TableRow>
                   ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── Awaiting Payment — the stage after billing ── */}
-        {awaitingPayment.length > 0 && (
-          <Card className="border-blue-200 bg-blue-50/40">
-            <CardHeader>
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
-                  <Wallet size={16} className="shrink-0 text-blue-600" />
-                  <CardTitle className="text-blue-800">Awaiting Payment</CardTitle>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {awaitingPayment.length} invoice{awaitingPayment.length !== 1 ? 's' : ''} · {formatINR(outstanding)} outstanding
-                </p>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Bill No.</TableHead>
-                    <TableHead>Bill Date</TableHead>
-                    <TableHead>Age</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {awaitingPayment.map((rec) => {
-                    const age = invoiceAgeInDays(rec);
-                    const overdue = (age ?? 0) > 30;
-                    return (
-                      <TableRow key={rec.id}>
-                        <TableCell className="rt-title font-medium">{rec.clientName}</TableCell>
-                        <TableCell className="font-mono text-xs">{rec.billNumber}</TableCell>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">
-                          {shortDate(rec.billDate)}
-                        </TableCell>
-                        <TableCell
-                          className="whitespace-nowrap tabular-nums"
-                          style={overdue ? { color: '#B45309', fontWeight: 600 } : { color: 'inherit' }}
-                        >
-                          {age === null ? '—' : `${age}d`}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap font-medium tabular-nums">
-                          {formatINR(rec.taxableAmount)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex justify-end md:justify-start">
-                            <button
-                              onClick={() => setRecordToPay(rec)}
-                              className="whitespace-nowrap rounded border border-blue-300 bg-blue-100 px-3.5 py-2 text-xs font-medium text-blue-700 hover:bg-blue-200 md:px-2 md:py-0.5 md:text-[10px]"
-                            >
-                              Mark Paid
-                            </button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -506,14 +436,6 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
       )}
 
       {/* Record Payment Modal */}
-      {recordToPay && user && (
-        <MarkAsPaidModal
-          record={recordToPay}
-          user={{ id: user.id, name: user.name }}
-          onClose={() => setRecordToPay(null)}
-          onSuccess={loadDataSilently}
-        />
-      )}
 
       {/* Mark as Billed Modal */}
       {selectedTaskForBilling && user && (

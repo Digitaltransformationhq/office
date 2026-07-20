@@ -7,13 +7,12 @@ import { Input } from './Input';
 import { billingAPI, clientsAPI, tasksAPI, usersAPI } from '../services/api';
 import { RevenueBreakdownCard } from './RevenueBreakdown';
 import {
-  RANGE_OPTIONS, awaitingPaymentRecords, filterByRange, formatINR, formatINRCompact,
-  invoiceAgeInDays, monthOverMonth, padSlices, paidRecords, pendingBilling, pendingPayments,
+  RANGE_OPTIONS, filterByRange, formatINR, formatINRCompact,
+  monthOverMonth, padSlices, pendingBilling,
   revenueByCategory, revenueByClient, revenueByMonth, revenueByPerson, totals,
   type BillingRecord, type RangeId, type RevenueSlice,
 } from '../utils/revenue';
 import { TASK_CATEGORIES } from '../utils/taskCategories';
-import { MarkAsPaidModal } from './MarkAsPaidModal';
 import { Loader2, RefreshCw, Download } from 'lucide-react';
 
 const NAVY = '#1b365d';
@@ -39,7 +38,6 @@ export function Billing({ user }: BillingProps) {
   const [range, setRange] = useState<RangeId>('fy');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState<any>(null);
-  const [recordToPay, setRecordToPay] = useState<BillingRecord | null>(null);
 
   useEffect(() => {
     loadData();
@@ -68,20 +66,12 @@ export function Billing({ user }: BillingProps) {
   };
 
   /* ── revenue roll-ups for the active range ── */
-  // Revenue counts PAID invoices only, bucketed by payment date.
-  const paid = useMemo(() => paidRecords(records), [records]);
-  const scoped = useMemo(() => filterByRange(paid, range), [paid, range]);
+  // Revenue is recognised when the invoice is raised, so every billing record
+  // counts. There is no separate payment step to wait on.
+  const scoped = useMemo(() => filterByRange(records, range), [records, range]);
   const summary = useMemo(() => totals(scoped), [scoped]);
-  const mom = useMemo(() => monthOverMonth(paid), [paid]);
-  const awaitingPayment = useMemo(() => pendingPayments(records), [records]);
+  const mom = useMemo(() => monthOverMonth(records), [records]);
   const pending = useMemo(() => pendingBilling(tasks), [tasks]);
-  // Backlog, so never period-filtered. Oldest first — chase those first.
-  const unpaidInvoices = useMemo(
-    () => awaitingPaymentRecords(records)
-      .slice()
-      .sort((a, b) => (invoiceAgeInDays(b) ?? 0) - (invoiceAgeInDays(a) ?? 0)),
-    [records],
-  );
   const byClient = useMemo(() => revenueByClient(scoped), [scoped]);
 
   // Pad against the full roster so everyone appears, even on ₹0 for this period.
@@ -210,15 +200,9 @@ export function Billing({ user }: BillingProps) {
               value={formatINRCompact(summary.revenue)}
               variant="success"
               trend={range === 'month' ? momTrend : undefined}
-              note="Payments received"
+              note="Invoices raised"
             />
-            {/* Both backlogs ignore the period filter — outstanding is outstanding. */}
-            <KPICard
-              title="Pending payments"
-              value={formatINRCompact(awaitingPayment.amount)}
-              variant="warning"
-              note={`${awaitingPayment.count} invoice${awaitingPayment.count === 1 ? '' : 's'} unpaid`}
-            />
+            {/* Ignores the period filter — a backlog is a backlog. */}
             <KPICard
               title="Pending billing"
               value={formatINRCompact(pending.amount)}
@@ -234,81 +218,10 @@ export function Billing({ user }: BillingProps) {
             <KPICard
               title="Average per bill"
               value={formatINRCompact(summary.average)}
-              note={`${summary.count} paid bill${summary.count === 1 ? '' : 's'}`}
+              note={`${summary.count} bill${summary.count === 1 ? '' : 's'}`}
             />
           </div>
 
-          {/* Awaiting payment — the queue that turns invoices into revenue */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Awaiting payment</CardTitle>
-                <span className="text-sm text-muted-foreground">
-                  {unpaidInvoices.length === 0
-                    ? 'All invoices settled'
-                    : `${unpaidInvoices.length} unpaid · ${formatINR(awaitingPayment.amount)} outstanding`}
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[180px]">Client</TableHead>
-                      <TableHead className="min-w-[120px]">Bill No.</TableHead>
-                      <TableHead className="min-w-[110px]">Bill Date</TableHead>
-                      <TableHead className="text-right">Age</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {unpaidInvoices.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                          Nothing outstanding — every invoice has been paid.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      unpaidInvoices.map(rec => {
-                        const age = invoiceAgeInDays(rec);
-                        const overdue = (age ?? 0) > 30;
-                        return (
-                          <TableRow key={rec.id} className="hover:bg-muted/50">
-                            <TableCell className="font-medium">{rec.clientName}</TableCell>
-                            <TableCell className="font-mono text-xs">{rec.billNumber}</TableCell>
-                            <TableCell className="whitespace-nowrap">
-                              {/* Explicit month — d/m/yyyy is ambiguous and these dates carry money. */}
-                              {rec.billDate
-                                ? new Date(rec.billDate).toLocaleDateString('en-IN', {
-                                    day: '2-digit', month: 'short', year: 'numeric',
-                                  })
-                                : '—'}
-                            </TableCell>
-                            <TableCell
-                              className="text-right tabular-nums"
-                              style={overdue ? { color: '#B45309', fontWeight: 600 } : undefined}
-                            >
-                              {age === null ? '—' : `${age}d`}
-                            </TableCell>
-                            <TableCell className="text-right font-semibold tabular-nums" style={{ color: NAVY }}>
-                              {formatINR(rec.taxableAmount)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button size="sm" onClick={() => setRecordToPay(rec)}>
-                                Mark paid
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
 
           {/* Revenue breakdown — person / category, toggled */}
           <RevenueBreakdownCard
@@ -475,14 +388,6 @@ export function Billing({ user }: BillingProps) {
       )}
 
       {/* Record payment against an invoice */}
-      {recordToPay && user && (
-        <MarkAsPaidModal
-          record={recordToPay}
-          user={{ id: user.id, name: user.name }}
-          onClose={() => setRecordToPay(null)}
-          onSuccess={loadData}
-        />
-      )}
 
       {/* Client Detail Modal */}
       {selectedClient && (

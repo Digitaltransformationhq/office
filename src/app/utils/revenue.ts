@@ -25,7 +25,11 @@ export interface BillingRecord {
   billedAt: string;
   budgetedFee: number;
   hoursLogged: number;
-  /** Absent on records written before payment tracking existed — see `isPaid`. */
+  /**
+   * Payment tracking was removed: revenue is now recognised when the invoice is
+   * raised. These remain declared so records written while the Mark-as-Paid step
+   * existed still typecheck, but nothing reads them.
+   */
   paymentStatus?: 'Pending' | 'Paid';
   paymentDate?: string | null;
   paidAmount?: number;
@@ -34,25 +38,16 @@ export interface BillingRecord {
 }
 
 /**
- * The billing lifecycle has three stages:
+ * The billing lifecycle has two stages:
  *
- *   Pending for Billing → Pending payment → Revenue
- *   (task, no invoice)    (invoiced)        (payment received)
+ *   Pending for Billing → Revenue
+ *   (task, no invoice)    (invoiced)
  *
- * Revenue is recognised on payment, not on invoicing, so an unpaid invoice is
- * never counted. Records created before payment tracking existed carry no
- * `paymentStatus`; those are treated as paid so historical revenue is preserved
- * rather than retroactively moved into the pending-payment queue.
+ * Revenue is recognised when the invoice is raised. There is no separate
+ * payment-received step: every billing record counts, which is why nothing here
+ * filters on `paymentStatus` any more.
  */
-export const isPaid = (r: BillingRecord) =>
-  r.paymentStatus === undefined || r.paymentStatus === null || r.paymentStatus === 'Paid';
-
-export const isAwaitingPayment = (r: BillingRecord) => !isPaid(r);
-
-export const paidRecords = (records: BillingRecord[]) => (records || []).filter(isPaid);
-
-export const awaitingPaymentRecords = (records: BillingRecord[]) =>
-  (records || []).filter(isAwaitingPayment);
+export const revenueRecords = (records: BillingRecord[]) => records || [];
 
 export interface RevenueSlice {
   key: string;
@@ -227,30 +222,11 @@ export function revenueByMonth(records: BillingRecord[], now = new Date()): Reve
 }
 
 /**
- * Invoices raised but not yet paid — the stage between billing and revenue.
- * A backlog, so it is never period-filtered: an unpaid March invoice is still
- * outstanding in July.
- */
-export function pendingPayments(records: BillingRecord[]): { amount: number; count: number } {
-  const awaiting = awaitingPaymentRecords(records);
-  return {
-    amount: awaiting.reduce((sum, r) => sum + (Number(r.taxableAmount) || 0), 0),
-    count: awaiting.length,
-  };
-}
-
-/** Whole days since an invoice was raised, for ageing the payment queue. */
-export function invoiceAgeInDays(r: BillingRecord, now = new Date()): number | null {
-  const d = invoiceDate(r);
-  if (!d) return null;
-  return Math.max(0, Math.floor((now.getTime() - d.getTime()) / 86_400_000));
-}
-
-/**
  * Work that has been sent for billing but not yet invoiced.
  *
  * These amounts live on the task row (`tasks.taxable_amount` / `tasks.billing_fees`,
- * written by SendForBillingModal) and never reach the `billing:` KV records, which
+ * written when the completion approval is granted) and never reach the `billing:`
+ * KV records, which
  * are only created when someone marks the task as billed. They are deliberately
  * NOT counted as revenue — no invoice has been raised — but they must be visible,
  * or the money looks like it vanished between the two steps.

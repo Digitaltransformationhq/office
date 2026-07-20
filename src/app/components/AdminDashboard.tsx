@@ -9,7 +9,7 @@ import { inquiriesAPI } from '../services/api';
 import { RevenueBreakdownCard } from './RevenueBreakdown';
 import {
   filterByRange, financialYearLabel, formatINRCompact, monthOverMonth, padSlices,
-  paidRecords, pendingBilling, pendingPayments, revenueByCategory, revenueByPerson,
+  pendingBilling, revenueByCategory, revenueByPerson,
   totals, type BillingRecord,
 } from '../utils/revenue';
 import { TASK_CATEGORIES } from '../utils/taskCategories';
@@ -206,11 +206,11 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
   // ── Revenue roll-ups ──
   // Revenue counts PAID invoices only, bucketed by payment date. Unpaid invoices
   // sit in "pending payments"; work not yet invoiced sits in "pending billing".
-  const paid = paidRecords(billingRecords);
+  // Revenue is recognised on invoice, so every billing record counts.
+  const paid = billingRecords;
   const fyRecords = filterByRange(paid, 'fy');
   const fyTotals = totals(fyRecords);
   const mom = monthOverMonth(paid);
-  const awaitingPayment = pendingPayments(billingRecords);
   const pending = pendingBilling(tasks);
   // Pad against the full roster so everyone appears, even on ₹0 this year.
   const activeUserNames = users.filter(u => u.status === 'Active').map(u => u.name);
@@ -286,13 +286,6 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 value: `${Math.abs(mom.change).toFixed(0)}% vs last month`,
                 isPositive: mom.change >= 0,
               }}
-            />
-            {/* Invoiced, money not yet in. */}
-            <KPICard
-              title="Pending payments"
-              value={formatINRCompact(awaitingPayment.amount)}
-              variant="warning"
-              note={`${awaitingPayment.count} invoice${awaitingPayment.count === 1 ? '' : 's'} unpaid`}
             />
             {/* Sent for billing, invoice not yet raised. */}
             <KPICard

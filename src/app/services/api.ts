@@ -485,17 +485,6 @@ export const billingAPI = {
     });
   },
 
-  markPaid: async (recordId: string, paymentData: {
-    paymentDate?: string;
-    paidAmount?: number;
-    paidBy: string;
-    paidById: string;
-  }) => {
-    return fetchAPI(`/billing-records/${recordId}/mark-paid`, {
-      method: 'POST',
-      body: JSON.stringify(paymentData),
-    });
-  },
 
   delete: async (recordId: string) => {
     return fetchAPI(`/billing-records/${recordId}`, {
