@@ -14,6 +14,7 @@ import { TaskMIS } from './components/TaskMIS';
 import { TeamTasks } from './components/TeamTasks';
 import { Billing } from './components/Billing';
 import { CalendarManagement } from './components/CalendarManagement';
+import { LoginHistoryAdmin } from './components/LoginHistoryAdmin';
 import { AnnouncementManagement } from './components/AnnouncementManagement';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { ImportantDatesBar } from './components/ImportantDatesBar';
@@ -219,6 +220,16 @@ export default function App() {
       case 'clients':
         if (user && user.role === 'admin') return <ClientManagement />;
         if (user) setActiveView(user.role);
+        return null;
+      case 'login-history':
+        // Admin only. The per-user panel this replaces lived in Settings and
+        // only ever showed you your own sign-ins, which audits nothing.
+        if (user && user.role === 'admin') {
+          return <LoginHistoryAdmin />;
+        }
+        if (user) {
+          setActiveView(user.role);
+        }
         return null;
       case 'calendar':
         // Only allow admin to access calendar management

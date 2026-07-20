@@ -87,6 +87,8 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Calendar', id: 'calendar' },
       { label: 'Announcements', id: 'announcements' },
       { label: 'Reports', id: 'reports' },
+      // Admin only: this is an audit view of the whole firm's sign-ins.
+      { label: 'Login History', id: 'login-history' },
       { label: 'Settings', id: 'settings' },
     ],
     'team-leader': [

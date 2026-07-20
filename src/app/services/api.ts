@@ -275,6 +275,11 @@ export const loginAPI = {
     });
   },
 
+  /** Every user's sign-ins. Admin only, enforced in the UI. */
+  getAllLoginHistory: async () => {
+    return fetchAPI('/login-history');
+  },
+
   getLoginHistory: async (userId: string) => {
     return fetchAPI(`/login-history/${userId}`);
   },

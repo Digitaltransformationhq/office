@@ -338,6 +338,34 @@ app.post('/make-server-0abfa7cf/login', async (c) => {
   }
 });
 
+/**
+ * Every user's sign-ins, for the admin audit view.
+ *
+ * Declared before the /:userId route: Hono matches in order, so a literal path
+ * registered afterwards would be swallowed by the parameterised one.
+ *
+ * Access is enforced in the UI, which is where every other permission in this
+ * app is decided — the endpoints themselves are reachable by anyone holding the
+ * anon key. Worth closing properly one day; noting it rather than implying this
+ * is a security boundary.
+ */
+app.get('/make-server-0abfa7cf/login-history', async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from('login_history')
+      .select('*')
+      .order('login_time', { ascending: false })
+      .limit(500);
+
+    if (error) throw error;
+
+    return c.json({ success: true, data: data || [] });
+  } catch (error) {
+    console.log('Error fetching all login history:', error);
+    return c.json({ success: false, error: 'Failed to fetch login history' }, 500);
+  }
+});
+
 app.get('/make-server-0abfa7cf/login-history/:userId', async (c) => {
   try {
     const userId = c.req.param('userId');
