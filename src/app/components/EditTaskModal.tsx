@@ -80,9 +80,18 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
     TASK_STATUS.pendingForBilling,
     TASK_STATUS.billed,
   ];
-  // Whatever the task is now stays selectable, so opening a task that sits at a
-  // gate and pressing save does not quietly move it somewhere else.
-  const taskStatuses = EDITABLE_STATUSES.includes(formData.status as any)
+  /**
+   * Whatever the task is now stays selectable, so opening a task that sits at a
+   * gate and pressing save does not quietly move it somewhere else.
+   *
+   * Deduplicated by LABEL rather than by value: legacy rows still stored as
+   * 'Completed' render as "Billed", so prepending the raw value would list
+   * "Billed" twice — once for the stored value and once for the real terminal
+   * status — with no way to tell them apart.
+   */
+  const taskStatuses = EDITABLE_STATUSES.some(
+    (v) => statusLabel(v) === statusLabel(formData.status),
+  )
     ? EDITABLE_STATUSES
     : [formData.status, ...EDITABLE_STATUSES];
 
