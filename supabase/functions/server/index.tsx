@@ -98,6 +98,68 @@ async function notifyRoles(roles: string[], type: string, title: string, message
   }
 }
 
+/**
+ * Password hashing — PBKDF2-SHA256 via Web Crypto, so no dependency is needed.
+ *
+ * Passwords were stored as plaintext and the users table was readable with the
+ * public anon key, so every account's password was retrievable by anyone. RLS
+ * closes the read; this closes the storage.
+ *
+ * Stored form: pbkdf2$<iterations>$<salt-b64>$<hash-b64>
+ */
+const PBKDF2_ITERATIONS = 100_000;
+
+const b64 = (buf: ArrayBuffer | Uint8Array) =>
+  btoa(String.fromCharCode(...new Uint8Array(buf as ArrayBuffer)));
+const unb64 = (s: string) =>
+  Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function pbkdf2(password: string, salt: Uint8Array, iterations: number) {
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'],
+  );
+  return crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256,
+  );
+}
+
+async function hashPassword(plain: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const bits = await pbkdf2(plain, salt, PBKDF2_ITERATIONS);
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${b64(salt)}$${b64(bits)}`;
+}
+
+const isHashed = (stored?: string | null) =>
+  typeof stored === 'string' && stored.startsWith('pbkdf2$');
+
+/**
+ * True if `plain` matches. Accepts legacy plaintext so nobody is locked out
+ * mid-migration — callers upgrade the row on a successful plaintext match.
+ */
+async function verifyPassword(plain: string, stored?: string | null): Promise<boolean> {
+  if (!stored) return false;
+  if (!isHashed(stored)) return plain === stored;
+  const [, iterStr, saltB64, hashB64] = stored.split('$');
+  const bits = await pbkdf2(plain, unb64(saltB64), Number(iterStr) || PBKDF2_ITERATIONS);
+  // Constant-time-ish: compare every byte rather than bailing on the first diff.
+  const a = new Uint8Array(bits);
+  const b = unb64(hashB64);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+/** Replace a verified plaintext password with its hash, once, on login. */
+async function upgradePasswordHash(userId: string, plain: string) {
+  try {
+    await supabase.from('users').update({ password: await hashPassword(plain) }).eq('id', userId);
+    console.log('Upgraded password to hashed form for', userId);
+  } catch (e) {
+    console.log('Password upgrade failed (login still succeeded):', e);
+  }
+}
+
 /** "GST return — ACME Ltd", the one-line description every notification uses. */
 function taskLabel(t: any) {
   return `${t?.task || 'Task'}${t?.client ? ' — ' + t.client : ''}`;
@@ -154,15 +216,17 @@ app.post('/make-server-0abfa7cf/login', async (c) => {
     }
 
     const user = users[0];
-    console.log('User found:', user.id, user.name, 'password column exists:', user.hasOwnProperty('password'), 'password value:', user.password);
+    console.log('User found:', user.id, user.name, 'has password set:', user.password != null);
 
-    // Check password (in production, use bcrypt for hashing)
-    // If password column doesn't exist yet, use default password 'Pass@2026'
-    const userPassword = user.password !== undefined && user.password !== null ? user.password : 'Pass@2026';
+    // Fall back to the seed password only when the column was never populated.
+    const stored = user.password ?? 'Pass@2026';
+    const passwordOk = await verifyPassword(password, stored);
 
-    console.log('Expected password:', userPassword, 'Provided password:', password, 'Match:', password === userPassword);
+    // Never log the password, the stored value, or the comparison — these lines
+    // used to print both in plaintext to the function logs.
+    console.log('Password match:', passwordOk);
 
-    if (password !== userPassword) {
+    if (!passwordOk) {
       // Log failed attempt
       const failedLoginId = `login:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -185,6 +249,12 @@ app.post('/make-server-0abfa7cf/login', async (c) => {
       }
 
       return c.json({ success: false, error: 'Invalid email or password' }, 401);
+    }
+
+    // Rewrite the row in hashed form the first time a legacy plaintext password
+    // is used, so the migration completes itself as people log in.
+    if (!isHashed(user.password)) {
+      await upgradePasswordHash(user.id, password);
     }
 
     // Update user's last login info (only update location columns if they exist)
@@ -657,7 +727,7 @@ app.post('/make-server-0abfa7cf/users', async (c) => {
       email: body.email,
       role: body.role,
       status: body.status || 'Active',
-      password: body.password || 'Pass@2026',
+      password: await hashPassword(body.password || 'Pass@2026'),
     };
 
     console.log('User object to insert:', JSON.stringify(user, null, 2));
@@ -1141,7 +1211,7 @@ app.post('/make-server-0abfa7cf/change-password', async (c) => {
     }
 
     // Verify current password
-    if (currentPassword !== user.password) {
+    if (!(await verifyPassword(currentPassword, user.password))) {
       console.log('Current password incorrect');
       return c.json({ success: false, error: 'Current password is incorrect' }, 401);
     }
@@ -1149,7 +1219,7 @@ app.post('/make-server-0abfa7cf/change-password', async (c) => {
     // Update password
     const { error: updateError } = await supabase
       .from('users')
-      .update({ password: newPassword })
+      .update({ password: await hashPassword(newPassword) })
       .eq('id', user.id);
 
     if (updateError) {
@@ -1299,7 +1369,7 @@ app.post('/make-server-0abfa7cf/reset-password', async (c) => {
     // Update user password
     const { error: updateError } = await supabase
       .from('users')
-      .update({ password: newPassword })
+      .update({ password: await hashPassword(newPassword) })
       .eq('id', otpRecord.user_id);
 
     if (updateError) throw updateError;
