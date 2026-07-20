@@ -3,6 +3,7 @@ import { ReviewLeaveModal } from './ReviewLeaveModal';
 import { useToast } from './Toast';
 import { leaveAPI } from '../services/api';
 import { useLiveData } from '../hooks/useLiveData';
+import { leaveLabel, leaveChip } from '../utils/leave';
 import { CalendarCheck, CheckCircle2, Search, ChevronDown } from 'lucide-react';
 
 interface ApprovalQueueProps {
@@ -20,19 +21,6 @@ const thCls =
   'px-4 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground';
 const selectCls =
   'appearance-none rounded-lg border border-[#E7EDF4] bg-white py-2 pl-3 pr-9 text-sm text-foreground/80 outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
-
-/** Stored as codes; expanded only for reading. */
-const LEAVE_LABEL: Record<string, string> = {
-  CL: 'Casual',
-  SL: 'Sick',
-  EL: 'Earned',
-};
-
-const LEAVE_CHIP: Record<string, string> = {
-  CL: 'border border-blue-200 bg-blue-50 text-blue-700',
-  SL: 'border border-amber-300 bg-amber-100 text-amber-700',
-  EL: 'border border-purple-300 bg-purple-100 text-purple-700',
-};
 
 const shortDate = (d?: string) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -170,10 +158,8 @@ export function ApprovalQueue({ userId, userName, userRole, showHeading = true }
                       <p className="text-[0.82rem] font-medium" style={{ color: NAVY }}>{leave.userName}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${
-                        LEAVE_CHIP[leave.leaveType] || 'border border-slate-300 bg-slate-100 text-slate-600'
-                      }`}>
-                        {LEAVE_LABEL[leave.leaveType] || leave.leaveType}
+                      <span className={`inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${leaveChip(leave.leaveType)}`}>
+                        {leaveLabel(leave.leaveType)}
                       </span>
                     </td>
                     <td className="px-4 py-3">

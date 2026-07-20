@@ -187,7 +187,6 @@ export function ReviewLeaveModal({
               {loading ? 'Rejecting...' : 'Reject'}
             </Button>
             <Button
-              variant="default"
               onClick={handleApprove}
               disabled={loading}
             >

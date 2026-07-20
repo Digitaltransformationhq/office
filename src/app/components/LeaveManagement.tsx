@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './Card';
-import { Button } from './Button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
-import { Badge } from './Badge';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ApplyLeaveModal } from './ApplyLeaveModal';
 import { useToast } from './Toast';
 import { leaveAPI } from '../services/api';
+import { useLiveData } from '../hooks/useLiveData';
+import { LEAVE_TYPES, leaveLabel, leaveChip, leaveStatusChip } from '../utils/leave';
+import { CalendarDays, Plus, Inbox } from 'lucide-react';
 
 interface LeaveManagementProps {
   /** Real user id ('user:7') — written to a column with a foreign key. */
@@ -14,22 +13,26 @@ interface LeaveManagementProps {
   userRole: string;
 }
 
-export function LeaveManagement({ userId, userName, userRole }: LeaveManagementProps) {
+const NAVY = '#1b365d';
+const thCls =
+  'px-4 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground';
+
+const shortDate = (d?: string) =>
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+export function LeaveManagement({ userId, userName }: LeaveManagementProps) {
   const [leaves, setLeaves] = useState<any[]>([]);
   const [balance, setBalance] = useState({ casualLeave: 10, sickLeave: 7, earnedLeave: 15 });
   const [loading, setLoading] = useState(true);
   const [showApplyLeave, setShowApplyLeave] = useState(false);
-  const { showSuccess, showError } = useToast();
+  const { showError } = useToast();
 
-  useEffect(() => {
-    loadData();
-  }, [userId]);
+  useEffect(() => { loadData(); }, [userId]);
+  useLiveData(['users'], () => loadData({ silent: true }));
 
-  const loadData = async () => {
+  const loadData = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
-      // Both were relative /api/... paths, which this app does not serve, so
-      // this screen has always shown an empty list and default balances.
+      if (!silent) setLoading(true);
       const [leavesResponse, balanceResponse] = await Promise.all([
         leaveAPI.getByUser(userId),
         leaveAPI.getBalance(userId),
@@ -46,143 +49,149 @@ export function LeaveManagement({ userId, userName, userRole }: LeaveManagementP
       }
     } catch (error) {
       console.error('Error loading leave data:', error);
-      showError('Failed to load leave data');
+      if (!silent) showError('Failed to load leave data');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'Approved':
-        return <Badge variant="success">Approved</Badge>;
-      case 'Rejected':
-        return <Badge variant="danger">Rejected</Badge>;
-      case 'Pending':
-        return <Badge variant="warning">Pending</Badge>;
-      default:
-        return <Badge variant="default">{status}</Badge>;
-    }
-  };
-
-  const getLeaveTypeLabel = (type: string) => {
-    switch (type) {
-      case 'CL':
-        return 'Casual Leave';
-      case 'SL':
-        return 'Sick Leave';
-      case 'EL':
-        return 'Earned Leave';
-      default:
-        return type;
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="text-4xl mb-4">⏳</div>
-          <p className="text-muted-foreground">Loading leave data...</p>
-        </div>
-      </div>
-    );
-  }
+  const pendingCount = useMemo(
+    () => leaves.filter(l => l.status === 'Pending').length, [leaves]);
 
   return (
-    <div className="space-y-6">
-      {/* Leave Balance Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-2">Casual Leave</p>
-              <p className="text-4xl font-bold text-primary mb-1">{balance.casualLeave}</p>
-              <p className="text-xs text-muted-foreground">days remaining</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-2">Sick Leave</p>
-              <p className="text-4xl font-bold text-primary mb-1">{balance.sickLeave}</p>
-              <p className="text-xs text-muted-foreground">days remaining</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-2">Earned Leave</p>
-              <p className="text-4xl font-bold text-primary mb-1">{balance.earnedLeave}</p>
-              <p className="text-xs text-muted-foreground">days remaining</p>
-            </div>
-          </CardContent>
-        </Card>
+    <div className="flex flex-col gap-4">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-[1.4rem] font-semibold tracking-tight" style={{ color: NAVY }}>
+            Leave
+          </h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {leaves.length === 0
+              ? 'You have not applied for any leave yet'
+              : `${leaves.length} application${leaves.length === 1 ? '' : 's'}${pendingCount ? ` · ${pendingCount} awaiting approval` : ''}`}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowApplyLeave(true)}
+          className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full bg-[#1b365d] px-4 py-2 text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a] sm:self-auto"
+        >
+          <Plus size={15} /> Apply for leave
+        </button>
       </div>
 
-      {/* Leave Applications Table */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>My Leave Applications</CardTitle>
-            <Button size="sm" onClick={() => setShowApplyLeave(true)}>
-              📝 Apply for Leave
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Leave Type</TableHead>
-                <TableHead>From Date</TableHead>
-                <TableHead>To Date</TableHead>
-                <TableHead>Days</TableHead>
-                <TableHead>Reason</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Applied On</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {leaves.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                    No leave applications found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                leaves.map((leave) => (
-                  <TableRow key={leave.id}>
-                    <TableCell>
-                      <Badge variant="primary">{getLeaveTypeLabel(leave.leaveType)}</Badge>
-                    </TableCell>
-                    <TableCell>{new Date(leave.fromDate).toLocaleDateString('en-IN')}</TableCell>
-                    <TableCell>{new Date(leave.toDate).toLocaleDateString('en-IN')}</TableCell>
-                    <TableCell>
-                      {leave.totalDays} {leave.isHalfDay && '(Half Day)'}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">{leave.reason}</TableCell>
-                    <TableCell>{getStatusBadge(leave.status)}</TableCell>
-                    <TableCell>
-                      {new Date(leave.createdAt).toLocaleDateString('en-IN')}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {/* Balances, read from one definition so these labels and the form's
+          cannot drift apart. */}
+      <div className="grid grid-cols-3 gap-4">
+        {LEAVE_TYPES.map(t => {
+          const days = (balance as any)[t.balanceKey] ?? 0;
+          return (
+            <div key={t.code} className="rounded-xl border border-[#E7EDF4] bg-white p-4">
+              <span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${leaveChip(t.code)}`}>
+                {t.label}
+              </span>
+              <p className="mt-2 text-[1.7rem] font-semibold leading-none tabular-nums" style={{ color: NAVY }}>
+                {days}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                day{days === 1 ? '' : 's'} left this year
+              </p>
+            </div>
+          );
+        })}
+      </div>
 
-      {/* Apply Leave Modal */}
+      {/* Applications */}
+      <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
+        <div className="flex items-center gap-2.5 border-b border-[#E7EDF4] px-5 py-4">
+          <span
+            className="flex h-8 w-8 items-center justify-center rounded-lg"
+            style={{ backgroundColor: 'rgba(27,54,93,0.08)', color: NAVY }}
+          >
+            <CalendarDays size={16} />
+          </span>
+          <h2 className="text-sm font-semibold" style={{ color: NAVY }}>My applications</h2>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#1b365d] border-t-transparent" />
+          </div>
+        ) : leaves.length === 0 ? (
+          <div className="flex flex-col items-center py-12 text-center">
+            <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#F4F6F9] text-muted-foreground">
+              <Inbox size={22} />
+            </span>
+            <p className="text-sm font-medium" style={{ color: NAVY }}>No leave applied for</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Anything you apply for shows here with its approval status.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] border-collapse text-[0.8rem]">
+              <thead>
+                <tr className="border-b border-[#E7EDF4] bg-[#F9FAFB]">
+                  {['Type', 'Dates', 'Days', 'Reason', 'Status', 'Applied'].map(h => (
+                    <th key={h} className={thCls}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {leaves.map((leave) => (
+                  <tr key={leave.id} className="border-b border-[#EFF3F8] transition-colors hover:bg-[#F9FBFD]">
+                    <td className="px-4 py-3">
+                      <span className={`inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${leaveChip(leave.leaveType)}`}>
+                        {leaveLabel(leave.leaveType)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="whitespace-nowrap text-[0.8rem] text-foreground/80">
+                        {shortDate(leave.fromDate)}
+                      </p>
+                      {/* Second date only when it differs — a single-day leave
+                          printing the same date twice reads as an error. */}
+                      {leave.fromDate !== leave.toDate && (
+                        <p className="whitespace-nowrap text-xs text-muted-foreground">
+                          to {shortDate(leave.toDate)}
+                        </p>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 tabular-nums" style={{ color: NAVY }}>
+                      {leave.totalDays}
+                      {leave.isHalfDay && <span className="ml-1 text-xs text-muted-foreground">half</span>}
+                    </td>
+                    <td className="max-w-[260px] px-4 py-3">
+                      <p className="truncate text-[0.8rem] text-foreground/80" title={leave.reason}>
+                        {leave.reason}
+                      </p>
+                      {leave.status === 'Rejected' && leave.rejectionReason && (
+                        <p className="truncate text-xs text-[#c0392b]" title={leave.rejectionReason}>
+                          Reason: {leave.rejectionReason}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${leaveStatusChip(leave.status)}`}>
+                        {leave.status}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
+                      {shortDate(leave.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {showApplyLeave && (
         <ApplyLeaveModal
           userId={userId}
           userName={userName}
+          balance={balance}
           onClose={() => setShowApplyLeave(false)}
           onSuccess={() => {
             loadData();
