@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { tasksAPI } from '../services/api';
 import { ReassignTaskModal } from './ReassignTaskModal';
 import { EditTaskModal } from './EditTaskModal';
-import { SendForBillingModal } from './SendForBillingModal';
 import { CreateTaskModal } from './CreateTaskModal';
+import { TASK_STATUS, statusColor, statusLabel } from '../utils/taskStatus';
 import {
-  Search, SlidersHorizontal, Check, X, Repeat2, Receipt,
+  Search, SlidersHorizontal, Check, X, Repeat2,
   RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp, Plus,
   Play, CheckCheck,
 } from 'lucide-react';
@@ -43,16 +43,6 @@ interface TaskMISProps {
 
 const NAVY = '#1b365d';
 
-const STATUS_COLOR: Record<string, string> = {
-  'Pending': 'bg-slate-100 text-slate-600',
-  'In Progress': 'bg-blue-100 text-blue-700',
-  'Completed': 'bg-green-100 text-green-700',
-  'Overdue': 'bg-red-100 text-red-700',
-  'Pending Approval': 'bg-amber-100 text-amber-700',
-  'Pending for Billing': 'bg-purple-100 text-purple-700',
-  'Billed': 'bg-teal-100 text-teal-700',
-};
-
 const ASSIGN_COLOR: Record<string, string> = {
   'Accepted': 'bg-green-100 text-green-700',
   'Pending Acceptance': 'bg-amber-100 text-amber-700',
@@ -82,7 +72,6 @@ export function TaskMIS({ user }: TaskMISProps) {
   const [filterTab, setFilterTab] = useState<'all' | 'completed' | 'pending' | 'pending-acceptance'>('all');
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showBillingModal, setShowBillingModal] = useState(false);
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -255,16 +244,18 @@ export function TaskMIS({ user }: TaskMISProps) {
           <IconBtn icon={<Play size={14} />} tone="default" title="Start task" onClick={() => handleStatusUpdate(task, 'In Progress')} />
         )}
         {isMine && isLive && task.status === 'In Progress' && (
-          <IconBtn icon={<CheckCheck size={14} />} tone="green" title="Mark done" onClick={() => handleStatusUpdate(task, 'Completed')} />
+          <IconBtn icon={<CheckCheck size={14} />} tone="green" title="Mark done" onClick={() => handleStatusUpdate(task, TASK_STATUS.pendingCompletionApproval)} />
         )}
         {assign !== 'Pending Acceptance' && assign !== 'Rejected' && task.status !== 'Completed' && task.assignedToId === user.id && (
           <IconBtn icon={<Repeat2 size={14} />} tone="default" title="Reassign" onClick={() => { setSelectedTask(task); setShowReassignModal(true); }} />
         )}
-        {task.status === 'Completed' && isPartnerOrAdmin && (
-          <>
-            <IconBtn icon={<Receipt size={14} />} tone="purple" title="Send for billing" onClick={() => { setSelectedTask(task); setShowBillingModal(true); }} />
-            <IconBtn icon={<RotateCcw size={14} />} tone="amber" title="Reopen" onClick={() => handleReopen(task)} />
-          </>
+        {/* No "Send for billing" here any more: approving a completed task moves
+            it to Pending for Billing on its own, and 'Completed' now means the
+            bill has already been raised — offering it would push billed work
+            back into the billing queue. Reopen stays as the partner's escape
+            hatch. */}
+        {task.status === TASK_STATUS.completed && isPartnerOrAdmin && (
+          <IconBtn icon={<RotateCcw size={14} />} tone="amber" title="Reopen" onClick={() => handleReopen(task)} />
         )}
         <IconBtn icon={<Pencil size={14} />} tone="default" title={canEdit ? 'Edit task' : 'No permission'} disabled={!canEdit} onClick={() => { setSelectedTask(task); setShowEditModal(true); }} />
         <IconBtn icon={<Trash2 size={14} />} tone="red" title={canEdit ? 'Delete task' : 'No permission'} disabled={!canEdit} onClick={() => handleDelete(task)} />
@@ -381,7 +372,7 @@ export function TaskMIS({ user }: TaskMISProps) {
                     <button onClick={() => toggleCard(task.id)} className="flex w-full items-start gap-2.5 px-3.5 py-3 text-left">
                       <div className="min-w-0 flex-1">
                         <p className="text-[0.85rem] font-medium" style={{ color: NAVY }}>{task.client}</p>
-                        <span className={`mt-1.5 inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${STATUS_COLOR[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status || 'Pending'}</span>
+                        <span className={`mt-1.5 inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                       </div>
                       <ChevronDown size={16} className={`mt-0.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
                     </button>
@@ -482,7 +473,7 @@ export function TaskMIS({ user }: TaskMISProps) {
                       {/* Status */}
                       <td className="px-3 py-3">
                         <div className="flex flex-col items-start gap-1">
-                          <span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${STATUS_COLOR[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status || 'Pending'}</span>
+                          <span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                           {assign !== 'Accepted' && (
                             <span className={`inline-block rounded-md px-2 py-0.5 text-[0.62rem] font-medium ${ASSIGN_COLOR[assign]}`}>{assign}</span>
                           )}
@@ -513,11 +504,6 @@ export function TaskMIS({ user }: TaskMISProps) {
       {showEditModal && selectedTask && (
         <EditTaskModal task={selectedTask}
           onClose={() => { setShowEditModal(false); setSelectedTask(null); }}
-          onSuccess={loadTasks} />
-      )}
-      {showBillingModal && selectedTask && (
-        <SendForBillingModal task={selectedTask}
-          onClose={() => { setShowBillingModal(false); setSelectedTask(null); }}
           onSuccess={loadTasks} />
       )}
       {showCreateTask && (

@@ -8,6 +8,7 @@ import { CreateTaskModal } from './CreateTaskModal';
 import { EditTaskModal } from './EditTaskModal';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
+import { TASK_STATUS, statusColor, statusLabel, isAwaitingApproval } from '../utils/taskStatus';
 import { Loader2, Plus, MessageSquarePlus, RotateCcw } from 'lucide-react';
 
 interface TeamMemberDashboardProps {
@@ -20,16 +21,6 @@ interface TeamMemberDashboardProps {
 }
 
 const NAVY = '#1b365d';
-
-const statusColor: Record<string, string> = {
-  'Pending': 'bg-slate-100 text-slate-700',
-  'In Progress': 'bg-blue-100 text-blue-700',
-  'Completed': 'bg-green-100 text-green-700',
-  'Overdue': 'bg-red-100 text-red-700',
-  'Pending Approval': 'bg-yellow-100 text-yellow-700',
-  'Pending for Billing': 'bg-purple-100 text-purple-700',
-  'Billed': 'bg-teal-100 text-teal-700',
-};
 
 const priorityColor: Record<string, string> = {
   'High': 'bg-red-100 text-red-700',
@@ -104,8 +95,8 @@ function TaskCard({ task, actions, isRejected, busy }: {
           {task.client}
         </p>
         <Chip
-          label={task.status || 'Pending'}
-          color={statusColor[task.status] || 'bg-slate-100 text-slate-600'}
+          label={statusLabel(task.status)}
+          color={statusColor(task.status)}
         />
       </div>
 
@@ -147,9 +138,11 @@ function TaskCard({ task, actions, isRejected, busy }: {
         </div>
       )}
 
-      {task.status === 'Pending Approval' && (
+      {isAwaitingApproval(task.status) && (
         <p className="mt-3 border-t border-black/[0.06] pt-3 text-xs italic text-yellow-700">
-          Awaiting partner approval…
+          {task.status === TASK_STATUS.pendingCompletionApproval
+            ? 'Marked done — awaiting partner approval before billing.'
+            : 'Awaiting partner approval…'}
         </p>
       )}
     </div>
@@ -291,7 +284,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
     if (task.status === 'In Progress') {
       out.push({
         key: 'done', label: 'Mark Done', short: 'Done', tone: 'green',
-        run: () => handleStatusUpdate(task.id, 'Completed'),
+        run: () => handleStatusUpdate(task.id, TASK_STATUS.pendingCompletionApproval),
       });
     }
     return out;
@@ -340,7 +333,11 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
             value={tasks.filter(t => t.status !== 'Completed' && t.status !== 'Rejected').length}
           />
           <KPICard title="In Progress" value={count('In Progress')} />
-          <KPICard title="Awaiting Approval" value={count('Pending Approval')} variant="warning" />
+          <KPICard
+            title="Awaiting Approval"
+            value={tasks.filter(t => isAwaitingApproval(t.status)).length}
+            variant="warning"
+          />
           <KPICard title="Completed" value={count('Completed')} variant="success" />
         </div>
 
@@ -448,8 +445,8 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                           </TableCell>
                           <TableCell>
                             <Chip
-                              label={task.status || 'Pending'}
-                              color={statusColor[task.status] || 'bg-slate-100 text-slate-600'}
+                              label={statusLabel(task.status)}
+                              color={statusColor(task.status)}
                             />
                           </TableCell>
                           <TableCell>
@@ -464,7 +461,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                                   {a.short}
                                 </button>
                               ))}
-                              {task.status === 'Pending Approval' && (
+                              {isAwaitingApproval(task.status) && (
                                 <span className="text-[10px] italic text-yellow-600">Awaiting…</span>
                               )}
                             </div>

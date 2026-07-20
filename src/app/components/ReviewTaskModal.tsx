@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button } from './Button';
 import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
+import { TASK_STATUS } from '../utils/taskStatus';
 import { X, ClipboardCheck, Pencil, Check, ChevronDown } from 'lucide-react';
 
 interface ReviewTaskModalProps {
@@ -33,17 +34,35 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
   });
   const { showSuccess, showError } = useToast();
 
+  /**
+   * The queue holds two different gates, and they mean opposite things.
+   * A NEW task awaiting sign-off becomes 'Pending' — approved, go start it.
+   * A FINISHED task awaiting sign-off becomes 'Pending for Billing' — approved,
+   * go bill it. Sending the latter to 'Pending' would wipe out the completed
+   * work and put the task back at the start of the pipeline.
+   */
+  const isCompletionReview = task.status === TASK_STATUS.pendingCompletionApproval;
+  const approvedStatus = isCompletionReview
+    ? TASK_STATUS.pendingForBilling
+    : TASK_STATUS.pending;
+  /** Rejecting finished work sends it back to the desk, not back to unstarted. */
+  const rejectedStatus = isCompletionReview
+    ? TASK_STATUS.inProgress
+    : TASK_STATUS.pending;
+
   const handleApprove = async () => {
     setLoading(true);
     try {
       const response = await tasksAPI.update(task.id, {
-        status: 'Pending',
+        status: approvedStatus,
         approvedBy: approverName,
         approvedById: approverId,
         approvedAt: new Date().toISOString(),
       });
       if (response.success) {
-        showSuccess(`Task approved and assigned to ${task.assignedTo}`);
+        showSuccess(isCompletionReview
+          ? 'Completion approved. Task moved to Pending for Billing.'
+          : `Task approved and assigned to ${task.assignedTo}`);
         onSuccess();
       } else {
         showError(response.message || response.error || 'Failed to approve task');
@@ -64,7 +83,7 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
         description: editedTask.description,
         priority: editedTask.priority,
         targetDate: editedTask.targetDate,
-        status: 'Pending',
+        status: approvedStatus,
         approvedBy: approverName,
         approvedById: approverId,
         approvedAt: new Date().toISOString(),
@@ -88,9 +107,11 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
     try {
       const rejectionNote = `[Rejected by ${approverName} on ${new Date().toLocaleDateString('en-IN')}]`;
       const updatedComments = task.comments ? `${task.comments}\n${rejectionNote}` : rejectionNote;
-      const response = await tasksAPI.update(task.id, { status: 'Pending', comments: updatedComments });
+      const response = await tasksAPI.update(task.id, { status: rejectedStatus, comments: updatedComments });
       if (response.success) {
-        showSuccess('Task sent back to Pending. Rejection noted in comments.');
+        showSuccess(isCompletionReview
+          ? 'Sent back to In Progress. Rejection noted in comments.'
+          : 'Task sent back to Pending. Rejection noted in comments.');
         onSuccess();
       } else {
         showError(response.message || response.error || 'Failed to reject task');
@@ -105,6 +126,7 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
 
   const subtitle = action === 'reject' ? 'Provide a reason for rejection'
     : action === 'edit' ? 'Edit task details before approving'
+    : isCompletionReview ? 'Approve the completed work, or send it back'
     : 'Approve, edit, or reject this task';
 
   return (

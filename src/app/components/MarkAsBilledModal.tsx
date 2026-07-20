@@ -87,9 +87,9 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
           fullErrorMsg = '⚠️ Database Error: The task status constraint needs to be updated.\n\n' +
             '📋 Please run the SQL migration in Supabase:\n' +
             '1. Go to Supabase Dashboard → SQL Editor\n' +
-            '2. Copy the SQL from /fix-task-status-constraint.sql\n' +
+            '2. Copy the SQL from supabase/sql/add-completion-approval-status.sql\n' +
             '3. Run the query\n\n' +
-            'See DATABASE_SETUP_INSTRUCTIONS.md for details.';
+            'See docs/database-setup.md for details.';
           setShowDatabaseSetupModal(true);
         } else if (errorDetails) {
           fullErrorMsg = `${errorMsg}\n\nDetails: ${errorDetails}`;

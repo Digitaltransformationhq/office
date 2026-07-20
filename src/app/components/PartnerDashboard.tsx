@@ -9,6 +9,7 @@ import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { AnnouncementBar } from './AnnouncementBar';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { KPICard } from './KPICard';
+import { statusColor, statusLabel, isAwaitingApproval } from '../utils/taskStatus';
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, AlertTriangle, CheckCircle2, Clock, X, Search } from 'lucide-react';
 
 const NAVY = '#1b365d';
@@ -48,16 +49,6 @@ function saveNotes(notes: Record<string, string>) {
   localStorage.setItem('kaps_partner_notes', JSON.stringify(notes));
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  'Pending': 'bg-slate-100 text-slate-600',
-  'In Progress': 'bg-blue-100 text-blue-700',
-  'Completed': 'bg-green-100 text-green-700',
-  'Overdue': 'bg-red-100 text-red-700',
-  'Pending Approval': 'bg-amber-100 text-amber-700',
-  'Pending for Billing': 'bg-purple-100 text-purple-700',
-  'Billed': 'bg-teal-100 text-teal-700',
-};
-
 /** A single dot colour per status — used in the compact calendar previews. */
 const STATUS_DOT: Record<string, string> = {
   'Pending': '#94a3b8',
@@ -65,6 +56,7 @@ const STATUS_DOT: Record<string, string> = {
   'Completed': '#4ea72e',
   'Overdue': '#ef4444',
   'Pending Approval': '#f59e0b',
+  'Pending Approval - Completion': '#6366f1',
   'Pending for Billing': '#8b5cf6',
   'Billed': '#14b8a6',
 };
@@ -204,7 +196,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
   // Tasks due on a given date
   const tasksDueOn = (date: Date) => tasks.filter(t => t.targetDate && toKey(new Date(t.targetDate)) === toKey(date));
 
-  const taskApprovalCount = tasks.filter(t => t.status === 'Pending Approval').length;
+  const taskApprovalCount = tasks.filter(t => isAwaitingApproval(t.status)).length;
   const overdueCount = pendingTasks.filter(t => t.aging > 0).length;
   const completedCount = tasks.filter(t => t.status === 'Completed').length;
   const activeCount = tasks.filter(t => t.status !== 'Completed').length;
@@ -455,7 +447,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                     <span className="w-[3px] shrink-0 self-stretch rounded-full" style={{ backgroundColor: task.aging > 0 ? '#ef4444' : '#E7EDF4' }} />
                     <div className="min-w-0 flex-1">
                       <p className="text-[0.85rem] font-medium" style={{ color: NAVY }}>{task.client}</p>
-                      <span className={`mt-1.5 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[0.62rem] font-medium ${STATUS_COLOR[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status || 'Pending'}</span>
+                      <span className={`mt-1.5 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[0.62rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                     </div>
                     <ChevronDown size={16} className={`mt-0.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
                   </button>
@@ -486,7 +478,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                         <span style={{ color: NAVY }}>{task.task}</span>
                       </CardRow>
                       <CardRow label="Status">
-                        <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.68rem] font-medium ${STATUS_COLOR[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status || 'Pending'}</span>
+                        <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                       </CardRow>
                     </dl>
                   )}
@@ -554,7 +546,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                     </td>
                     {/* Status */}
                     <td className="px-4 py-3.5" data-label="Status">
-                      <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.68rem] font-medium ${STATUS_COLOR[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status || 'Pending'}</span>
+                      <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                     </td>
                   </tr>
                 ))}
@@ -629,7 +621,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                   <div className="flex items-center gap-2">
                     <h2 className="text-[1.05rem] font-semibold" style={{ color: NAVY }}>Task Approval Queue</h2>
                     <span className="rounded-full bg-[#FEF4E6] px-2 py-0.5 text-xs font-semibold text-[#b7791f]">
-                      {tasks.filter(t => t.status === 'Pending Approval').length}
+                      {tasks.filter(t => isAwaitingApproval(t.status)).length}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">Review and approve pending tasks</p>

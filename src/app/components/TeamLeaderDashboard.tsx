@@ -7,6 +7,7 @@ import { billingAPI, tasksAPI, usersAPI } from '../services/api';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { ApprovalQueue } from './ApprovalQueue';
 import { useToast } from './Toast';
+import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isAwaitingApproval } from '../utils/taskStatus';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
 import { MarkAsPaidModal } from './MarkAsPaidModal';
 import {
@@ -26,13 +27,9 @@ interface TeamLeaderDashboardProps {
 const NAVY = '#1b365d';
 
 function StatusChip({ status }: { status?: string }) {
-  const color =
-    status === 'Completed' ? 'bg-green-100 text-green-700' :
-    status === 'In Progress' ? 'bg-blue-100 text-blue-700' :
-    'bg-amber-100 text-amber-700';
   return (
-    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap ${color}`}>
-      {status || 'Pending'}
+    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap ${statusColor(status)}`}>
+      {statusLabel(status)}
     </span>
   );
 }
@@ -142,7 +139,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
       return [{ key: 'start', label: 'Start', tone: 'navy' as const, next: 'In Progress' }];
     }
     if (task.status === 'In Progress') {
-      return [{ key: 'done', label: 'Done', tone: 'green' as const, next: 'Completed' }];
+      return [{ key: 'done', label: 'Done', tone: 'green' as const, next: TASK_STATUS.pendingCompletionApproval }];
     }
     return [];
   };
@@ -158,10 +155,10 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
     );
   }
 
-  const isOpen = (t: any) => t.status !== 'Completed' && t.status !== 'Billed';
+  const isOpen = (t: any) => isOpenTask(t.status);
   const myTasks = user ? allTasks.filter(t => t.assignedToId === user.id && isOpen(t)) : [];
   const teamTasks = allTasks.filter(t => t.assignedToId !== user?.id && isOpen(t));
-  const approvalQueue = allTasks.filter(t => t.status === 'Pending Approval');
+  const approvalQueue = allTasks.filter(t => isAwaitingApproval(t.status));
 
   // Pending for Billing tasks — newest completion first
   const pendingForBilling = allTasks

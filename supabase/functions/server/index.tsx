@@ -2271,12 +2271,15 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
       }, 400);
     }
 
-    // Update task status to "Billed"
-    console.log('Updating task status to Billed...');
+    // Raising the bill is the last step of the lifecycle, so the task lands on
+    // 'Completed'. (It used to stop at 'Billed'; that value is retained in the
+    // CHECK constraint only so pre-existing rows still render.)
+    console.log('Updating task status to Completed...');
     const { data: updatedTask, error: updateError } = await supabase
       .from('tasks')
       .update({ 
-        status: 'Billed',
+        status: 'Completed',
+        completion_date: new Date().toISOString().split('T')[0],
         updated_at: new Date().toISOString()
       })
       .eq('id', taskId)
@@ -2474,10 +2477,12 @@ app.delete('/make-server-0abfa7cf/billing-records/:recordId', async (c) => {
 
     const billingData = JSON.parse(record);
 
-    // Optionally revert task status back to "Pending for Billing"
+    // Deleting the bill undoes the step that completed the task, so the
+    // completion date it stamped has to come off with it — otherwise the task
+    // reads as finished on a date it is no longer finished on.
     await supabase
       .from('tasks')
-      .update({ status: 'Pending for Billing' })
+      .update({ status: 'Pending for Billing', completion_date: null })
       .eq('id', billingData.taskId);
 
     // Delete the billing record

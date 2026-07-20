@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ReviewTaskModal } from './ReviewTaskModal';
 import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
+import { TASK_STATUS } from '../utils/taskStatus';
 import { ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 
 interface TaskApprovalQueueProps {
@@ -29,7 +30,12 @@ export function TaskApprovalQueue({ userId, userName }: TaskApprovalQueueProps) 
     try {
       setLoading(true);
       const response = await tasksAPI.getAll();
-      setPendingTasks((response.data || []).filter((t: any) => t.status === 'Pending Approval'));
+      // Both gates queue here: a brand-new task awaiting sign-off before work
+      // starts, and a finished task awaiting sign-off before it can be billed.
+      // ReviewTaskModal branches on which one it is.
+      setPendingTasks((response.data || []).filter((t: any) =>
+        t.status === TASK_STATUS.pendingNewTaskApproval ||
+        t.status === TASK_STATUS.pendingCompletionApproval));
     } catch {
       showError('Failed to load pending task approvals');
     } finally {

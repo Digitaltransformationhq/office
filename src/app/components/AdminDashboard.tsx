@@ -25,6 +25,7 @@ import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { AnnouncementBar } from './AnnouncementBar';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
+import { isAwaitingApproval } from '../utils/taskStatus';
 import {
   Loader2, UserPlus, Building2, UploadCloud, ClipboardCheck, Inbox,
   Users as UsersIcon, ClipboardList, FolderOpen, ArrowRight, ChevronDown, Search,
@@ -352,7 +353,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <ApprovalCard
             label="Pending Task Approvals"
-            count={tasks.filter(t => t.status === 'Pending Approval').length}
+            count={tasks.filter(t => isAwaitingApproval(t.status)).length}
             icon={<ClipboardCheck size={24} />}
             onClick={() => setShowTaskApprovals(true)}
           />

@@ -49,7 +49,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   assigned_to TEXT NOT NULL,
   assigned_to_id TEXT NOT NULL,
   priority TEXT DEFAULT 'Medium' CHECK (priority IN ('Low', 'Medium', 'High', 'Urgent')),
-  status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'In Progress', 'Completed', 'Overdue', 'Pending Approval', 'Pending for Billing', 'Billed')),
+  -- 'Pending Approval' gates a NEW task before work starts; 'Pending Approval -
+  -- Completion' gates a FINISHED task before billing. See
+  -- add-completion-approval-status.sql. 'Billed' is legacy — the billing step
+  -- now lands on 'Completed'.
+  status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'In Progress', 'Completed', 'Overdue', 'Pending Approval', 'Pending Approval - Completion', 'Pending for Billing', 'Billed')),
   start_date DATE,
   target_date DATE,
   completion_date DATE,

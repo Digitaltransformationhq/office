@@ -461,6 +461,12 @@ export const billingAPI = {
     taskId: string;
     billNumber: string;
     billDate?: string;
+    /**
+     * Required — the server rejects the request without it. Now that billing is
+     * the only fee-capture step in the lifecycle, this is where the amount is
+     * recorded; it was previously missing from this type while still being sent.
+     */
+    taxableAmount: number;
     remarks?: string;
     billedBy: string;
     billedById: string;

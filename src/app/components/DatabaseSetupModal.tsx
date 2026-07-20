@@ -20,6 +20,7 @@ ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
     'Completed', 
     'Overdue', 
     'Pending Approval', 
+    'Pending Approval - Completion', 
     'Pending for Billing', 
     'Billed'
   ));
