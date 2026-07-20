@@ -217,7 +217,7 @@ export function InquiryManagement({ userId, userName }: InquiryManagementProps) 
                       {inquiry.mobile_number && <CardRow label="Mobile">{inquiry.mobile_number}</CardRow>}
                       {inquiry.email && <CardRow label="Email"><span className="break-all">{inquiry.email}</span></CardRow>}
                       <CardRow label="Work Type">
-                        <span className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>{inquiry.work_type || '—'}</span>
+                        <span className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>{inquiry.work_type || '—'}</span>
                       </CardRow>
                       <CardRow label="Submitted By">{inquiry.submitted_by || '—'}</CardRow>
                       <CardRow label="Date">{inquiry.created_at ? new Date(inquiry.created_at).toLocaleDateString('en-IN') : '—'}</CardRow>
@@ -262,7 +262,7 @@ export function InquiryManagement({ userId, userName }: InquiryManagementProps) 
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <span className="inline-block truncate rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>{inquiry.work_type || '—'}</span>
+                      <span className="inline-block truncate rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>{inquiry.work_type || '—'}</span>
                     </td>
                     <td className="px-3 py-3">
                       <span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${STATUS_STYLE[inquiry.status] || 'border border-slate-300 bg-slate-100 text-slate-600'}`}>{inquiry.status || '—'}</span>

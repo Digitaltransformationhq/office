@@ -78,7 +78,7 @@ export function InquiryApprovalQueue({ userId, userName, onDataChange }: Inquiry
                   {inquiry.clientName || inquiry.companyName || 'Client inquiry'}
                 </p>
                 {inquiry.workType && (
-                  <span className="rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>
+                  <span className="rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>
                     {inquiry.workType}
                   </span>
                 )}

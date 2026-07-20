@@ -382,7 +382,7 @@ export function TaskMIS({ user }: TaskMISProps) {
                         <CardRow label="Task"><span style={{ color: NAVY }}>{task.task}</span></CardRow>
                         {task.reassignedFromName && <CardRow label="Reassigned from">{task.reassignedFromName}</CardRow>}
                         <CardRow label="Category">
-                          <span className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>{task.category || '—'}</span>
+                          <span className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>{task.category || '—'}</span>
                         </CardRow>
                         <CardRow label="Priority">
                           <span className="inline-flex items-center gap-1.5">
@@ -453,7 +453,7 @@ export function TaskMIS({ user }: TaskMISProps) {
                       </td>
                       {/* Category */}
                       <td className="px-3 py-3">
-                        <span className="inline-block truncate rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>{task.category || '—'}</span>
+                        <span className="inline-block truncate rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>{task.category || '—'}</span>
                       </td>
                       {/* Priority */}
                       <td className="px-3 py-3">

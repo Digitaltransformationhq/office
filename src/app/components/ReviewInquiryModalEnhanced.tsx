@@ -230,7 +230,7 @@ export function ReviewInquiryModalEnhanced({ inquiry, reviewerId, reviewerName, 
                     <Row label="Mobile" value={g('mobile_number', 'mobileNumber') || '—'} />
                     <Row label="Email" value={inquiry.email || '—'} />
                     <Row label="Work type">
-                      <span className="inline-block rounded-md px-2 py-0.5 text-[0.72rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>
+                      <span className="inline-block rounded-md px-2 py-0.5 text-[0.72rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>
                         {g('work_type', 'workType') || '—'}
                       </span>
                     </Row>

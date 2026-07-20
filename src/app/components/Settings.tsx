@@ -49,7 +49,7 @@ export function Settings({ user }: SettingsProps) {
               <Row label="Name" value={user.name} />
               <Row label="Email" value={user.email} />
               <Row label="Role">
-                <span className="inline-block rounded-md px-2 py-0.5 text-[0.72rem] font-medium capitalize" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>
+                <span className="inline-block rounded-md px-2 py-0.5 text-[0.72rem] font-medium capitalize" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>
                   {user.role.replace('-', ' ')}
                 </span>
               </Row>

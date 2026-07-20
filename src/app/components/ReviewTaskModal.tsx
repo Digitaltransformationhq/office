@@ -19,9 +19,9 @@ const inputCls =
   'w-full rounded-lg border border-[#E7EDF4] bg-white px-3.5 py-2.5 text-[0.92rem] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
 
 function priorityClass(p: string) {
-  if (p === 'Urgent' || p === 'High') return 'bg-[#FDECEC] text-[#c0392b]';
-  if (p === 'Medium') return 'bg-[#FEF4E6] text-[#b7791f]';
-  return 'bg-slate-100 text-slate-600';
+  if (p === 'Urgent' || p === 'High') return 'border border-[#f3c9c4] bg-[#FDECEC] text-[#c0392b]';
+  if (p === 'Medium') return 'border border-[#f3ddb4] bg-[#FEF4E6] text-[#b7791f]';
+  return 'border border-slate-300 bg-slate-100 text-slate-600';
 }
 
 export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuccess }: ReviewTaskModalProps) {

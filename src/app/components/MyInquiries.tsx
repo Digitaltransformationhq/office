@@ -144,7 +144,7 @@ export function MyInquiries({ userId, userName }: MyInquiriesProps) {
                     <dl className="divide-y divide-[#F1F4F8] border-t border-[#F1F4F8] px-3.5">
                       {inquiry.company_name && <CardRow label="Company">{inquiry.company_name}</CardRow>}
                       <CardRow label="Work Type">
-                        <span className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>{inquiry.work_type || '—'}</span>
+                        <span className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>{inquiry.work_type || '—'}</span>
                       </CardRow>
                       <CardRow label="Submitted">{inquiry.created_at ? new Date(inquiry.created_at).toLocaleDateString('en-IN') : '—'}</CardRow>
                       <CardRow label="Updated">{inquiry.reviewed_at ? new Date(inquiry.reviewed_at).toLocaleDateString('en-IN') : '—'}</CardRow>
@@ -185,7 +185,7 @@ export function MyInquiries({ userId, userName }: MyInquiriesProps) {
                       {inquiry.company_name && <p className="truncate text-xs text-muted-foreground">{inquiry.company_name}</p>}
                     </td>
                     <td className="px-3 py-3">
-                      <span className="inline-block truncate rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>{inquiry.work_type || '—'}</span>
+                      <span className="inline-block truncate rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>{inquiry.work_type || '—'}</span>
                     </td>
                     <td className="px-3 py-3">
                       <span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${STATUS_STYLE[inquiry.status] || 'border border-slate-300 bg-slate-100 text-slate-600'}`}>{inquiry.status || '—'}</span>

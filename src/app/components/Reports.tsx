@@ -539,7 +539,7 @@ function ReportSection({ title, onExport, children }: { title: string; onExport:
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>
+    <span className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>
       {children}
     </span>
   );

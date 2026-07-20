@@ -23,10 +23,10 @@ interface TeamMemberDashboardProps {
 const NAVY = '#1b365d';
 
 const priorityColor: Record<string, string> = {
-  'High': 'bg-red-100 text-red-700',
-  'Urgent': 'bg-red-200 text-red-800',
-  'Medium': 'bg-amber-100 text-amber-700',
-  'Low': 'bg-slate-100 text-slate-600',
+  'High': 'border border-red-300 bg-red-100 text-red-700',
+  'Urgent': 'border border-red-400 bg-red-200 text-red-800',
+  'Medium': 'border border-amber-300 bg-amber-100 text-amber-700',
+  'Low': 'border border-slate-300 bg-slate-100 text-slate-600',
 };
 
 /** Compact solid buttons, for the desktop table's Action column. */
@@ -110,12 +110,12 @@ function TaskCard({ task, actions, isRejected, busy }: {
           own truncate keep an unexpectedly long value inside its column. */}
       <div className="mt-3 grid grid-cols-[1.25fr_0.8fr_1fr] items-center gap-x-1.5">
         <span className="min-w-0 justify-self-start">
-          <Chip label={task.category || '—'} color="bg-blue-50 text-blue-700" />
+          <Chip label={task.category || '—'} color="border border-blue-200 bg-blue-50 text-blue-700" />
         </span>
         <span className="min-w-0 justify-self-center">
           <Chip
             label={task.priority || 'Medium'}
-            color={priorityColor[task.priority] || 'bg-slate-100 text-slate-600'}
+            color={priorityColor[task.priority] || 'border border-slate-300 bg-slate-100 text-slate-600'}
           />
         </span>
         <span className="min-w-0 justify-self-end truncate whitespace-nowrap text-right text-xs text-muted-foreground">
@@ -436,12 +436,12 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                           <TableCell className="font-medium">{task.client}</TableCell>
                           <TableCell>{task.task}</TableCell>
                           <TableCell>
-                            <Chip label={task.category || '—'} color="bg-blue-50 text-blue-700" />
+                            <Chip label={task.category || '—'} color="border border-blue-200 bg-blue-50 text-blue-700" />
                           </TableCell>
                           <TableCell>
                             <Chip
                               label={task.priority || 'Medium'}
-                              color={priorityColor[task.priority] || 'bg-slate-100 text-slate-600'}
+                              color={priorityColor[task.priority] || 'border border-slate-300 bg-slate-100 text-slate-600'}
                             />
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground">
