@@ -11,7 +11,9 @@ CREATE TABLE IF NOT EXISTS leave_applications (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   user_name TEXT NOT NULL,
-  leave_type TEXT NOT NULL CHECK (leave_type IN ('Casual Leave', 'Sick Leave', 'Earned Leave')),
+  -- Codes, not display names: the UI stores 'CL' / 'SL' / 'EL' and expands them
+  -- for display (getLeaveTypeLabel). The long names were never what got sent.
+  leave_type TEXT NOT NULL CHECK (leave_type IN ('CL', 'SL', 'EL')),
   from_date DATE NOT NULL,
   to_date DATE NOT NULL,
   is_half_day BOOLEAN DEFAULT FALSE,
@@ -214,7 +216,7 @@ CREATE TRIGGER update_time_logs_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Trigger for attendance
-DROP TRIGGER IF NOT EXISTS update_attendance_updated_at ON attendance;
+DROP TRIGGER IF EXISTS update_attendance_updated_at ON attendance;
 CREATE TRIGGER update_attendance_updated_at
     BEFORE UPDATE ON attendance
     FOR EACH ROW
@@ -249,18 +251,18 @@ DO $$
 BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '====================================';
-    RAISE NOTICE '✅ ALL FEATURE TABLES CREATED!';
+    RAISE NOTICE 'ALL FEATURE TABLES CREATED';
     RAISE NOTICE '====================================';
     RAISE NOTICE '';
-    RAISE NOTICE '✓ Leave Management Tables';
-    RAISE NOTICE '✓ Time Log Tables';
-    RAISE NOTICE '✓ Attendance Tables';
-    RAISE NOTICE '✓ Document Management Tables';
-    RAISE NOTICE '✓ Query/Ticket System Tables';
-    RAISE NOTICE '✓ Approval Tracking Tables';
-    RAISE NOTICE '✓ All Indexes Created';
-    RAISE NOTICE '✓ All Triggers Configured';
-    RAISE NOTICE '✓ Leave Balances Initialized';
+    RAISE NOTICE '- Leave Management Tables';
+    RAISE NOTICE '- Time Log Tables';
+    RAISE NOTICE '- Attendance Tables';
+    RAISE NOTICE '- Document Management Tables';
+    RAISE NOTICE '- Query/Ticket System Tables';
+    RAISE NOTICE '- Approval Tracking Tables';
+    RAISE NOTICE '- All Indexes Created';
+    RAISE NOTICE '- All Triggers Configured';
+    RAISE NOTICE '- Leave Balances Initialized';
     RAISE NOTICE '';
     RAISE NOTICE 'Ready for feature implementation!';
     RAISE NOTICE '';

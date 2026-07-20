@@ -323,13 +323,40 @@ export const assignmentsAPI = {
  * empty. Everything else in the app goes through fetchAPI, which targets the
  * edge function; leave now does too.
  */
+/**
+ * The leave endpoints return raw rows in snake_case, while the components read
+ * camelCase — leave.leaveType, leave.fromDate, leave.totalDays. Every one of
+ * those would have come back undefined, so the approval queue would have
+ * rendered blank columns even once the tables existed. Mapped here, the same
+ * way tasks, users and clients already are.
+ */
+function transformLeave(l: any) {
+  return {
+    ...l,
+    leaveType: l.leave_type,
+    fromDate: l.from_date,
+    toDate: l.to_date,
+    isHalfDay: l.is_half_day,
+    totalDays: l.total_days,
+    approvedById: l.approved_by_id,
+    approvedByName: l.approved_by_name,
+    approvedAt: l.approved_at,
+    rejectionReason: l.rejection_reason,
+    createdAt: l.created_at,
+    // /leave/pending already adds userName and userEmail from the joined user.
+    userName: l.userName || l.user_name,
+  };
+}
+
 export const leaveAPI = {
   getPending: async () => {
-    return fetchAPI('/leave/pending');
+    const result = await fetchAPI('/leave/pending');
+    return { ...result, data: (result.data || []).map(transformLeave) };
   },
 
   getByUser: async (userId: string) => {
-    return fetchAPI(`/leave/user/${userId}`);
+    const result = await fetchAPI(`/leave/user/${userId}`);
+    return { ...result, data: (result.data || []).map(transformLeave) };
   },
 
   getBalance: async (userId: string) => {
