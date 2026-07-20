@@ -430,7 +430,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
               </CardHeader>
               <CardContent>
                 <ApprovalQueue
-                  userId={parseInt(user.id)}
+                  userId={user.id}
                   userName={user.name}
                   userRole={user.role}
                 />

@@ -15,6 +15,7 @@ import { TeamTasks } from './components/TeamTasks';
 import { Billing } from './components/Billing';
 import { CalendarManagement } from './components/CalendarManagement';
 import { LoginHistoryAdmin } from './components/LoginHistoryAdmin';
+import { ApprovalQueue } from './components/ApprovalQueue';
 import { AnnouncementManagement } from './components/AnnouncementManagement';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { ImportantDatesBar } from './components/ImportantDatesBar';
@@ -220,6 +221,16 @@ export default function App() {
       case 'clients':
         if (user && user.role === 'admin') return <ClientManagement />;
         if (user) setActiveView(user.role);
+        return null;
+      case 'approvals':
+        // Leave approvals. The sidebar has offered this to team leaders all
+        // along with nothing behind it, so the item did nothing when clicked.
+        if (user && ['team-leader', 'admin', 'partner'].includes(user.role)) {
+          return <ApprovalQueue userId={user.id} userName={user.name} userRole={user.role} />;
+        }
+        if (user) {
+          setActiveView(user.role);
+        }
         return null;
       case 'login-history':
         // Admin only. The per-user panel this replaces lived in Settings and

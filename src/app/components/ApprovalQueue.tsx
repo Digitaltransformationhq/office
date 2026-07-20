@@ -5,9 +5,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from './Badge';
 import { ReviewLeaveModal } from './ReviewLeaveModal';
 import { useToast } from './Toast';
+import { leaveAPI } from '../services/api';
+import { useLiveData } from '../hooks/useLiveData';
 
 interface ApprovalQueueProps {
-  userId: number;
+  /** Real user id ('user:7'), not a numeric extraction: it is written to
+   *  leave_applications.approved_by_id, which carries a foreign key. */
+  userId: string;
   userName: string;
   userRole: string;
 }
@@ -23,15 +27,15 @@ export function ApprovalQueue({ userId, userName, userRole }: ApprovalQueueProps
     loadData();
   }, []);
 
+  useLiveData(['users'], () => loadData());
+
   const loadData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/leave/pending');
-
-      if (response.ok) {
-        const data = await response.json();
-        setPendingLeaves(data.data || []);
-      }
+      // Was fetch('/api/leave/pending') — a path on the site's own domain that
+      // serves nothing, so this queue never loaded a single row.
+      const response = await leaveAPI.getPending();
+      setPendingLeaves(response.data || []);
     } catch (error) {
       console.error('Error loading pending leaves:', error);
       showError('Failed to load pending approvals');

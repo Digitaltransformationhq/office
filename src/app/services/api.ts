@@ -314,6 +314,51 @@ export const assignmentsAPI = {
   },
 };
 
+/**
+ * Leave API.
+ *
+ * The leave components each called `fetch('/api/leave/...')` directly — a
+ * relative path on the site's own domain, where nothing is served. Those
+ * requests have always failed, which is why the approval queue was permanently
+ * empty. Everything else in the app goes through fetchAPI, which targets the
+ * edge function; leave now does too.
+ */
+export const leaveAPI = {
+  getPending: async () => {
+    return fetchAPI('/leave/pending');
+  },
+
+  getByUser: async (userId: string) => {
+    return fetchAPI(`/leave/user/${userId}`);
+  },
+
+  getBalance: async (userId: string) => {
+    return fetchAPI(`/leave/balance/${userId}`);
+  },
+
+  apply: async (application: any) => {
+    return fetchAPI('/leave/apply', {
+      method: 'POST',
+      body: JSON.stringify(application),
+    });
+  },
+
+  /** approverId must be the real user id ('user:7') — it is written to a column with an FK. */
+  approve: async (leaveId: string, approverId: string, comments?: string) => {
+    return fetchAPI(`/leave/${leaveId}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify({ approverId, comments }),
+    });
+  },
+
+  reject: async (leaveId: string, approverId: string, rejectionReason: string, comments?: string) => {
+    return fetchAPI(`/leave/${leaveId}/reject`, {
+      method: 'PUT',
+      body: JSON.stringify({ approverId, rejectionReason, comments }),
+    });
+  },
+};
+
 // Notifications API
 export const notificationsAPI = {
   getMyNotifications: async (userId: string) => {

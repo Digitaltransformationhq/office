@@ -3,10 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { Button } from './Button';
 import { Badge } from './Badge';
 import { useToast } from './Toast';
+import { leaveAPI } from '../services/api';
 
 interface ReviewLeaveModalProps {
   leave: any;
-  approverId: number;
+  /** Real user id ('user:7') — written to approved_by_id, which has an FK.
+   *  Was typed as a number, which a numeric extraction would have satisfied
+   *  while violating the constraint on write. */
+  approverId: string;
   approverName: string;
   onClose: () => void;
   onSuccess: () => void;
@@ -40,16 +44,8 @@ export function ReviewLeaveModal({
   const handleApprove = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/leave/${leave.id}/approve`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          approverId,
-          comments,
-        }),
-      });
-
-      const result = await response.json();
+      // Was a relative /api/... path, which this app does not serve.
+      const result = await leaveAPI.approve(leave.id, approverId, comments);
 
       if (result.success) {
         showSuccess(`Leave approved for ${leave.userName}`);
@@ -73,17 +69,7 @@ export function ReviewLeaveModal({
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/leave/${leave.id}/reject`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          approverId,
-          rejectionReason,
-          comments,
-        }),
-      });
-
-      const result = await response.json();
+      const result = await leaveAPI.reject(leave.id, approverId, rejectionReason, comments);
 
       if (result.success) {
         showSuccess(`Leave rejected for ${leave.userName}`);
