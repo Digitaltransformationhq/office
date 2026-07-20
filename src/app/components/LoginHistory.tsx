@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { loginAPI } from '../services/api';
 import { History, MapPin, Globe, Check, X } from 'lucide-react';
+import { useLiveData } from '../hooks/useLiveData';
 
 interface LoginHistoryProps {
   userId: string;
@@ -27,12 +28,8 @@ export function LoginHistory({ userId }: LoginHistoryProps) {
     if (expanded) loadHistory();
   }, [expanded, userId]);
 
-  // Auto-refresh only while the panel is open — no point polling a collapsed one.
-  useEffect(() => {
-    if (!expanded) return;
-    const interval = setInterval(() => loadHistory({ silent: true }), 60000);
-    return () => clearInterval(interval);
-  }, [expanded, userId]);
+  // Only while the panel is open — no point refreshing a collapsed one.
+  useLiveData(['users'], () => loadHistory({ silent: true }), { enabled: expanded });
 
   const loadHistory = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {

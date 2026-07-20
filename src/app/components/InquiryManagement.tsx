@@ -3,6 +3,7 @@ import { KPICard } from './KPICard';
 import { ReviewInquiryModalEnhanced } from './ReviewInquiryModalEnhanced';
 import { useToast } from './Toast';
 import { inquiriesAPI } from '../services/api';
+import { useLiveData } from '../hooks/useLiveData';
 import {
   Search, ChevronDown, ArrowUp, ArrowDown,
   Inbox, Clock, CheckCircle2, PauseCircle, XCircle, Mail, Phone,
@@ -50,11 +51,7 @@ export function InquiryManagement({ userId, userName }: InquiryManagementProps) 
 
   useEffect(() => { loadData(); }, []);
 
-  // Auto-refresh in the background, replacing the manual refresh button.
-  useEffect(() => {
-    const interval = setInterval(() => loadData({ silent: true }), 60000);
-    return () => clearInterval(interval);
-  }, []);
+  useLiveData(['inquiries', 'clients'], () => loadData({ silent: true }));
 
   const loadData = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {

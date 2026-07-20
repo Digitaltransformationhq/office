@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { tasksAPI, usersAPI } from '../services/api';
 import { ChevronDown, Users } from 'lucide-react';
 import { UserManagement } from './UserManagement';
+import { useLiveData } from '../hooks/useLiveData';
 import { statusColor, statusLabel, isOpenTask } from '../utils/taskStatus';
 
 interface Task {
@@ -62,11 +63,7 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
 
   useEffect(() => { loadData(); }, []);
 
-  // Auto-refresh in the background, replacing the manual refresh button.
-  useEffect(() => {
-    const interval = setInterval(() => loadData({ silent: true }), 60000);
-    return () => clearInterval(interval);
-  }, []);
+  useLiveData(['tasks', 'users'], () => loadData({ silent: true }));
 
   const loadData = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {

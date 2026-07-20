@@ -25,6 +25,7 @@ import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { AnnouncementBar } from './AnnouncementBar';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
+import { useLiveData } from '../hooks/useLiveData';
 import { isAwaitingApproval } from '../utils/taskStatus';
 import {
   Loader2, UserPlus, Building2, UploadCloud, ClipboardCheck, Inbox,
@@ -81,11 +82,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     loadData();
   }, []);
 
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(loadDataSilently, 60000);
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
+  useLiveData(['tasks', 'clients', 'users', 'billing', 'inquiries'], () => loadDataSilently(), { enabled: autoRefresh });
 
   const loadData = async () => {
     try {

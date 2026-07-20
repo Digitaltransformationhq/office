@@ -8,6 +8,7 @@ import { EditUserModal } from './EditUserModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './Toast';
 import { UserPlus, Search, ChevronDown } from 'lucide-react';
+import { useLiveData } from '../hooks/useLiveData';
 
 const NAVY = '#1b365d';
 
@@ -25,11 +26,7 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => { load(); }, []);
 
-  // Auto-refresh in the background, replacing the manual refresh button.
-  useEffect(() => {
-    const interval = setInterval(() => load({ silent: true }), 60000);
-    return () => clearInterval(interval);
-  }, []);
+  useLiveData(['users'], () => load({ silent: true }));
 
   const load = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {

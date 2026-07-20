@@ -9,6 +9,7 @@ import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { AnnouncementBar } from './AnnouncementBar';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { KPICard } from './KPICard';
+import { useLiveData } from '../hooks/useLiveData';
 import { statusColor, statusLabel, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, AlertTriangle, CheckCircle2, Clock, X, Search } from 'lucide-react';
 
@@ -156,10 +157,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
   }, []);
 
   useEffect(() => { loadData(); }, []);
-  useEffect(() => {
-    const interval = setInterval(loadDataSilently, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  useLiveData(['tasks', 'users', 'inquiries'], () => loadDataSilently());
 
   const handleNoteChange = (key: string, value: string) => {
     const updated = { ...notes, [key]: value };

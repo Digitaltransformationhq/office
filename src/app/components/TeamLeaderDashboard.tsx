@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Button } from './Button';
 import { billingAPI, tasksAPI, usersAPI } from '../services/api';
 import { useTimeAgo } from '../hooks/useTimeAgo';
+import { useLiveData } from '../hooks/useLiveData';
 import { ApprovalQueue } from './ApprovalQueue';
 import { useToast } from './Toast';
 import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isAwaitingApproval, isFinishedTask } from '../utils/taskStatus';
@@ -60,12 +61,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
     loadData();
   }, []);
 
-  // Auto-refresh every 60 seconds
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(loadDataSilently, 60000);
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
+  useLiveData(['tasks', 'users', 'billing'], () => loadDataSilently(), { enabled: autoRefresh });
 
   const fetchData = async () => {
     const [tasksRes, usersRes, billingRes] = await Promise.all([

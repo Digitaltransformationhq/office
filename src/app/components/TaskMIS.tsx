@@ -4,6 +4,7 @@ import { ReassignTaskModal } from './ReassignTaskModal';
 import { EditTaskModal } from './EditTaskModal';
 import { CreateTaskModal } from './CreateTaskModal';
 import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isFinishedTask } from '../utils/taskStatus';
+import { useLiveData } from '../hooks/useLiveData';
 import {
   Search, SlidersHorizontal, Check, X, Repeat2,
   RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp, Plus,
@@ -98,11 +99,7 @@ export function TaskMIS({ user }: TaskMISProps) {
 
   useEffect(() => { loadTasks(); }, [user]);
 
-  // Auto-refresh in the background, replacing the manual refresh button.
-  useEffect(() => {
-    const interval = setInterval(() => loadTasks({ silent: true }), 60000);
-    return () => clearInterval(interval);
-  }, [user]);
+  useLiveData(['tasks'], () => loadTasks({ silent: true }));
 
   const loadTasks = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {

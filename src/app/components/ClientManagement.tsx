@@ -8,6 +8,7 @@ import { EditClientModal } from './EditClientModal';
 import { ViewClientModal } from './ViewClientModal';
 import { useToast } from './Toast';
 import { Building2, Search, ChevronDown } from 'lucide-react';
+import { useLiveData } from '../hooks/useLiveData';
 
 const NAVY = '#1b365d';
 
@@ -24,11 +25,7 @@ export function ClientManagement() {
 
   useEffect(() => { load(); }, []);
 
-  // Auto-refresh in the background, replacing the manual refresh button.
-  useEffect(() => {
-    const interval = setInterval(() => load({ silent: true }), 60000);
-    return () => clearInterval(interval);
-  }, []);
+  useLiveData(['clients'], () => load({ silent: true }));
 
   const load = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {

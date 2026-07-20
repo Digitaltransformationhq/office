@@ -3,6 +3,7 @@ import { Bell, BellRing, ClipboardList, Megaphone, CheckCheck, X } from 'lucide-
 import { notificationsAPI } from '../services/api';
 import { enablePush, pushPermission } from '../services/push';
 import { viewForType } from '../utils/notifications';
+import { useLiveData } from '../hooks/useLiveData';
 
 const NAVY = '#1b365d';
 
@@ -71,9 +72,9 @@ export function NotificationBell({ userId, onNavigate }: {
   useEffect(() => {
     if (!userId) return;
     load();
-    const t = setInterval(load, 45000);
-    return () => clearInterval(t);
   }, [userId]);
+
+  useLiveData(['notifications'], () => load(), { enabled: !!userId });
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {

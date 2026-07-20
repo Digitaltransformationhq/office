@@ -79,6 +79,7 @@ async function notifyUser(userId: string, type: string, title: string, message: 
   // This was hardcoded to '/', so every push click landed on the app root.
   const url = `/?notif=${encodeURIComponent(type)}`;
   await sendPush(userId, { title, body: message || title, url });
+  await broadcastChange('notifications');
 }
 
 /**
@@ -95,6 +96,33 @@ async function notifyRoles(roles: string[], type: string, title: string, message
     }
   } catch (e) {
     console.log('notifyRoles failed:', e);
+  }
+}
+
+/**
+ * Tell connected clients that something changed, so they refetch instead of
+ * waiting for a poll.
+ *
+ * Deliberately carries no row data — only a topic name. Clients re-read through
+ * the normal authorised endpoints, so the broadcast channel never becomes a way
+ * to read the database, and RLS stays closed.
+ *
+ * Fire-and-forget: a failed broadcast must never fail the write that triggered
+ * it. The client keeps a slow poll as a fallback for exactly that case.
+ */
+async function broadcastChange(topic: string) {
+  try {
+    const url = `${Deno.env.get('SUPABASE_URL')}/realtime/v1/api/broadcast`;
+    const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        messages: [{ topic: 'office-changes', event: 'changed', payload: { topic } }],
+      }),
+    });
+  } catch (e) {
+    console.log('broadcastChange failed (clients will catch up on poll):', e);
   }
 }
 
@@ -437,6 +465,8 @@ app.post('/make-server-0abfa7cf/tasks', async (c) => {
       await notifyUser(body.assignedToId, 'assignment', 'New task assigned', newLabel);
     }
 
+    await broadcastChange('tasks');
+
     return c.json({ success: true, data });
   } catch (error: any) {
     console.log('=== CREATE CATCH BLOCK ERROR ===');
@@ -597,6 +627,8 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
       }
     }
 
+    await broadcastChange('tasks');
+
     return c.json({ success: true, data });
   } catch (error: any) {
     console.log('=== CATCH BLOCK ERROR ===');
@@ -646,6 +678,8 @@ app.delete('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
     }
 
     console.log('Task deleted successfully:', data);
+
+    await broadcastChange('tasks');
 
     return c.json({ success: true, data });
   } catch (error: any) {
@@ -787,6 +821,9 @@ app.post('/make-server-0abfa7cf/users', async (c) => {
     console.log('User ID:', data.id);
     console.log('User name:', data.name);
 
+    await broadcastChange('users');
+
+
     return c.json({ success: true, data });
 
   } catch (error: any) {
@@ -840,6 +877,8 @@ app.put('/make-server-0abfa7cf/users/:userId', async (c) => {
     }
 
     console.log('User updated successfully:', data);
+    await broadcastChange('users');
+
     return c.json({ success: true, data });
   } catch (error) {
     console.log('Error updating user:', error);
@@ -869,6 +908,9 @@ app.delete('/make-server-0abfa7cf/users/:userId', async (c) => {
       .eq('id', userId);
 
     if (error) throw error;
+
+    await broadcastChange('users');
+
 
     return c.json({ success: true, message: 'User deleted' });
   } catch (error) {
@@ -1028,6 +1070,9 @@ app.post('/make-server-0abfa7cf/announcements', async (c) => {
       }
     }
 
+    await broadcastChange('announcements');
+
+
     return c.json({ success: true, data: announcementData });
   } catch (error) {
     console.log('Error creating announcement:', error);
@@ -1058,6 +1103,8 @@ app.put('/make-server-0abfa7cf/announcements/:announcementId', async (c) => {
     };
 
     await kvStore.set(announcementId, updatedData);
+    await broadcastChange('announcements');
+
     return c.json({ success: true, data: updatedData });
   } catch (error) {
     console.log('Error updating announcement:', error);
@@ -1069,6 +1116,8 @@ app.delete('/make-server-0abfa7cf/announcements/:announcementId', async (c) => {
   try {
     const announcementId = c.req.param('announcementId');
     await kvStore.del(announcementId);
+    await broadcastChange('announcements');
+
     return c.json({ success: true, message: 'Announcement deleted' });
   } catch (error) {
     console.log('Error deleting announcement:', error);
@@ -1142,6 +1191,9 @@ app.post('/make-server-0abfa7cf/clients', async (c) => {
 
     if (error) throw error;
 
+    await broadcastChange('clients');
+
+
     return c.json({ success: true, data });
   } catch (error) {
     console.log('Error creating client:', error);
@@ -1162,6 +1214,9 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
       .single();
 
     if (error) throw error;
+
+    await broadcastChange('clients');
+
 
     return c.json({ success: true, data });
   } catch (error) {
@@ -2538,6 +2593,8 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
           await notifyUser(uid, 'task', 'Task billed', billMsg);
         }
       }
+      await broadcastChange('billing');
+      await broadcastChange('tasks');
     } catch (kvError: any) {
       console.log('=== KV STORE ERROR ===');
       console.log('KV Error type:', typeof kvError);
@@ -2686,6 +2743,9 @@ app.delete('/make-server-0abfa7cf/billing-records/:recordId', async (c) => {
 
     // Delete the billing record
     await kvStore.del(recordId);
+
+    await broadcastChange('billing');
+    await broadcastChange('tasks');
 
     return c.json({ success: true, message: 'Billing record deleted successfully' });
   } catch (error) {

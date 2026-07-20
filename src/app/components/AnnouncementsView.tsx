@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { announcementsAPI } from '../services/api';
 import { Loader2, Megaphone } from 'lucide-react';
+import { useLiveData } from '../hooks/useLiveData';
 
 const NAVY = '#1b365d';
 
@@ -57,10 +58,7 @@ export function AnnouncementsView({ user }: { user: { role: string } }) {
 
   useEffect(() => { load(); }, [user.role]);
 
-  useEffect(() => {
-    const interval = setInterval(() => load({ silent: true }), 60000);
-    return () => clearInterval(interval);
-  }, [user.role]);
+  useLiveData(['announcements'], () => load({ silent: true }));
 
   if (loading) {
     return (
