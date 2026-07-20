@@ -14,11 +14,11 @@ interface MyInquiriesProps {
 const NAVY = '#1b365d';
 
 const STATUS_STYLE: Record<string, string> = {
-  'Pending Review': 'bg-[#FEF4E6] text-[#b7791f]',
-  'Approved': 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]',
-  'Converted to Client': 'bg-teal-100 text-teal-700',
-  'Rejected': 'bg-[#FDECEC] text-[#c0392b]',
-  'On Hold': 'bg-slate-100 text-slate-600',
+  'Pending Review': 'border border-[#f3ddb4] bg-[#FEF4E6] text-[#b7791f]',
+  'Approved': 'border border-[#c9e6ba] bg-[rgba(78,167,46,0.12)] text-[#3d8a22]',
+  'Converted to Client': 'border border-teal-300 bg-teal-100 text-teal-700',
+  'Rejected': 'border border-[#f3c9c4] bg-[#FDECEC] text-[#c0392b]',
+  'On Hold': 'border border-slate-300 bg-slate-100 text-slate-600',
 };
 
 export function MyInquiries({ userId, userName }: MyInquiriesProps) {
@@ -136,7 +136,7 @@ export function MyInquiries({ userId, userName }: MyInquiriesProps) {
                   <button onClick={() => toggleCard(inquiry.id)} className="flex w-full items-start gap-2.5 px-3.5 py-3 text-left">
                     <div className="min-w-0 flex-1">
                       <p className="text-[0.85rem] font-medium" style={{ color: NAVY }}>{inquiry.client_name || '—'}</p>
-                      <span className={`mt-1.5 inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${STATUS_STYLE[inquiry.status] || 'bg-slate-100 text-slate-600'}`}>{inquiry.status || '—'}</span>
+                      <span className={`mt-1.5 inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${STATUS_STYLE[inquiry.status] || 'border border-slate-300 bg-slate-100 text-slate-600'}`}>{inquiry.status || '—'}</span>
                     </div>
                     <ChevronDown size={16} className={`mt-0.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
                   </button>
@@ -188,7 +188,7 @@ export function MyInquiries({ userId, userName }: MyInquiriesProps) {
                       <span className="inline-block truncate rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>{inquiry.work_type || '—'}</span>
                     </td>
                     <td className="px-3 py-3">
-                      <span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${STATUS_STYLE[inquiry.status] || 'bg-slate-100 text-slate-600'}`}>{inquiry.status || '—'}</span>
+                      <span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${STATUS_STYLE[inquiry.status] || 'border border-slate-300 bg-slate-100 text-slate-600'}`}>{inquiry.status || '—'}</span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">
                       {inquiry.created_at ? new Date(inquiry.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}

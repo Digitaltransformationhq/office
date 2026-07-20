@@ -55,19 +55,19 @@ export const TASK_STATUS = {
  * sends the task.
  */
 export const STATUS_COLOR: Record<string, string> = {
-  [TASK_STATUS.pending]: 'bg-slate-100 text-slate-600',
-  [TASK_STATUS.inProgress]: 'bg-blue-100 text-blue-700',
-  [TASK_STATUS.pendingNewTaskApproval]: 'bg-amber-100 text-amber-700',
-  [TASK_STATUS.pendingCompletionApproval]: 'bg-amber-100 text-amber-700',
-  [TASK_STATUS.pendingForBilling]: 'bg-purple-100 text-purple-700',
-  [TASK_STATUS.billed]: 'bg-green-100 text-green-700',
-  [TASK_STATUS.overdue]: 'bg-red-100 text-red-700',
-  [TASK_STATUS.completed]: 'bg-green-100 text-green-700',
+  [TASK_STATUS.pending]: 'border border-slate-300 bg-slate-100 text-slate-600',
+  [TASK_STATUS.inProgress]: 'border border-blue-300 bg-blue-100 text-blue-700',
+  [TASK_STATUS.pendingNewTaskApproval]: 'border border-amber-300 bg-amber-100 text-amber-700',
+  [TASK_STATUS.pendingCompletionApproval]: 'border border-amber-300 bg-amber-100 text-amber-700',
+  [TASK_STATUS.pendingForBilling]: 'border border-purple-300 bg-purple-100 text-purple-700',
+  [TASK_STATUS.billed]: 'border border-green-300 bg-green-100 text-green-700',
+  [TASK_STATUS.overdue]: 'border border-red-300 bg-red-100 text-red-700',
+  [TASK_STATUS.completed]: 'border border-green-300 bg-green-100 text-green-700',
 };
 
 /** Never leave a status unstyled — an unknown value still needs to read as a chip. */
 export const statusColor = (status?: string) =>
-  STATUS_COLOR[status || ''] || 'bg-slate-100 text-slate-600';
+  STATUS_COLOR[status || ''] || 'border border-slate-300 bg-slate-100 text-slate-600';
 
 /**
  * What the user actually reads. Both gates display as "Pending for Approval";

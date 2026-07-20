@@ -7,13 +7,15 @@ interface BadgeProps {
 }
 
 export function Badge({ children, variant = 'default', className = '' }: BadgeProps) {
+  // These variants are solid fills, so the outline is a darkened edge rather
+  // than a same-hue border, which would be invisible against the fill.
   const variantClasses = {
-    default: 'bg-muted text-muted-foreground',
-    success: 'bg-success text-success-foreground',
-    warning: 'bg-warning text-warning-foreground',
-    danger: 'bg-destructive text-destructive-foreground',
-    info: 'bg-info text-info-foreground',
-    primary: 'bg-primary text-primary-foreground',
+    default: 'border border-black/10 bg-muted text-muted-foreground',
+    success: 'border border-black/15 bg-success text-success-foreground',
+    warning: 'border border-black/15 bg-warning text-warning-foreground',
+    danger: 'border border-black/15 bg-destructive text-destructive-foreground',
+    info: 'border border-black/15 bg-info text-info-foreground',
+    primary: 'border border-black/15 bg-primary text-primary-foreground',
   };
 
   return (

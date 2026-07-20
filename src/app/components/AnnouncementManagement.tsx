@@ -160,7 +160,7 @@ export function AnnouncementManagement({ user }: AnnouncementManagementProps) {
                           <Trash2 size={14} />
                         </IconBtn>
                       </div>
-                      <span className={`inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${a.is_active ? 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${a.is_active ? 'border border-[#c9e6ba] bg-[rgba(78,167,46,0.12)] text-[#3d8a22]' : 'border border-slate-300 bg-slate-100 text-slate-500'}`}>
                         {a.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </div>

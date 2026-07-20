@@ -45,9 +45,9 @@ interface TaskMISProps {
 const NAVY = '#1b365d';
 
 const ASSIGN_COLOR: Record<string, string> = {
-  'Accepted': 'bg-green-100 text-green-700',
-  'Pending Acceptance': 'bg-amber-100 text-amber-700',
-  'Rejected': 'bg-red-100 text-red-700',
+  'Accepted': 'border border-green-300 bg-green-100 text-green-700',
+  'Pending Acceptance': 'border border-amber-300 bg-amber-100 text-amber-700',
+  'Rejected': 'border border-red-300 bg-red-100 text-red-700',
 };
 
 function priorityDot(p: string) {
