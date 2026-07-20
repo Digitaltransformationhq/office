@@ -239,7 +239,19 @@ export function TaskMIS({ user }: TaskMISProps) {
   ];
 
   const taskActions = (task: Task) => {
-    const canEdit = isPartnerOrAdmin || task.createdById === user.id;
+    /**
+     * You can edit a task you are responsible for: partners and admins for
+     * anything, everyone else for work assigned to them or raised by them.
+     *
+     * The assignee case was missing, so someone could be handed a task, see it
+     * in this list — which is already filtered to their own tasks — and find
+     * Edit and Delete greyed out purely because a colleague had created it.
+     * Enabled on one row and not the next, with no visible reason.
+     */
+    const canEdit =
+      isPartnerOrAdmin ||
+      task.createdById === user.id ||
+      task.assignedToId === user.id;
     const isPendingAcceptance = task.assignmentStatus === 'Pending Acceptance' && task.assignedToId === user.id;
     const assign = task.assignmentStatus || 'Accepted';
     // The task is yours to work on: assigned to you, and past the accept/reject gate.
@@ -453,7 +465,6 @@ export function TaskMIS({ user }: TaskMISProps) {
               </thead>
               <tbody>
                 {sorted.map((task) => {
-                  const canEdit = isPartnerOrAdmin || task.createdById === user.id;
                   const isPendingAcceptance = task.assignmentStatus === 'Pending Acceptance' && task.assignedToId === user.id;
                   const assign = task.assignmentStatus || 'Accepted';
                   return (
