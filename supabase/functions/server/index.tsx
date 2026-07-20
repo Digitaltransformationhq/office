@@ -590,6 +590,15 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
     // Handed to someone else. Fires on reassignment as well as first assignment.
     if (body.assignedToId && prev?.assigned_to_id && body.assignedToId !== prev.assigned_to_id) {
       await notifyUser(body.assignedToId, 'assignment', 'Task assigned to you', label);
+
+      // The person losing it needs to know it left their plate, and the partner
+      // who owns the approval needs to know who is doing the work now. Only the
+      // incoming assignee was told before, while the reassign dialog claimed
+      // the original assigner and every partner had been notified.
+      await notifyUser(prev.assigned_to_id, 'assignment', 'Task reassigned away from you', label);
+      if (data?.approver_id && data.approver_id !== body.assignedToId && data.approver_id !== prev.assigned_to_id) {
+        await notifyUser(data.approver_id, 'assignment', 'Task reassigned', label);
+      }
     }
 
     if (statusChanged) {

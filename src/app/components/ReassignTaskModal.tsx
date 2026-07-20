@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { Button } from './Button';
 import { usersAPI, tasksAPI } from '../services/api';
+import { X, ChevronDown, Repeat2 } from 'lucide-react';
 
 interface ReassignTaskModalProps {
   task: any;
@@ -48,7 +48,7 @@ export function ReassignTaskModal({ task, currentUser, onClose, onSuccess }: Rea
       return;
     }
 
-    const confirmMessage = `Reassign this task to ${selectedUser.name}?\n\nTask: ${task.task}\nClient: ${task.client}\n\nThe new assignee must accept this task.\nThe partner who originally assigned this will be notified.`;
+    const confirmMessage = `Reassign this task to ${selectedUser.name}?\n\nTask: ${task.task}\nClient: ${task.client}\n\nThey must accept it before starting.`;
 
     if (!confirm(confirmMessage)) {
       return;
@@ -81,7 +81,7 @@ export function ReassignTaskModal({ task, currentUser, onClose, onSuccess }: Rea
       const response = await tasksAPI.update(task.id, reassignmentData);
 
       if (response.success) {
-        alert(`✅ Task reassigned to ${selectedUser.name}!\n\n• ${selectedUser.name} must accept the task\n• Partners have been notified\n• Original assigner has been notified`);
+        alert(`Task reassigned to ${selectedUser.name}.\n\n${selectedUser.name} must accept it before starting.`);
         onSuccess();
         onClose();
       } else {
@@ -95,101 +95,141 @@ export function ReassignTaskModal({ task, currentUser, onClose, onSuccess }: Rea
     }
   };
 
+  const NAVY = '#1b365d';
+  const fieldCls =
+    'w-full rounded-lg border border-[#E7EDF4] bg-white px-3.5 py-2.5 text-[0.92rem] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
+
+  const detail = (label: string, value: string) => (
+    <div className="min-w-0">
+      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="truncate text-sm font-medium" style={{ color: NAVY }} title={value}>
+        {value || '—'}
+      </dd>
+    </div>
+  );
+
+  /** Group the roster so a long list is scannable rather than one flat block. */
+  const roleGroups: [string, (u: any) => boolean][] = [
+    ['Partners', (u) => ['partner', 'Partner', 'admin', 'Admin'].includes(u.role)],
+    ['Accounts', (u) => ['team-leader', 'Accounts', 'Team Leader'].includes(u.role)],
+    ['Staff', (u) => ['team-member', 'Staff', 'Team Member'].includes(u.role)],
+  ];
+
   return (
-    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Reassign Task</CardTitle>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={onClose}
-              disabled={loading}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1728]/60 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]">
+        {/* Header - fixed */}
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-[#E7EDF4] px-6 py-4">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+              style={{ backgroundColor: 'rgba(27,54,93,0.08)', color: NAVY }}
             >
-              ✕
-            </Button>
+              <Repeat2 size={18} />
+            </span>
+            <div>
+              <h2 className="text-base font-semibold tracking-tight" style={{ color: NAVY }}>
+                Reassign Task
+              </h2>
+              <p className="text-xs text-muted-foreground">Hand this task to someone else</p>
+            </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          {/* Task Details */}
-          <div className="bg-muted/50 rounded-lg p-4 mb-4">
-            <h3 className="font-semibold mb-2">Task Details:</h3>
-            <div className="space-y-1 text-sm">
-              <p><strong>Client:</strong> {task.client}</p>
-              <p><strong>Task:</strong> {task.task}</p>
-              <p><strong>Category:</strong> {task.category}</p>
-              <p><strong>Priority:</strong> {task.priority}</p>
-              <p><strong>Currently Assigned To:</strong> {task.assignedTo}</p>
-              {task.targetDate && (
-                <p><strong>Target Date:</strong> {new Date(task.targetDate).toLocaleDateString('en-IN')}</p>
-              )}
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-[#1b365d] disabled:opacity-40"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body - the only scrolling region */}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          {/* What is being moved. A definition list rather than bolded label:
+              value lines, so the values align instead of starting wherever the
+              label happens to end. */}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-[#F4F6F9] p-4">
+            {detail('Client', task.client)}
+            {detail('Task', task.task)}
+            {detail('Category', task.category)}
+            {detail('Priority', task.priority)}
+            {detail('Currently with', task.assignedTo)}
+            {detail('Due', task.targetDate
+              ? new Date(task.targetDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+              : '')}
+          </dl>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+              Reassign to <span className="text-[#c0392b]">*</span>
+            </label>
+            <div className="relative">
+              <select
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+                disabled={loading}
+                className={fieldCls + ' appearance-none pr-9'}
+              >
+                <option value="">Select a person</option>
+                {roleGroups.map(([heading, match]) => {
+                  const group = users.filter(match);
+                  if (group.length === 0) return null;
+                  return (
+                    <optgroup key={heading} label={heading}>
+                      {group.map((u) => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
           </div>
 
-          {/* Reassign To */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              Reassign To <span className="text-destructive">*</span>
-            </label>
-            <select
-              value={selectedUserId}
-              onChange={(e) => setSelectedUserId(e.target.value)}
-              className="w-full px-3 py-2 bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-ring"
-              disabled={loading}
-            >
-              <option value="">Select a team member...</option>
-              {users.map(user => (
-                <option key={user.id} value={user.id}>
-                  {user.name} ({user.role}) - {user.email}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Notes */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              Reason for Reassignment (Optional)
+          <div>
+            <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+              Reason <span className="font-normal text-muted-foreground">(optional)</span>
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g., Need help with this task, or person has specific expertise..."
-              className="w-full px-3 py-2 bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-ring min-h-[80px]"
+              placeholder="Why it is moving - added to the task's comments"
+              rows={3}
               disabled={loading}
+              className={fieldCls + ' resize-none'}
             />
           </div>
 
-          {/* Info Box */}
-          <div className="bg-info/10 border border-info/20 rounded-lg p-4 mb-4">
-            <p className="text-sm font-semibold mb-2">What happens next:</p>
-            <ul className="text-sm space-y-1 list-disc list-inside">
-              <li>The selected person will receive this task with "Pending Acceptance" status</li>
-              <li>They must <strong>Accept</strong> or <strong>Reject</strong> the task</li>
-              <li>The partner who originally assigned this task will be notified</li>
-              <li>All partners will be notified about the reassignment</li>
+          {/* Only claims things that actually happen: the server notifies the
+              incoming assignee, the person losing the task, and the approver. */}
+          <div className="rounded-xl border border-[#dbe7f5] bg-[#F2F7FD] p-4">
+            <p className="text-xs font-semibold" style={{ color: NAVY }}>What happens next</p>
+            <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+              <li>The task moves to <strong>Pending Acceptance</strong> until they accept it.</li>
+              <li>They can accept or reject; a rejection comes back to you.</li>
+              <li>They, you, and the approving partner are notified.</li>
             </ul>
           </div>
+        </div>
 
-          {/* Buttons */}
-          <div className="flex gap-3 justify-end">
-            <Button
-              variant="secondary"
-              onClick={onClose}
-              disabled={loading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleReassign}
-              disabled={loading || !selectedUserId}
-            >
-              {loading ? 'Reassigning...' : '📤 Reassign Task'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        {/* Footer - always reachable */}
+        <div className="flex shrink-0 items-center gap-3 border-t border-[#E7EDF4] px-6 py-4">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={loading} className="flex-1">
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={handleReassign}
+            disabled={loading || !selectedUserId}
+            className="flex-1"
+          >
+            {loading ? 'Reassigning...' : 'Reassign Task'}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
