@@ -437,7 +437,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
             <div className="mt-4">
               {approvalQueue.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  No pending approvals. All caught up! 🎉
+                  No pending approvals. All caught up.
                 </p>
               ) : (
                 <div className="flex items-baseline gap-2">

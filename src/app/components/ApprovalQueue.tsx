@@ -107,7 +107,7 @@ export function ApprovalQueue({ userId, userName, userRole }: ApprovalQueueProps
               {pendingLeaves.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    No pending approvals. All caught up! 🎉
+                    No pending approvals. All caught up.
                   </TableCell>
                 </TableRow>
               ) : (

@@ -392,7 +392,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
           <CardContent className="p-0">
             {activeTasks.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                No active tasks. All caught up! 🎉
+                No active tasks. All caught up.
               </p>
             ) : (
               <>
