@@ -1,7 +1,7 @@
 # Task Creation Testing Guide
 
 ## Prerequisites
-✅ Make sure you've run the SQL commands from `database-schema.sql` in Supabase
+✅ Make sure you've run the SQL commands from `supabase/sql/schema.sql` in Supabase
 ✅ Verify tables exist in Supabase Dashboard > Table Editor
 
 ## Step-by-Step Test
@@ -120,7 +120,7 @@ Partners assigned tasks should see them in their own dashboard.
 ### ❌ "Failed to create task"
 **Solution**: 
 - Check browser console (F12) for detailed error
-- Verify you ran ALL SQL commands from database-schema.sql
+- Verify you ran ALL SQL commands from supabase/sql/schema.sql
 - Check that users table has data in Supabase
 
 ### ❌ Task not appearing for staff
