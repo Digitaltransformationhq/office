@@ -34,16 +34,16 @@ export const TASK_STATUS = {
 } as const;
 
 /**
- * Tailwind chip classes per status. The stage a task sits in should be legible
- * at a glance, so the two approval gates are visually distinct: amber for "a
- * partner must look at this before work starts", indigo for "the work is done
- * and waiting on sign-off".
+ * Tailwind chip classes per status. Both approval gates share one look, because
+ * to the person reading the board they are one thing: a partner has to sign this
+ * off. Which gate it is only matters to the code deciding where an approval
+ * sends the task.
  */
 export const STATUS_COLOR: Record<string, string> = {
   [TASK_STATUS.pending]: 'bg-slate-100 text-slate-600',
   [TASK_STATUS.inProgress]: 'bg-blue-100 text-blue-700',
   [TASK_STATUS.pendingNewTaskApproval]: 'bg-amber-100 text-amber-700',
-  [TASK_STATUS.pendingCompletionApproval]: 'bg-indigo-100 text-indigo-700',
+  [TASK_STATUS.pendingCompletionApproval]: 'bg-amber-100 text-amber-700',
   [TASK_STATUS.pendingForBilling]: 'bg-purple-100 text-purple-700',
   [TASK_STATUS.completed]: 'bg-green-100 text-green-700',
   [TASK_STATUS.overdue]: 'bg-red-100 text-red-700',
@@ -55,12 +55,15 @@ export const statusColor = (status?: string) =>
   STATUS_COLOR[status || ''] || 'bg-slate-100 text-slate-600';
 
 /**
- * 'Pending Approval - Completion' is too long for a table chip, so it is shown
- * as "Awaiting Approval". The stored value stays explicit for the sake of
- * anyone reading the database directly.
+ * What the user actually reads. Both gates display as "Pending for Approval":
+ * the stage means the same thing to whoever is looking at the task, and the
+ * stored value is split in two only so the approve action knows whether to send
+ * the task to 'Pending' (start the work) or 'Pending for Billing' (bill it).
+ * That is an implementation detail and has no business being on screen.
  */
 export const STATUS_LABEL: Record<string, string> = {
-  [TASK_STATUS.pendingCompletionApproval]: 'Awaiting Approval',
+  [TASK_STATUS.pendingNewTaskApproval]: 'Pending for Approval',
+  [TASK_STATUS.pendingCompletionApproval]: 'Pending for Approval',
 };
 
 export const statusLabel = (status?: string) =>

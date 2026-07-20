@@ -7,6 +7,7 @@ import { UploadDocumentModal } from './UploadDocumentModal';
 import { CreateQueryModal } from './CreateQueryModal';
 import { ViewQueryModal } from './ViewQueryModal';
 import { useToast } from './Toast';
+import { statusLabel } from '../utils/taskStatus';
 
 interface ClientPortalProps {
   clientId: number;
@@ -309,7 +310,7 @@ export function ClientPortal({ clientId, clientName }: ClientPortalProps) {
                             task.status === 'In Progress' ? 'info' :
                             'warning'
                           }>
-                            {task.status || 'Pending'}
+                            {statusLabel(task.status)}
                           </Badge>
                         </TableCell>
                         <TableCell>

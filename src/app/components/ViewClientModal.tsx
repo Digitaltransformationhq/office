@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { tasksAPI } from '../services/api';
 import { X, Building2, Pencil } from 'lucide-react';
 import { NAVY, rupees, FEE_FIELDS, ModalTabs, overlayCls, panelCls } from './clientModalUI';
+import { statusColor, statusLabel } from '../utils/taskStatus';
 
 interface ViewClientModalProps {
   client: any;
@@ -9,12 +10,6 @@ interface ViewClientModalProps {
   onEdit?: () => void;
 }
 
-const TASK_STATUS: Record<string, string> = {
-  'Completed': 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]',
-  'In Progress': 'bg-blue-100 text-blue-700',
-  'Pending': 'bg-[#FEF4E6] text-[#b7791f]',
-  'Overdue': 'bg-[#FDECEC] text-[#c0392b]',
-};
 
 export function ViewClientModal({ client, onClose, onEdit }: ViewClientModalProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'billing' | 'tasks'>('details');
@@ -137,7 +132,7 @@ export function ViewClientModal({ client, onClose, onEdit }: ViewClientModalProp
                         <p className="truncate text-sm font-semibold" style={{ color: NAVY }}>{task.task}</p>
                         <p className="truncate text-xs text-muted-foreground">{task.category}</p>
                       </div>
-                      <span className={`shrink-0 rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${TASK_STATUS[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status}</span>
+                      <span className={`shrink-0 rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-3 border-t border-[#F1F4F8] pt-3 text-xs">
                       <div><p className="text-[0.6rem] uppercase tracking-[0.08em] text-muted-foreground">Assigned</p><p className="mt-0.5 truncate font-medium" style={{ color: NAVY }}>{task.assignedTo}</p></div>

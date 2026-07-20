@@ -3,6 +3,7 @@ import { KPICard } from './KPICard';
 import { tasksAPI, clientsAPI, usersAPI, billingAPI } from '../services/api';
 import { useToast } from './Toast';
 import { ClipboardList, Wallet, BarChart3, Download, IndianRupee, Users, TrendingUp, ChevronDown, Receipt, Search, X, Clock } from 'lucide-react';
+import { statusColor, statusLabel } from '../utils/taskStatus';
 
 interface ReportsProps {
   user?: { id: string; name: string; email: string; role: string };
@@ -10,12 +11,6 @@ interface ReportsProps {
 
 const NAVY = '#1b365d';
 
-const TASK_STATUS: Record<string, string> = {
-  'Completed': 'bg-[rgba(78,167,46,0.12)] text-[#3d8a22]',
-  'In Progress': 'bg-blue-100 text-blue-700',
-  'Pending': 'bg-[#FEF4E6] text-[#b7791f]',
-  'Overdue': 'bg-[#FDECEC] text-[#c0392b]',
-};
 
 const inputCls =
   'rounded-lg border border-[#E7EDF4] bg-white px-3 py-2 text-sm text-foreground outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
@@ -212,7 +207,7 @@ export function Reports({ user }: ReportsProps) {
               <MobileCard
                 key={i}
                 title={task.client}
-                badge={<span className={`inline-block rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${TASK_STATUS[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status}</span>}
+                badge={<span className={`inline-block rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>}
                 open={openCards.has(`t-${i}`)}
                 onToggle={() => toggleCard(`t-${i}`)}
               >
@@ -239,7 +234,7 @@ export function Reports({ user }: ReportsProps) {
                   <td className="px-3 py-3 font-medium" style={{ color: NAVY }}>{task.client}</td>
                   <td className="px-3 py-3 text-foreground/80">{task.task}</td>
                   <td className="px-3 py-3"><Chip>{task.category || '—'}</Chip></td>
-                  <td className="px-3 py-3"><span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${TASK_STATUS[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status}</span></td>
+                  <td className="px-3 py-3"><span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span></td>
                   <td className="px-3 py-3 text-muted-foreground">{task.assignedTo}</td>
                   <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{task.targetDate ? new Date(task.targetDate).toLocaleDateString('en-IN') : '—'}</td>
                 </tr>

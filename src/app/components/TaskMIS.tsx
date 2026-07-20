@@ -196,7 +196,7 @@ export function TaskMIS({ user }: TaskMISProps) {
     .filter(t => categoryFilter === 'all' || t.category === categoryFilter)
     .filter(t => priorityFilter === 'all' || t.priority === priorityFilter)
     .filter(t => !assignedToFilter || t.assignedTo.toLowerCase().includes(assignedToFilter.toLowerCase()))
-    .filter(t => statusFilter === 'all' || t.status === statusFilter)
+    .filter(t => statusFilter === 'all' || statusLabel(t.status) === statusFilter)
     .filter(t => assignmentStatusFilter === 'all' || (t.assignmentStatus || 'Accepted') === assignmentStatusFilter);
 
   const sorted = [...filtered].sort((a, b) => {
@@ -216,7 +216,11 @@ export function TaskMIS({ user }: TaskMISProps) {
   });
 
   const uniqueCategories = Array.from(new Set(tasks.map(t => t.category)));
-  const uniqueStatuses = Array.from(new Set(tasks.map(t => t.status)));
+  // Deduplicated by label, and filtered by label below: the two approval gates
+  // are stored as different values but read as one stage, so listing the raw
+  // values would put "Pending for Approval" in the dropdown twice and make each
+  // entry match only half the tasks the user meant.
+  const uniqueStatuses = Array.from(new Set(tasks.map(t => statusLabel(t.status))));
 
   const stats = [
     { label: 'Total', val: tasks.length, tab: 'all' as const, dot: NAVY },
