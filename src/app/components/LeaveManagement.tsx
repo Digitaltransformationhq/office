@@ -5,9 +5,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from './Badge';
 import { ApplyLeaveModal } from './ApplyLeaveModal';
 import { useToast } from './Toast';
+import { leaveAPI } from '../services/api';
 
 interface LeaveManagementProps {
-  userId: number;
+  /** Real user id ('user:7') — written to a column with a foreign key. */
+  userId: string;
   userName: string;
   userRole: string;
 }
@@ -26,22 +28,20 @@ export function LeaveManagement({ userId, userName, userRole }: LeaveManagementP
   const loadData = async () => {
     try {
       setLoading(true);
+      // Both were relative /api/... paths, which this app does not serve, so
+      // this screen has always shown an empty list and default balances.
       const [leavesResponse, balanceResponse] = await Promise.all([
-        fetch(`/api/leave/user/${userId}`),
-        fetch(`/api/leave/balance/${userId}`),
+        leaveAPI.getByUser(userId),
+        leaveAPI.getBalance(userId),
       ]);
 
-      if (leavesResponse.ok) {
-        const leavesData = await leavesResponse.json();
-        setLeaves(leavesData.data || []);
-      }
+      setLeaves(leavesResponse.data || []);
 
-      if (balanceResponse.ok) {
-        const balanceData = await balanceResponse.json();
+      if (balanceResponse.success && balanceResponse.data) {
         setBalance({
-          casualLeave: balanceData.data.casualLeaveBalance || 10,
-          sickLeave: balanceData.data.sickLeaveBalance || 7,
-          earnedLeave: balanceData.data.earnedLeaveBalance || 15,
+          casualLeave: balanceResponse.data.casualLeaveBalance ?? 10,
+          sickLeave: balanceResponse.data.sickLeaveBalance ?? 7,
+          earnedLeave: balanceResponse.data.earnedLeaveBalance ?? 15,
         });
       }
     } catch (error) {

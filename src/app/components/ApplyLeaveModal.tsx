@@ -3,9 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { Button } from './Button';
 import { Input } from './Input';
 import { useToast } from './Toast';
+import { leaveAPI } from '../services/api';
 
 interface ApplyLeaveModalProps {
-  userId: number;
+  /** Real user id ('user:7') — written to a column with a foreign key. */
+  userId: string;
   userName: string;
   onClose: () => void;
   onSuccess: () => void;
@@ -29,9 +31,9 @@ export function ApplyLeaveModal({ userId, userName, onClose, onSuccess }: ApplyL
 
   const loadBalance = async () => {
     try {
-      const response = await fetch(`/api/leave/balance/${userId}`);
-      if (response.ok) {
-        const data = await response.json();
+      // Was a relative /api/... path, which this app does not serve.
+      const data = await leaveAPI.getBalance(userId);
+      if (data.success) {
         setBalance({
           casualLeave: data.data.casualLeaveBalance || 10,
           sickLeave: data.data.sickLeaveBalance || 7,
@@ -84,21 +86,16 @@ export function ApplyLeaveModal({ userId, userName, onClose, onSuccess }: ApplyL
     setLoading(true);
 
     try {
-      const response = await fetch('/api/leave/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          leaveType: formData.leaveType,
-          fromDate: formData.fromDate,
-          toDate: formData.toDate,
-          isHalfDay: formData.isHalfDay,
-          totalDays,
-          reason: formData.reason,
-        }),
+      const result = await leaveAPI.apply({
+        userId,
+        userName,
+        leaveType: formData.leaveType,
+        fromDate: formData.fromDate,
+        toDate: formData.toDate,
+        isHalfDay: formData.isHalfDay,
+        totalDays,
+        reason: formData.reason,
       });
-
-      const result = await response.json();
 
       if (result.success) {
         showSuccess('Leave application submitted successfully!');

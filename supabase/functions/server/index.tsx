@@ -1795,12 +1795,30 @@ app.delete('/make-server-0abfa7cf/notifications/:notificationId', async (c) => {
 app.post('/make-server-0abfa7cf/leave/apply', async (c) => {
   try {
     const body = await c.req.json();
-    const { userId, leaveType, fromDate, toDate, isHalfDay, totalDays, reason } = body;
+    const { userId, userName, leaveType, fromDate, toDate, isHalfDay, totalDays, reason } = body;
+
+    /**
+     * id and user_name were both omitted. leave_applications.id is a TEXT
+     * primary key with no default and user_name is NOT NULL, so every insert
+     * failed on a null violation — applying for leave has never worked.
+     *
+     * The name is looked up rather than trusted from the client: it is stored
+     * denormalised on the row, and a caller could otherwise file leave under
+     * somebody else's name.
+     */
+    let resolvedName = userName;
+    if (!resolvedName) {
+      const { data: u } = await supabase
+        .from('users').select('name').eq('id', userId).maybeSingle();
+      resolvedName = u?.name || 'Unknown';
+    }
 
     const { data, error } = await supabase
       .from('leave_applications')
       .insert([{
+        id: `leave:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         user_id: userId,
+        user_name: resolvedName,
         leave_type: leaveType,
         from_date: fromDate,
         to_date: toDate,
@@ -1814,10 +1832,20 @@ app.post('/make-server-0abfa7cf/leave/apply', async (c) => {
 
     if (error) throw error;
 
+    // The people who can act on it need to know it is waiting.
+    await notifyRoles(['team-leader', 'admin', 'partner'], 'leave',
+      'Leave request awaiting approval',
+      `${resolvedName} — ${totalDays} day${Number(totalDays) === 1 ? '' : 's'} from ${fromDate}`);
+    await broadcastChange('users');
+
     return c.json({ success: true, data });
-  } catch (error) {
+  } catch (error: any) {
     console.log('Error applying for leave:', error);
-    return c.json({ success: false, error: 'Failed to apply for leave' }, 500);
+    return c.json({
+      success: false,
+      error: 'Failed to apply for leave',
+      details: error?.message || String(error),
+    }, 500);
   }
 });
 

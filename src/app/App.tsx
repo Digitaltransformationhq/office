@@ -16,6 +16,7 @@ import { Billing } from './components/Billing';
 import { CalendarManagement } from './components/CalendarManagement';
 import { LoginHistoryAdmin } from './components/LoginHistoryAdmin';
 import { ApprovalQueue } from './components/ApprovalQueue';
+import { LeaveManagement } from './components/LeaveManagement';
 import { AnnouncementManagement } from './components/AnnouncementManagement';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { ImportantDatesBar } from './components/ImportantDatesBar';
@@ -222,6 +223,12 @@ export default function App() {
         if (user && user.role === 'admin') return <ClientManagement />;
         if (user) setActiveView(user.role);
         return null;
+      case 'leave':
+        // Everyone can apply for and track their own leave; the sidebar only
+        // offered this to team leaders, and nothing was routed behind it.
+        return user
+          ? <LeaveManagement userId={user.id} userName={user.name} userRole={user.role} />
+          : null;
       case 'approvals':
         // Leave approvals. The sidebar has offered this to team leaders all
         // along with nothing behind it, so the item did nothing when clicked.
