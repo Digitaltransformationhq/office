@@ -15,6 +15,8 @@ interface MarkAsBilledModalProps {
     /** Captured earlier at "Send for Billing"; used to prefill the amount below. */
     taxableAmount?: number | string;
     billingFees?: number | string;
+    /** The note the approver (partner) left when releasing the task to Accounts. */
+    billingDescription?: string;
   };
   user: {
     id: string;
@@ -171,6 +173,20 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
                 </div>
               ))}
             </dl>
+
+            {/* The partner's note from the approval step. Accounts bills against
+                this, so it has to be visible here — it was being saved but never
+                surfaced to the person cutting the invoice. */}
+            {task.billingDescription?.trim() && (
+              <div className="rounded-xl border border-[#E7EDF4] bg-[#FAFBFD] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Note from approver
+                </p>
+                <p className="mt-1 whitespace-pre-line text-sm font-medium" style={{ color: NAVY }}>
+                  {task.billingDescription}
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
