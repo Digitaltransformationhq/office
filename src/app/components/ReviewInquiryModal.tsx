@@ -17,18 +17,31 @@ const NAVY = '#1b365d';
 const inputCls =
   'w-full rounded-lg border border-[#E7EDF4] bg-white px-3.5 py-2.5 text-[0.92rem] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
 
+/**
+ * Inquiries arrive as raw snake_case Supabase rows. This modal was written
+ * against camelCase, so the details rendered blank and Approve & Convert built a
+ * client with undefined name/contact. Read snake_case first, fall back to camel.
+ */
+const pick = (o: any, ...keys: string[]) => {
+  for (const k of keys) {
+    const v = o?.[k];
+    if (v !== undefined && v !== null && v !== '') return v;
+  }
+  return undefined;
+};
+
 export function ReviewInquiryModal({ inquiry, reviewerId, reviewerName, onClose, onSuccess }: ReviewInquiryModalProps) {
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState<'approve' | 'edit' | 'reject' | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [showTaskCreation, setShowTaskCreation] = useState(false);
   const [editedInquiry, setEditedInquiry] = useState({
-    clientName: inquiry.clientName,
-    companyName: inquiry.companyName || '',
-    mobileNumber: inquiry.mobileNumber,
-    email: inquiry.email || '',
-    workType: inquiry.workType,
-    notes: inquiry.notes || '',
+    clientName: pick(inquiry, 'client_name', 'clientName') || '',
+    companyName: pick(inquiry, 'company_name', 'companyName') || '',
+    mobileNumber: pick(inquiry, 'mobile_number', 'mobileNumber') || '',
+    email: pick(inquiry, 'email') || '',
+    workType: pick(inquiry, 'work_type', 'workType') || '',
+    notes: pick(inquiry, 'notes') || '',
   });
   const { showSuccess, showError } = useToast();
 
@@ -103,7 +116,7 @@ export function ReviewInquiryModal({ inquiry, reviewerId, reviewerName, onClose,
         rejectionReason,
       });
       if (response.success) {
-        showSuccess(`Inquiry rejected. ${inquiry.submittedBy} will be notified.`);
+        showSuccess(`Inquiry rejected. ${pick(inquiry, 'submitted_by', 'submittedBy') || 'The submitter'} will be notified.`);
         onSuccess();
       } else {
         showError(response.error || 'Failed to reject inquiry');
@@ -178,18 +191,18 @@ export function ReviewInquiryModal({ inquiry, reviewerId, reviewerName, onClose,
           {!action && (
             <div className="overflow-hidden rounded-xl border border-[#E7EDF4]">
               <dl className="divide-y divide-[#F1F4F8]">
-                <Row label="Client name" value={inquiry.clientName || '—'} />
-                <Row label="Company" value={inquiry.companyName || '—'} />
-                <Row label="Mobile" value={inquiry.mobileNumber || '—'} />
-                <Row label="Email" value={inquiry.email || '—'} />
+                <Row label="Client name" value={pick(inquiry, 'client_name', 'clientName') || '—'} />
+                <Row label="Company" value={pick(inquiry, 'company_name', 'companyName') || '—'} />
+                <Row label="Mobile" value={pick(inquiry, 'mobile_number', 'mobileNumber') || '—'} />
+                <Row label="Email" value={pick(inquiry, 'email') || '—'} />
                 <Row label="Work type">
                   <span className="inline-block rounded-md px-2 py-0.5 text-[0.72rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>
-                    {inquiry.workType || '—'}
+                    {pick(inquiry, 'work_type', 'workType') || '—'}
                   </span>
                 </Row>
-                <Row label="Submitted by" value={inquiry.submittedBy || '—'} />
-                {inquiry.notes && <Row label="Notes" value={inquiry.notes} multiline />}
-                <Row label="Submitted on" value={inquiry.createdAt ? new Date(inquiry.createdAt).toLocaleString('en-IN') : 'N/A'} />
+                <Row label="Submitted by" value={pick(inquiry, 'submitted_by', 'submittedBy') || '—'} />
+                {pick(inquiry, 'notes') && <Row label="Notes" value={pick(inquiry, 'notes')} multiline />}
+                <Row label="Submitted on" value={pick(inquiry, 'created_at', 'createdAt') ? new Date(pick(inquiry, 'created_at', 'createdAt')).toLocaleString('en-IN') : 'N/A'} />
               </dl>
             </div>
           )}

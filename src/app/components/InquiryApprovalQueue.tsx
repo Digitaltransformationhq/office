@@ -12,6 +12,19 @@ interface InquiryApprovalQueueProps {
 
 const NAVY = '#1b365d';
 
+/**
+ * Inquiries come back from the server in snake_case (raw Supabase rows), but this
+ * queue was written against camelCase, so every field read as undefined and the
+ * cards showed blank. Read snake_case first, fall back to camelCase for safety.
+ */
+const pick = (o: any, ...keys: string[]) => {
+  for (const k of keys) {
+    const v = o?.[k];
+    if (v !== undefined && v !== null && v !== '') return v;
+  }
+  return undefined;
+};
+
 export function InquiryApprovalQueue({ userId, userName, onDataChange }: InquiryApprovalQueueProps) {
   const [pendingInquiries, setPendingInquiries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,30 +82,38 @@ export function InquiryApprovalQueue({ userId, userName, onDataChange }: Inquiry
         {pendingInquiries.length} inquir{pendingInquiries.length > 1 ? 'ies' : 'y'} awaiting your approval
       </p>
 
-      {pendingInquiries.map((inquiry) => (
+      {pendingInquiries.map((inquiry) => {
+        const clientName = pick(inquiry, 'client_name', 'clientName');
+        const companyName = pick(inquiry, 'company_name', 'companyName');
+        const workType = pick(inquiry, 'work_type', 'workType');
+        const mobileNumber = pick(inquiry, 'mobile_number', 'mobileNumber');
+        const email = pick(inquiry, 'email');
+        const submittedBy = pick(inquiry, 'submitted_by', 'submittedBy');
+        const createdAt = pick(inquiry, 'created_at', 'createdAt');
+        return (
         <div key={inquiry.id} className="rounded-xl border border-[#E7EDF4] p-4 transition-all hover:border-[#d5dfea] hover:shadow-[0_10px_30px_-20px_rgba(10,23,40,0.5)]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="truncate text-sm font-semibold" style={{ color: NAVY }}>
-                  {inquiry.clientName || inquiry.companyName || 'Client inquiry'}
+                  {clientName || companyName || 'Client inquiry'}
                 </p>
-                {inquiry.workType && (
+                {workType && (
                   <span className="rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>
-                    {inquiry.workType}
+                    {workType}
                   </span>
                 )}
               </div>
-              {inquiry.companyName && inquiry.clientName && (
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{inquiry.companyName}</p>
+              {companyName && clientName && (
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">{companyName}</p>
               )}
 
               <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                {inquiry.mobileNumber && (
-                  <span className="inline-flex items-center gap-1.5"><Phone size={12} />{inquiry.mobileNumber}</span>
+                {mobileNumber && (
+                  <span className="inline-flex items-center gap-1.5"><Phone size={12} />{mobileNumber}</span>
                 )}
-                {inquiry.email && (
-                  <span className="inline-flex items-center gap-1.5 truncate"><Mail size={12} />{inquiry.email}</span>
+                {email && (
+                  <span className="inline-flex items-center gap-1.5 truncate"><Mail size={12} />{email}</span>
                 )}
               </div>
             </div>
@@ -105,14 +126,15 @@ export function InquiryApprovalQueue({ userId, userName, onDataChange }: Inquiry
             </button>
           </div>
 
-          {(inquiry.submittedBy || inquiry.createdAt) && (
+          {(submittedBy || createdAt) && (
             <p className="mt-2.5 border-t border-[#F1F4F8] pt-2 text-[11px] text-muted-foreground">
-              Submitted by {inquiry.submittedBy || 'Unknown'}
-              {inquiry.createdAt ? ` · ${new Date(inquiry.createdAt).toLocaleDateString('en-IN')}` : ''}
+              Submitted by {submittedBy || 'Unknown'}
+              {createdAt ? ` · ${new Date(createdAt).toLocaleDateString('en-IN')}` : ''}
             </p>
           )}
         </div>
-      ))}
+        );
+      })}
 
       {showReviewModal && selectedInquiry && (
         <ReviewInquiryModal
