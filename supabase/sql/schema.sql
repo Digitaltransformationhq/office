@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   client TEXT NOT NULL,
   task TEXT NOT NULL,
-  category TEXT CHECK (category IN ('Income Tax', 'GST', 'Audit', 'Certification', 'Project Finance', 'Accounts', 'Advisory', 'Office Work', 'Consultancy', 'Litigation', 'MCA Work')),
+  category TEXT CHECK (category IN ('Income Tax', 'GST', 'Audit', 'Certification', 'Project Finance', 'Accounts', 'Advisory', 'Office Work', 'Consultancy', 'Litigation', 'MCA Work', 'IT Related Work')),
   assigned_to TEXT NOT NULL,
   assigned_to_id TEXT NOT NULL,
   priority TEXT DEFAULT 'Medium' CHECK (priority IN ('Low', 'Medium', 'High', 'Urgent')),

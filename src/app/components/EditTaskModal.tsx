@@ -61,6 +61,7 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
     'Consultancy',
     'Litigation',
     'MCA Work',
+    'IT Related Work',
   ];
 
   /**

@@ -5,5 +5,5 @@
  */
 export const TASK_CATEGORIES = [
   'Income Tax', 'GST', 'Audit', 'Certification', 'Project Finance', 'Accounts',
-  'Advisory', 'Office Work', 'Consultancy', 'Litigation', 'MCA Work',
+  'Advisory', 'Office Work', 'Consultancy', 'Litigation', 'MCA Work', 'IT Related Work',
 ] as const;

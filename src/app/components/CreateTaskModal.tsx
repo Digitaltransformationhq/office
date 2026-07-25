@@ -51,7 +51,7 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
 
   const taskCategories = [
     'Income Tax', 'GST', 'Audit', 'Certification', 'Project Finance', 'Accounts',
-    'Advisory', 'Office Work', 'Consultancy', 'Litigation', 'MCA Work',
+    'Advisory', 'Office Work', 'Consultancy', 'Litigation', 'MCA Work', 'IT Related Work',
   ];
 
   useEffect(() => {
