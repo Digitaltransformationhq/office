@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ReviewInquiryModal } from './ReviewInquiryModal';
 import { useToast } from './Toast';
 import { inquiriesAPI } from '../services/api';
-import { Mail, Phone, CheckCircle2 } from 'lucide-react';
+import { Mail, Phone, CheckCircle2, Search } from 'lucide-react';
 
 interface InquiryApprovalQueueProps {
   userId: number;
@@ -30,6 +30,7 @@ export function InquiryApprovalQueue({ userId, userName, onDataChange }: Inquiry
   const [loading, setLoading] = useState(true);
   const [selectedInquiry, setSelectedInquiry] = useState<any>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [search, setSearch] = useState('');
   const { showError } = useToast();
 
   useEffect(() => { loadData(); }, []);
@@ -76,13 +77,45 @@ export function InquiryApprovalQueue({ userId, userName, onDataChange }: Inquiry
     );
   }
 
+  const q = search.trim().toLowerCase();
+  const visibleInquiries = q
+    ? pendingInquiries.filter((inq) =>
+        [
+          pick(inq, 'client_name', 'clientName'),
+          pick(inq, 'company_name', 'companyName'),
+          pick(inq, 'work_type', 'workType'),
+          pick(inq, 'mobile_number', 'mobileNumber'),
+          pick(inq, 'email'),
+          pick(inq, 'submitted_by', 'submittedBy'),
+        ].some((v) => String(v || '').toLowerCase().includes(q)))
+    : pendingInquiries;
+
   return (
     <div className="space-y-3">
+      <div className="relative">
+        <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by client, company, work type, phone or email…"
+          className="w-full rounded-lg border border-[#E7EDF4] bg-white py-2 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-[#1b365d]"
+        />
+      </div>
+
       <p className="text-xs text-muted-foreground">
-        {pendingInquiries.length} inquir{pendingInquiries.length > 1 ? 'ies' : 'y'} awaiting your approval
+        {q
+          ? `${visibleInquiries.length} of ${pendingInquiries.length} inquir${pendingInquiries.length > 1 ? 'ies' : 'y'} matching`
+          : `${pendingInquiries.length} inquir${pendingInquiries.length > 1 ? 'ies' : 'y'} awaiting your approval`}
       </p>
 
-      {pendingInquiries.map((inquiry) => {
+      {visibleInquiries.length === 0 && (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          No inquiries match “{search.trim()}”.
+        </p>
+      )}
+
+      {visibleInquiries.map((inquiry) => {
         const clientName = pick(inquiry, 'client_name', 'clientName');
         const companyName = pick(inquiry, 'company_name', 'companyName');
         const workType = pick(inquiry, 'work_type', 'workType');

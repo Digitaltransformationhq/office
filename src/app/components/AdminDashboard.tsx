@@ -450,58 +450,54 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
 
       {/* Task Approval Queue Modal */}
       {showTaskApprovals && user && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="w-full max-w-6xl my-8">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Task Approval Queue</CardTitle>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setShowTaskApprovals(false)}
-                  >
-                    ✕
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <TaskApprovalQueue
-                  userId={user.id}
-                  userName={user.name}
-                  userRole={user.role}
-                />
-              </CardContent>
-            </Card>
-          </div>
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-6xl max-h-[88vh] flex flex-col overflow-hidden">
+            <CardHeader className="shrink-0">
+              <div className="flex items-center justify-between">
+                <CardTitle>Task Approval Queue</CardTitle>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowTaskApprovals(false)}
+                >
+                  ✕
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 min-h-0 overflow-y-auto">
+              <TaskApprovalQueue
+                userId={user.id}
+                userName={user.name}
+                userRole={user.role}
+              />
+            </CardContent>
+          </Card>
         </div>
       )}
 
       {/* Inquiry Approval Queue Modal */}
       {showInquiryApprovals && user && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="w-full max-w-6xl my-8">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Client Inquiry Approvals</CardTitle>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setShowInquiryApprovals(false)}
-                  >
-                    ✕
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <InquiryApprovalQueue
-                  userId={parseInt(user.id)}
-                  userName={user.name}
-                />
-              </CardContent>
-            </Card>
-          </div>
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-6xl max-h-[88vh] flex flex-col overflow-hidden">
+            <CardHeader className="shrink-0">
+              <div className="flex items-center justify-between">
+                <CardTitle>Client Inquiry Approvals</CardTitle>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowInquiryApprovals(false)}
+                >
+                  ✕
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 min-h-0 overflow-y-auto">
+              <InquiryApprovalQueue
+                userId={parseInt(user.id)}
+                userName={user.name}
+              />
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

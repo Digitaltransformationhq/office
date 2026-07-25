@@ -3,7 +3,7 @@ import { ReviewTaskModal } from './ReviewTaskModal';
 import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
 import { TASK_STATUS, canApproveTask } from '../utils/taskStatus';
-import { ArrowRight, CheckCircle2, Clock } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock, Search } from 'lucide-react';
 
 interface TaskApprovalQueueProps {
   /**
@@ -28,6 +28,7 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
   const [pendingTasks, setPendingTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [search, setSearch] = useState('');
   const { showError } = useToast();
 
   useEffect(() => { loadData(); }, []);
@@ -69,13 +70,45 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
     );
   }
 
+  const q = search.trim().toLowerCase();
+  const visibleTasks = q
+    ? pendingTasks.filter((t) =>
+        [t.task, t.client, t.assignedTo, t.approverName, t.createdBy]
+          .some((v) => (v || '').toLowerCase().includes(q)))
+    : pendingTasks;
+
   return (
     <div className="space-y-3">
+      <div className="relative">
+        <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by task, client, assignee or approver…"
+          className="w-full rounded-lg border border-[#E7EDF4] bg-white py-2 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-[#1b365d]"
+        />
+      </div>
+
       <p className="text-xs text-muted-foreground">
-        {pendingTasks.length} task{pendingTasks.length > 1 ? 's' : ''} awaiting your approval
+        {q
+          ? `${visibleTasks.length} of ${pendingTasks.length} task${pendingTasks.length > 1 ? 's' : ''} matching`
+          : `${pendingTasks.length} task${pendingTasks.length > 1 ? 's' : ''} awaiting your approval`}
       </p>
 
-      {pendingTasks.map((task) => {
+      {visibleTasks.length === 0 && (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          No tasks match “{search.trim()}”.
+        </p>
+      )}
+
+      {[...visibleTasks]
+        // Tasks this user can act on float to the top so the "Review" buttons
+        // are never buried below rows they can only watch.
+        .sort((a, b) =>
+          Number(canApproveTask(b, { id: userId, role: userRole })) -
+          Number(canApproveTask(a, { id: userId, role: userRole })))
+        .map((task) => {
         const mine = canApproveTask(task, { id: userId, role: userRole });
         return (
         <div key={task.id} className="rounded-xl border border-[#E7EDF4] p-4 transition-all hover:border-[#d5dfea] hover:shadow-[0_10px_30px_-20px_rgba(10,23,40,0.5)]">
