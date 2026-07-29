@@ -3,12 +3,14 @@ import { tasksAPI } from '../services/api';
 import { ReassignTaskModal } from './ReassignTaskModal';
 import { EditTaskModal } from './EditTaskModal';
 import { CreateTaskModal } from './CreateTaskModal';
-import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isFinishedTask } from '../utils/taskStatus';
+import { SubmitWorkModal } from './SubmitWorkModal';
+import { TaskThreadModal } from './TaskThreadModal';
+import { statusColor, statusLabel, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import { useLiveData } from '../hooks/useLiveData';
 import {
   Search, SlidersHorizontal, Check, X, Repeat2,
   RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp, Plus,
-  Play, CheckCheck,
+  Play, CheckCheck, MessageSquare,
 } from 'lucide-react';
 
 interface Task {
@@ -36,6 +38,11 @@ interface Task {
   billingFees?: number;
   taxableAmount?: number;
   billingDescription?: string;
+  /** Set while an approver is waiting on changes; cleared on resubmission. */
+  changesRequestedAt?: string | null;
+  changesRequestedBy?: string;
+  changesRequestedNote?: string;
+  revisionCount?: number;
 }
 
 interface TaskMISProps {
@@ -87,6 +94,11 @@ export function TaskMIS({ user }: TaskMISProps) {
 
   const [sortCol, setSortCol] = useState('targetDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  /** The task being handed to the approver, with the note that goes with it. */
+  const [taskToSubmit, setTaskToSubmit] = useState<Task | null>(null);
+  /** The task whose approval conversation is open for reading. */
+  const [taskThread, setTaskThread] = useState<Task | null>(null);
 
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
   const toggleCard = (id: string) => setOpenCards(prev => {
@@ -272,8 +284,32 @@ export function TaskMIS({ user }: TaskMISProps) {
         {isMine && isLive && task.status === 'Pending' && (
           <IconBtn icon={<Play size={14} />} tone="default" title="Start task" onClick={() => handleStatusUpdate(task, 'In Progress')} />
         )}
+        {/* Opens the submit dialog rather than writing the status straight
+            through: finished work goes to the approver with a note, and work
+            that was sent back has to say what changed. */}
         {isMine && isLive && task.status === 'In Progress' && (
-          <IconBtn icon={<CheckCheck size={14} />} tone="green" title="Mark done" onClick={() => handleStatusUpdate(task, TASK_STATUS.pendingCompletionApproval)} />
+          <IconBtn
+            icon={task.changesRequestedAt ? <RotateCcw size={14} /> : <CheckCheck size={14} />}
+            tone={task.changesRequestedAt ? 'amber' : 'green'}
+            title={task.changesRequestedAt ? 'Redo & resubmit for approval' : 'Mark done and send for approval'}
+            onClick={() => setTaskToSubmit(task)}
+          />
+        )}
+        <IconBtn
+          icon={<MessageSquare size={14} />}
+          tone="default"
+          title="Approval thread"
+          onClick={() => setTaskThread(task)}
+        />
+        {/* Only what the approver is waiting on, and only to the person who has
+            to answer it — a full thread does not belong in a dense grid row. */}
+        {task.changesRequestedAt && isMine && (
+          <span
+            className="max-w-[160px] truncate rounded-md border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-700"
+            title={task.changesRequestedNote}
+          >
+            {task.changesRequestedNote || 'Changes requested'}
+          </span>
         )}
         {assign !== 'Pending Acceptance' && assign !== 'Rejected' && isOpenTask(task.status) && task.assignedToId === user.id && (
           <IconBtn icon={<Repeat2 size={14} />} tone="default" title="Reassign" onClick={() => { setSelectedTask(task); setShowReassignModal(true); }} />
@@ -533,7 +569,7 @@ export function TaskMIS({ user }: TaskMISProps) {
           onSuccess={loadTasks} />
       )}
       {showEditModal && selectedTask && (
-        <EditTaskModal task={selectedTask}
+        <EditTaskModal task={selectedTask} currentUser={user}
           onClose={() => { setShowEditModal(false); setSelectedTask(null); }}
           onSuccess={loadTasks} />
       )}
@@ -546,6 +582,25 @@ export function TaskMIS({ user }: TaskMISProps) {
             setShowCreateTask(false);
             loadTasks({ silent: true });
           }}
+        />
+      )}
+      {taskToSubmit && (
+        <SubmitWorkModal
+          task={taskToSubmit}
+          user={user}
+          onClose={() => setTaskToSubmit(null)}
+          onSuccess={() => {
+            setTaskToSubmit(null);
+            loadTasks({ silent: true });
+          }}
+        />
+      )}
+      {taskThread && (
+        <TaskThreadModal
+          task={taskThread}
+          user={user}
+          onClose={() => setTaskThread(null)}
+          onPosted={() => loadTasks({ silent: true })}
         />
       )}
     </div>

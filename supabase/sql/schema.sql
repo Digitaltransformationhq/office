@@ -80,12 +80,46 @@ CREATE TABLE IF NOT EXISTS tasks (
   approved_by_id TEXT,
   approved_by_name TEXT,
   approved_at TIMESTAMP WITH TIME ZONE,
+  -- The latest open change request, mirrored from task_comments so a dashboard
+  -- can flag "someone is waiting on you to fix this" without a request per row.
+  -- NULL means nothing is outstanding; cleared when the work is resubmitted.
+  -- See add-task-comments.sql.
+  changes_requested_at TIMESTAMP WITH TIME ZONE,
+  changes_requested_by TEXT,
+  changes_requested_note TEXT,
+  -- How many times this task has come back for changes.
+  revision_count INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   FOREIGN KEY (assigned_to_id) REFERENCES users(id) ON DELETE CASCADE,
   -- SET NULL, not CASCADE: losing a partner must not delete the firm's tasks.
   FOREIGN KEY (approver_id) REFERENCES users(id) ON DELETE SET NULL
 );
+
+-- ============================================
+-- TASK COMMENTS
+-- ============================================
+-- The conversation around an approval: the note a member sends with finished
+-- work, what the approver wants changed, and the sign-off that releases it to
+-- Accounts. One row per message, so the thread survives any number of
+-- send-and-resubmit rounds. See add-task-comments.sql for the full rationale.
+CREATE TABLE IF NOT EXISTS task_comments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  -- Nullable, and paired with a denormalised name: a staff member leaving the
+  -- firm must not erase the record of why work was sent back.
+  author_id TEXT,
+  author_name TEXT NOT NULL,
+  author_role TEXT,
+  kind TEXT NOT NULL DEFAULT 'note'
+    CHECK (kind IN ('submission', 'change_request', 'approval', 'note')),
+  message TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, created_at);
 
 -- ============================================
 -- NOTIFICATIONS
@@ -139,6 +173,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to_id ON tasks(assigned_to_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 CREATE INDEX IF NOT EXISTS idx_tasks_target_date ON tasks(target_date);
+CREATE INDEX IF NOT EXISTS idx_tasks_changes_requested ON tasks(assigned_to_id, changes_requested_at);
 
 -- ============================================
 -- UPDATED_AT TRIGGER FUNCTION

@@ -7,10 +7,12 @@ import { billingAPI, tasksAPI, usersAPI } from '../services/api';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useLiveData } from '../hooks/useLiveData';
 import { useToast } from './Toast';
-import { TASK_STATUS, statusColor, statusLabel, isOpenTask, isAwaitingApproval, isFinishedTask } from '../utils/taskStatus';
+import { statusColor, statusLabel, isOpenTask, isAwaitingApproval, isFinishedTask } from '../utils/taskStatus';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
+import { SubmitWorkModal } from './SubmitWorkModal';
+import { TaskThreadModal } from './TaskThreadModal';
 import { type BillingRecord } from '../utils/revenue';
-import { Loader2, X, IndianRupee } from 'lucide-react';
+import { Loader2, X, IndianRupee, MessageSquare } from 'lucide-react';
 
 interface TeamLeaderDashboardProps {
   user?: {
@@ -38,6 +40,7 @@ function StatusChip({ status }: { status?: string }) {
 const ACTION_TONE: Record<string, string> = {
   navy: 'bg-[#1b365d] hover:bg-[#142a4a]',
   green: 'bg-[#3d8a22] hover:bg-[#347618]',
+  orange: 'bg-orange-600 hover:bg-orange-700',
 };
 
 const shortDate = (d?: string) =>
@@ -50,6 +53,10 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const [autoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [selectedTaskForBilling, setSelectedTaskForBilling] = useState<any>(null);
+  /** The task being handed to the approver, with the note that goes with it. */
+  const [taskToSubmit, setTaskToSubmit] = useState<any | null>(null);
+  /** The task whose approval conversation is open for reading. */
+  const [taskThread, setTaskThread] = useState<any | null>(null);
   const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const timeAgo = useTimeAgo(lastRefresh);
@@ -121,15 +128,30 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
     }
   };
 
-  /** The actions a task offers its assignee, gated on the accept/reject stage. */
+  /**
+   * The actions a task offers its assignee, gated on the accept/reject stage.
+   *
+   * `run` rather than a target status: finishing work opens the submit dialog so
+   * a note goes to the approver with it, while starting one is still a plain
+   * status write with nothing to say about it.
+   */
   const myTaskActions = (task: any) => {
     const assign = task.assignmentStatus || 'Accepted';
     if (assign === 'Pending Acceptance' || assign === 'Rejected') return [];
     if (task.status === 'Pending') {
-      return [{ key: 'start', label: 'Start', tone: 'navy' as const, next: 'In Progress' }];
+      return [{
+        key: 'start', label: 'Start', tone: 'navy' as const,
+        run: () => handleStatusUpdate(task.id, 'In Progress'),
+      }];
     }
     if (task.status === 'In Progress') {
-      return [{ key: 'done', label: 'Done', tone: 'green' as const, next: TASK_STATUS.pendingCompletionApproval }];
+      const returned = Boolean(task.changesRequestedAt);
+      return [{
+        key: 'done',
+        label: returned ? 'Resubmit' : 'Done',
+        tone: returned ? 'orange' as const : 'green' as const,
+        run: () => setTaskToSubmit(task),
+      }];
     }
     return [];
   };
@@ -291,7 +313,16 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                 ) : myTasks.map((task) => (
                   <TableRow key={task.id}>
                     <TableCell className="rt-title font-medium">{task.client}</TableCell>
-                    <TableCell>{task.task}</TableCell>
+                    <TableCell>
+                      {task.task}
+                      {/* The status chip only says "In Progress" — it cannot say
+                          that the work came back and why. */}
+                      {task.changesRequestedAt && task.changesRequestedNote && (
+                        <p className="mt-0.5 text-xs italic text-orange-700">
+                          Returned{task.changesRequestedBy ? ` by ${task.changesRequestedBy}` : ''}: {task.changesRequestedNote}
+                        </p>
+                      )}
+                    </TableCell>
                     <TableCell><StatusChip status={task.status} /></TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
                       {shortDate(task.targetDate)}
@@ -301,13 +332,24 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                         {myTaskActions(task).map(a => (
                           <button
                             key={a.key}
-                            onClick={() => handleStatusUpdate(task.id, a.next)}
+                            onClick={a.run}
                             disabled={busyIds.has(task.id)}
                             className={`whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${ACTION_TONE[a.tone]}`}
                           >
                             {busyIds.has(task.id) ? 'Saving…' : a.label}
                           </button>
                         ))}
+                        {/* Available at every stage, including the ones that
+                            offer no action — a task waiting at a gate is exactly
+                            when you want to see what was said about it. */}
+                        <button
+                          onClick={() => setTaskThread(task)}
+                          title="Approval thread"
+                          aria-label="Open approval thread"
+                          className="flex h-[26px] w-[26px] items-center justify-center rounded-md border border-[#E7EDF4] bg-white text-[#1b365d] transition-colors hover:bg-[#F4F6F9]"
+                        >
+                          <MessageSquare size={13} />
+                        </button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -420,6 +462,27 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
       {/* Approval Queue Modal */}
 
       {/* Record Payment Modal */}
+
+      {taskToSubmit && user && (
+        <SubmitWorkModal
+          task={taskToSubmit}
+          user={user}
+          onClose={() => setTaskToSubmit(null)}
+          onSuccess={() => {
+            setTaskToSubmit(null);
+            loadDataSilently();
+          }}
+        />
+      )}
+
+      {taskThread && user && (
+        <TaskThreadModal
+          task={taskThread}
+          user={user}
+          onClose={() => setTaskThread(null)}
+          onPosted={loadDataSilently}
+        />
+      )}
 
       {/* Mark as Billed Modal */}
       {selectedTaskForBilling && user && (

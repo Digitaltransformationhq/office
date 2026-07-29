@@ -59,6 +59,32 @@ WHERE conname = 'tasks_status_check';
 
 ---
 
+## Required: Approval Comments
+
+The approval thread — the note a member sends with finished work, what an
+approver wants changed, and the sign-off that releases the task to Accounts —
+needs its own table.
+
+Run `supabase/sql/add-task-comments.sql` in the SQL Editor. It is safe to re-run.
+It creates `task_comments` and adds four columns to `tasks`
+(`changes_requested_at`, `changes_requested_by`, `changes_requested_note`,
+`revision_count`).
+
+### If You Skip This Step:
+
+The app keeps working, deliberately — the edge function detects the missing
+columns and retries the write without them, so marking work done and approving it
+still succeed. What you lose until the migration is run:
+
+- Notes written on submission and approval are silently dropped
+- The "returned for correction" banner never appears, so the person who has to
+  redo the work is not told what to change
+- Threads render as empty everywhere
+
+Run it, then reload the app — nothing needs redeploying.
+
+---
+
 ## Troubleshooting
 
 If you still see errors after running the migration:

@@ -3,6 +3,7 @@ import { Button } from './Button';
 import { billingAPI } from '../services/api';
 import { useToast } from './Toast';
 import { DatabaseSetupModal } from './DatabaseSetupModal';
+import { TaskCommentThread } from './TaskCommentThread';
 import { X } from 'lucide-react';
 
 interface MarkAsBilledModalProps {
@@ -254,6 +255,16 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
                 className={`${fieldCls} resize-none`}
               />
             </div>
+
+            {/* The conversation that got the task here — what was delivered,
+                what was sent back, and what the approver signed off on. Accounts
+                bills against this, so it belongs in front of them rather than
+                one step away in another screen. */}
+            <TaskCommentThread
+              taskId={task.id}
+              maxHeightCls="max-h-52"
+              emptyHint="No approval comments were left on this task."
+            />
 
             <p className="rounded-lg bg-[#FEF4E6] px-3 py-2.5 text-xs leading-relaxed text-[#8a5a00]">
               The task moves to <strong>Billed</strong> and a billing record is created. Logged for audit.

@@ -41,8 +41,53 @@ function transformTask(task: any) {
     approvedById: task.approved_by_id,
     approvedBy: task.approved_by_name,
     approvedAt: task.approved_at,
+    // The latest open change request, mirrored from the comment thread so a task
+    // list can flag "you are being waited on" without a fetch per row. A set
+    // changesRequestedAt is what makes it open; resubmitting clears it.
+    changesRequestedAt: task.changes_requested_at,
+    changesRequestedBy: task.changes_requested_by,
+    changesRequestedNote: task.changes_requested_note,
+    revisionCount: task.revision_count || 0,
     createdAt: task.created_at,
     updatedAt: task.updated_at,
+  };
+}
+
+/**
+ * One message in a task's approval thread. Snake_case off the wire, like every
+ * other row the server returns.
+ */
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  authorId: string | null;
+  authorName: string;
+  authorRole?: string;
+  /** What the message is: work handed over, changes wanted, sign-off, or a plain note. */
+  kind: 'submission' | 'change_request' | 'approval' | 'note';
+  message: string;
+  createdAt: string;
+}
+
+/** What a caller supplies to add to the thread. */
+export interface NewTaskComment {
+  message: string;
+  authorId: string;
+  authorName: string;
+  authorRole?: string;
+  kind?: TaskComment['kind'];
+}
+
+function transformTaskComment(row: any): TaskComment {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    authorId: row.author_id,
+    authorName: row.author_name,
+    authorRole: row.author_role,
+    kind: row.kind,
+    message: row.message,
+    createdAt: row.created_at,
   };
 }
 
@@ -156,6 +201,12 @@ export const tasksAPI = {
     };
   },
 
+  /**
+   * `updates` may carry a `comment: NewTaskComment` alongside the fields. The
+   * server appends it to the approval thread once the update itself has stuck,
+   * and derives the change-request bookkeeping from its `kind` — so submitting
+   * work, sending it back, and signing it off are each one request.
+   */
   update: async (taskId: string, updates: any) => {
     const result = await fetchAPI(`/tasks/${taskId}`, {
       method: 'PUT',
@@ -171,6 +222,33 @@ export const tasksAPI = {
     return fetchAPI(`/tasks/${taskId}`, {
       method: 'DELETE',
     });
+  },
+
+  /** The whole approval thread for one task, oldest first. */
+  getComments: async (taskId: string) => {
+    const result = await fetchAPI(`/tasks/${taskId}/comments`);
+    return {
+      ...result,
+      data: (result.data || []).map(transformTaskComment) as TaskComment[],
+    };
+  },
+
+  /**
+   * Add to the thread without moving the task.
+   *
+   * The notes that accompany a decision — submitting work, requesting changes,
+   * approving — belong on `update` instead, as its `comment` field, so the note
+   * and the status land in one request and cannot half-apply.
+   */
+  addComment: async (taskId: string, comment: NewTaskComment) => {
+    const result = await fetchAPI(`/tasks/${taskId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(comment),
+    });
+    return {
+      ...result,
+      data: result.data ? transformTaskComment(result.data) : null,
+    };
   },
 };
 

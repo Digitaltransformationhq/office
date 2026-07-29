@@ -9,6 +9,72 @@ Two core approval workflows have been added to KAPS & Co. Office Management Syst
 
 ---
 
+## 💬 THE APPROVAL THREAD
+
+Every task carries a conversation, and it is the same conversation from the
+moment work is submitted to the moment Accounts raises the invoice. It survives
+any number of send-and-resubmit rounds.
+
+### The loop
+
+```
+member finishes work
+      │  Mark Done → writes a note: what was delivered, what to bill for
+      ▼
+Pending Approval - Completion
+      │  the approver reads the thread, sets the billing amount
+      ├─────────────── Approve ──────────► Pending for Billing ──► Billed
+      │                (note optional, and Accounts sees the whole thread)
+      │
+      └── Request Changes (note REQUIRED)
+                    │
+                    ▼
+              In Progress, flagged "returned for correction"
+                    │  the member sees exactly what was asked for
+                    │  Redo & Resubmit → note REQUIRED: what changed
+                    ▼
+      Pending Approval - Completion  (round 2, and the approver is told so)
+```
+
+The same applies at the new-task gate: a task refused before work starts goes
+back to the person who raised it with a reason, and their edit-and-resubmit can
+answer in the thread.
+
+### Where the thread appears
+
+| Screen | Who | What they can do |
+| --- | --- | --- |
+| Submit for Approval | assignee | Write the note that goes with the work; read prior rounds |
+| Review Task | approver | Read the thread; approve with a note, or send back with a required one |
+| Approval thread (💬 on any task row) | anyone who can see the task | Read it, add a plain comment |
+| Mark as Billed | Accounts | Read it, before pricing the invoice |
+| Edit Task (on a resubmission) | assignee | See what was asked for; answer it |
+
+### Why a note is required to send work back
+
+Sending work back used to write `[Rejected by <name> on <date>]` with no reason
+at all. The person receiving it learned only that it had been refused and had to
+go and ask why. "Request Changes" now stays disabled until something is written,
+and that text is shown to the assignee on their dashboard without them opening
+anything.
+
+### What is stored where
+
+- `task_comments` — one row per message: author, role, kind
+  (`submission` / `change_request` / `approval` / `note`), text, timestamp. This
+  is the record.
+- `tasks.changes_requested_at / _by / _note` — a mirror of the latest **open**
+  change request, so a dashboard listing every task can flag "you are being
+  waited on" without a request per row. Cleared the moment the work is
+  resubmitted.
+- `tasks.revision_count` — how many times the work has come back. Shown to the
+  approver as "sent back 2× before".
+
+Run `supabase/sql/add-task-comments.sql` before using any of this. See
+[Database setup](database-setup.md) for what degrades if you do not.
+
+---
+
 ## 📋 MODULE 1: TASK MANAGEMENT WITH APPROVAL FLOW
 
 ### How It Works

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { tasksAPI, usersAPI, clientsAPI } from '../services/api';
+import { TaskCommentThread } from './TaskCommentThread';
 import { TASK_STATUS, statusLabel } from '../utils/taskStatus';
 import { X, ChevronDown } from 'lucide-react';
 
@@ -16,15 +17,25 @@ interface Task {
   startDate: string;
   targetDate: string;
   comments?: string;
+  /** Set while an approver is waiting on changes; cleared on resubmission. */
+  changesRequestedAt?: string | null;
+  changesRequestedBy?: string;
+  changesRequestedNote?: string;
 }
 
 interface EditTaskModalProps {
   task: Task;
+  /**
+   * Needed only to attribute a resubmission note. Without it the form still
+   * saves — it just cannot add to the approval thread, so the note field is
+   * hidden rather than collecting text that would go nowhere.
+   */
+  currentUser?: { id: string; name: string; role: string };
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) {
+export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTaskModalProps) {
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -34,7 +45,14 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const [showClientDropdown, setShowClientDropdown] = useState(false);
 
-  const isResubmit = task.comments?.includes('[Rejected by ');
+  /**
+   * This task was refused before work started and is being sent back up for
+   * sign-off. `changesRequestedAt` is the current signal; the comments-string
+   * check covers rows written before the approval thread existed.
+   */
+  const isResubmit = Boolean(task.changesRequestedAt) || task.comments?.includes('[Rejected by ');
+  /** Answers the approver in the thread, rather than only silently re-saving. */
+  const [resubmitNote, setResubmitNote] = useState('');
 
   const [formData, setFormData] = useState({
     taskName: task.task,
@@ -172,6 +190,19 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
         startDate: formData.taskDate,
         targetDate: formData.completionDate,
         comments: formData.comments,
+        // Going back up for sign-off answers whatever was asked for, so the
+        // reply joins the thread and the server closes the open change request.
+        ...(isResubmit && currentUser && resubmitNote.trim()
+          ? {
+            comment: {
+              message: resubmitNote.trim(),
+              authorId: currentUser.id,
+              authorName: currentUser.name,
+              authorRole: currentUser.role,
+              kind: 'submission',
+            },
+          }
+          : {}),
       };
 
       console.log('Updating task with data:', updates);
@@ -472,6 +503,45 @@ export function EditTaskModal({ task, onClose, onSuccess }: EditTaskModalProps) 
                 className={fieldCls + ' resize-none'}
               />
             </div>
+
+            {/* A resubmission is a reply, so it gets somewhere to reply. Without
+                this the task went back up the chain with the changes made but
+                nothing said about them, and the approver had to diff it by eye
+                against what they had asked for. */}
+            {isResubmit && (
+              <>
+                {task.changesRequestedNote && (
+                  <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700">
+                      {task.changesRequestedBy
+                        ? `${task.changesRequestedBy} asked for`
+                        : 'Changes requested'}
+                    </p>
+                    <p className="mt-1 whitespace-pre-line text-sm text-orange-900">
+                      {task.changesRequestedNote}
+                    </p>
+                  </div>
+                )}
+
+                {currentUser && (
+                  <div>
+                    <label className={labelCls} style={{ color: NAVY }}>
+                      What you changed{' '}
+                      <span className="font-normal text-muted-foreground">(optional)</span>
+                    </label>
+                    <textarea
+                      value={resubmitNote}
+                      onChange={(e) => setResubmitNote(e.target.value)}
+                      placeholder="Added to the approval thread when you resubmit…"
+                      rows={3}
+                      className={fieldCls + ' resize-none'}
+                    />
+                  </div>
+                )}
+
+                <TaskCommentThread taskId={task.id} />
+              </>
+            )}
           </div>
 
           {/* Footer - always reachable, never scrolls away */}

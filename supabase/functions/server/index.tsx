@@ -193,6 +193,46 @@ function taskLabel(t: any) {
   return `${t?.task || 'Task'}${t?.client ? ' — ' + t.client : ''}`;
 }
 
+const TASK_COMMENT_KINDS = ['submission', 'change_request', 'approval', 'note'];
+
+/**
+ * Append one message to a task's approval thread.
+ *
+ * Returns the inserted row, or null if there was nothing to write or the write
+ * failed. Never throws: a comment is part of a larger action (marking work done,
+ * approving it), and losing the note must not roll back the status change that
+ * carried it — the caller reports what it managed to do.
+ */
+async function addTaskComment(taskId: string, comment: any) {
+  const message = String(comment?.message ?? '').trim();
+  if (!message) return null;
+
+  const kind = TASK_COMMENT_KINDS.includes(comment?.kind) ? comment.kind : 'note';
+  try {
+    const { data, error } = await supabase
+      .from('task_comments')
+      .insert([{
+        id: `taskcomment:${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+        task_id: taskId,
+        // Denormalised name, nullable id: the thread has to stay readable after
+        // its author leaves the firm.
+        author_id: comment?.authorId || null,
+        author_name: comment?.authorName || 'Unknown',
+        author_role: comment?.authorRole || null,
+        kind,
+        message,
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (e) {
+    console.log('Failed to add task comment (the action itself still stands):', e);
+    return null;
+  }
+}
+
 // Enable logger
 app.use('*', logger(console.log));
 
@@ -619,20 +659,90 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
       updates.comments = existingComments ? `${existingComments}\n${rejectionNote}` : rejectionNote;
     }
 
-    console.log('Updates object:', JSON.stringify(updates, null, 2));
-
     // Read the row first: several notifications depend on what CHANGED, not on
     // the new value alone. Approving finished work and rejecting it both leave
     // the task in a plain status, and only the previous one tells them apart.
-    const { data: prev } = await supabase
-      .from('tasks').select('status, assigned_to_id, assignment_status').eq('id', taskId).maybeSingle();
+    let { data: prev, error: prevError } = await supabase
+      .from('tasks')
+      .select('status, assigned_to_id, assignment_status, changes_requested_at, revision_count')
+      .eq('id', taskId)
+      .maybeSingle();
 
-    const { data, error } = await supabase
+    // Before add-task-comments.sql has been run those two columns do not exist,
+    // and asking for them fails the whole read — which would leave `prev` empty
+    // and make every update look like a status change. Fall back to the columns
+    // that have always been there.
+    if (prevError) {
+      console.log('Falling back to the pre-thread task columns:', prevError.message);
+      ({ data: prev } = await supabase
+        .from('tasks')
+        .select('status, assigned_to_id, assignment_status')
+        .eq('id', taskId)
+        .maybeSingle());
+    }
+
+    /**
+     * The approval conversation, kept in step with the status.
+     *
+     * A change request opens an outstanding item on the task, so the assignee's
+     * dashboard can say "you are being waited on" from the task list alone
+     * without fetching a thread per row. Resubmitting the work closes it and
+     * counts the round, which is what tells an approver they are looking at the
+     * same work for the third time.
+     */
+    const comment = body.comment;
+    const commentKind = TASK_COMMENT_KINDS.includes(comment?.kind) ? comment.kind : null;
+    const commentText = String(comment?.message ?? '').trim();
+
+    if (commentKind === 'change_request' && commentText) {
+      updates.changes_requested_at = new Date().toISOString();
+      updates.changes_requested_by = comment?.authorName || 'Approver';
+      updates.changes_requested_note = commentText;
+    } else if (
+      // Either gate: a new task going back for sign-off, or finished work going
+      // back for approval. Both mean whatever was asked for has been answered.
+      body.status === 'Pending Approval - Completion' ||
+      body.status === 'Pending Approval'
+    ) {
+      updates.changes_requested_at = null;
+      updates.changes_requested_by = null;
+      updates.changes_requested_note = null;
+      // Only a task that was actually sent back counts as a revision — a first
+      // submission is round zero.
+      if (prev?.changes_requested_at) {
+        updates.revision_count = (prev.revision_count || 0) + 1;
+      }
+    }
+
+    console.log('Updates object:', JSON.stringify(updates, null, 2));
+
+    let { data, error } = await supabase
       .from('tasks')
       .update(updates)
       .eq('id', taskId)
       .select()
       .single();
+
+    /**
+     * The change-request columns arrive with add-task-comments.sql, which is run
+     * by hand in the SQL editor — so there is a window where this function is
+     * deployed and the columns are not. Postgres 42703 is "undefined column";
+     * rather than fail the whole write, drop the bookkeeping and let the status
+     * change through. Losing the banner is recoverable, losing the ability to
+     * mark work done is not.
+     */
+    if (error?.code === '42703') {
+      console.log('Change-request columns missing — retrying without them. Run add-task-comments.sql.');
+      for (const col of ['changes_requested_at', 'changes_requested_by', 'changes_requested_note', 'revision_count']) {
+        delete updates[col];
+      }
+      ({ data, error } = await supabase
+        .from('tasks')
+        .update(updates)
+        .eq('id', taskId)
+        .select()
+        .single());
+    }
 
     if (error) {
       console.log('=== SUPABASE ERROR ===');
@@ -654,6 +764,15 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
      */
     const label = taskLabel(data);
     const statusChanged = data?.status !== prev?.status;
+
+    // Write the note only once the status change it belongs to has stuck, so a
+    // failed update never leaves an orphaned "sent back for changes" in the
+    // thread describing something that did not happen.
+    const savedComment = comment ? await addTaskComment(taskId, comment) : null;
+    // Notifications read better with the note attached than as a bare "sent
+    // back" the recipient has to open the task to understand.
+    const withNote = (text: string) =>
+      savedComment ? `${text} — “${savedComment.message}”` : text;
 
     // Handed to someone else. Fires on reassignment as well as first assignment.
     if (body.assignedToId && prev?.assigned_to_id && body.assignedToId !== prev.assigned_to_id) {
@@ -714,25 +833,32 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
     if (statusChanged) {
       if (data?.status === 'Pending Approval - Completion') {
         // Finished work needs sign-off. Routed to its approver, or to any
-        // partner if it was never routed to anyone.
+        // partner if it was never routed to anyone. A resubmission says so:
+        // the approver has seen this work before and asked for changes.
+        const resubmitted = (data.revision_count || 0) > 0;
+        const title = resubmitted
+          ? 'Reworked and resubmitted for approval'
+          : 'Work ready for your approval';
         if (data.approver_id) {
-          await notifyUser(data.approver_id, 'task', 'Work ready for your approval', label);
+          await notifyUser(data.approver_id, 'task', title, withNote(label));
         } else {
-          await notifyRoles(['partner', 'admin'], 'task', 'Work ready for approval', label);
+          await notifyRoles(['partner', 'admin'], 'task',
+            resubmitted ? 'Reworked and resubmitted for approval' : 'Work ready for approval',
+            withNote(label));
         }
       } else if (data?.status === 'Pending for Billing') {
         // Approved: tell the person who did the work, and the desk that bills it.
         if (data.assigned_to_id) {
-          await notifyUser(data.assigned_to_id, 'task', 'Work approved, sent for billing', label);
+          await notifyUser(data.assigned_to_id, 'task', 'Work approved, sent for billing', withNote(label));
         }
-        await notifyRoles(['team-leader'], 'task', 'Task ready to bill', label);
+        await notifyRoles(['team-leader'], 'task', 'Task ready to bill', withNote(label));
       } else if (data?.status === 'Pending' && data?.assigned_to_id) {
         // Leaving the new-task gate: approved if a signature came with it,
         // sent back if not.
         if (body.approvedBy) {
-          await notifyUser(data.assigned_to_id, 'task', 'Task approved & assigned', label);
+          await notifyUser(data.assigned_to_id, 'task', 'Task approved & assigned', withNote(label));
         } else if (prev?.status === 'Pending Approval') {
-          await notifyUser(data.assigned_to_id, 'task_rejection', 'Task sent back', label);
+          await notifyUser(data.assigned_to_id, 'task_rejection', 'Task sent back', withNote(label));
         }
       } else if (
         data?.status === 'In Progress' &&
@@ -742,7 +868,23 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
         // The only way back to In Progress from the completion gate is a
         // rejection — approving sends it to Pending for Billing instead.
         await notifyUser(data.assigned_to_id, 'task_rejection',
-          'Work sent back for changes', label);
+          'Work sent back for changes', withNote(label));
+      }
+    } else if (savedComment && savedComment.kind === 'note') {
+      /**
+       * A comment on its own, with nothing else moving — someone adding to the
+       * thread mid-flight. It goes to the other side of the approval: the
+       * assignee hears from the approver and vice versa. Without this a question
+       * asked in the thread would sit unread until somebody happened to open the
+       * task.
+       */
+      const recipients = new Set<string>();
+      if (data?.assigned_to_id) recipients.add(data.assigned_to_id);
+      if (data?.approver_id) recipients.add(data.approver_id);
+      recipients.delete(savedComment.author_id);
+
+      for (const uid of recipients) {
+        await notifyUser(uid, 'task', `${savedComment.author_name} commented`, withNote(label));
       }
     }
 
@@ -813,6 +955,86 @@ app.delete('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
       error: 'Failed to delete task',
       message: errorMessage,
       code: errorCode
+    }, 500);
+  }
+});
+
+// ============================================
+// TASK COMMENTS — the approval conversation
+// ============================================
+// Read whole and in order: the point of the thread is the sequence of rounds,
+// so there is no paging and no reverse sort.
+
+app.get('/make-server-0abfa7cf/tasks/:taskId/comments', async (c) => {
+  try {
+    const taskId = c.req.param('taskId');
+
+    const { data, error } = await supabase
+      .from('task_comments')
+      .select('*')
+      .eq('task_id', taskId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    return c.json({ success: true, data: data || [] });
+  } catch (error: any) {
+    console.log('Error fetching task comments:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to fetch task comments',
+      message: error?.message || 'Unknown error',
+      code: error?.code || '',
+    }, 500);
+  }
+});
+
+/**
+ * Add a comment without moving the task. The status-changing cases — submitting
+ * work, requesting changes, approving — send their note along with the status
+ * on PUT /tasks/:taskId instead, so the two land together.
+ */
+app.post('/make-server-0abfa7cf/tasks/:taskId/comments', async (c) => {
+  try {
+    const taskId = c.req.param('taskId');
+    const body = await c.req.json();
+
+    if (!String(body?.message ?? '').trim()) {
+      return c.json({ success: false, error: 'A comment cannot be empty' }, 400);
+    }
+
+    const saved = await addTaskComment(taskId, body);
+    if (!saved) {
+      return c.json({ success: false, error: 'Failed to add comment' }, 500);
+    }
+
+    // Tell the other side of the approval, the same way a comment carried on a
+    // status change does.
+    const { data: task } = await supabase
+      .from('tasks').select('task, client, assigned_to_id, approver_id').eq('id', taskId).maybeSingle();
+
+    if (task) {
+      const recipients = new Set<string>();
+      if (task.assigned_to_id) recipients.add(task.assigned_to_id);
+      if (task.approver_id) recipients.add(task.approver_id);
+      recipients.delete(saved.author_id);
+
+      for (const uid of recipients) {
+        await notifyUser(uid, 'task', `${saved.author_name} commented`,
+          `${taskLabel(task)} — “${saved.message}”`);
+      }
+    }
+
+    await broadcastChange('tasks');
+
+    return c.json({ success: true, data: saved });
+  } catch (error: any) {
+    console.log('Error adding task comment:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to add comment',
+      message: error?.message || 'Unknown error',
+      code: error?.code || '',
     }, 500);
   }
 });

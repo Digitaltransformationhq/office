@@ -6,10 +6,12 @@ import { tasksAPI } from '../services/api';
 import { CreateInquiryModal } from './CreateInquiryModal';
 import { CreateTaskModal } from './CreateTaskModal';
 import { EditTaskModal } from './EditTaskModal';
+import { SubmitWorkModal } from './SubmitWorkModal';
+import { TaskThreadModal } from './TaskThreadModal';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
 import { TASK_STATUS, statusColor, statusLabel, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
-import { Loader2, Plus, MessageSquarePlus, RotateCcw } from 'lucide-react';
+import { Loader2, Plus, MessageSquarePlus, MessageSquare, RotateCcw } from 'lucide-react';
 
 interface TeamMemberDashboardProps {
   user?: {
@@ -80,8 +82,9 @@ function Chip({ label, color, className = '' }: { label: string; color?: string;
  * than something to press. Here status stays a tag in the header and the action
  * is a full-width filled button in its own footer.
  */
-function TaskCard({ task, actions, isRejected, busy }: {
+function TaskCard({ task, actions, isRejected, busy, onOpenThread }: {
   task: any; actions: TaskAction[]; isRejected: boolean; busy: boolean;
+  onOpenThread: () => void;
 }) {
   const frame =
     isRejected ? 'border-orange-200 bg-orange-50/50' :
@@ -123,20 +126,28 @@ function TaskCard({ task, actions, isRejected, busy }: {
         </span>
       </div>
 
-      {actions.length > 0 && (
-        <div className="mt-4 flex gap-2 border-t border-black/[0.06] pt-3">
-          {actions.map(a => (
-            <button
-              key={a.key}
-              onClick={a.run}
-              disabled={busy}
-              className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${cardActionTone[a.tone]}`}
-            >
-              {busy ? 'Saving…' : a.label}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* The thread sits beside the action, not inside it: reading what was said
+          about a task is available at every stage, including while it waits at a
+          gate and offers no action at all. */}
+      <div className="mt-4 flex gap-2 border-t border-black/[0.06] pt-3">
+        <button
+          onClick={onOpenThread}
+          aria-label="Open approval thread"
+          className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#E7EDF4] bg-white px-3 py-2.5 text-sm font-medium text-[#1b365d] transition-colors hover:bg-[#F4F6F9]"
+        >
+          <MessageSquare size={15} />
+        </button>
+        {actions.map(a => (
+          <button
+            key={a.key}
+            onClick={a.run}
+            disabled={busy}
+            className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${cardActionTone[a.tone]}`}
+          >
+            {busy ? 'Saving…' : a.label}
+          </button>
+        ))}
+      </div>
 
       {isAwaitingApproval(task.status) && (
         <p className="mt-3 border-t border-black/[0.06] pt-3 text-xs italic text-yellow-700">
@@ -155,6 +166,10 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [showCreateInquiry, setShowCreateInquiry] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<any | null>(null);
+  /** The task being handed to the approver, with the note that goes with it. */
+  const [taskToSubmit, setTaskToSubmit] = useState<any | null>(null);
+  /** The task whose approval conversation is open for reading. */
+  const [taskThread, setTaskThread] = useState<any | null>(null);
   /** Tasks with an in-flight status write, so their buttons can't be double-fired. */
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   /** Mirror of busyIds readable from the poll timer, which closes over stale state. */
@@ -164,8 +179,30 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
   const timeAgo = useTimeAgo(lastRefresh);
   const { showSuccess, showError } = useToast();
 
+  /**
+   * Sent back by an approver and not yet answered.
+   *
+   * `changesRequestedAt` is the current signal, cleared the moment the task is
+   * resubmitted. The comments-string check stays for rows written before the
+   * approval thread existed, which recorded a send-back only as a
+   * "[Rejected by …]" line appended to the free-text comments.
+   */
   const isRejectedTask = (task: any) =>
-    task.comments?.includes('[Rejected by ') || task.status === 'Rejected';
+    Boolean(task.changesRequestedAt) ||
+    task.comments?.includes('[Rejected by ') ||
+    task.status === 'Rejected';
+
+  /**
+   * How the task gets back to the approver. A new task that was refused is
+   * re-described and resubmitted through the edit form; finished work that was
+   * refused has to be redone, so it goes back through the submit-for-approval
+   * note instead. Offering "Edit" for the latter sends people to a form that
+   * changes nothing about what was actually wrong.
+   */
+  const resubmitByEditing = (task: any) =>
+    task.status === TASK_STATUS.pending ||
+    task.status === TASK_STATUS.pendingNewTaskApproval ||
+    task.status === 'Rejected';
 
   const extractNumericId = (userId: string): number => {
     if (userId.includes(':')) {
@@ -270,7 +307,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
   /** One definition of what a task offers, rendered two ways (card + table). */
   const taskActions = (task: any): TaskAction[] => {
     const out: TaskAction[] = [];
-    if (isRejectedTask(task)) {
+    if (isRejectedTask(task) && resubmitByEditing(task)) {
       out.push({
         key: 'edit', label: 'Edit & Resubmit', short: 'Edit', tone: 'orange',
         run: () => setTaskToEdit(task),
@@ -282,9 +319,14 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
       });
     }
     if (task.status === 'In Progress') {
+      // Never a bare status write: finished work carries a note to the approver,
+      // and a resubmission has to say what changed.
       out.push({
-        key: 'done', label: 'Mark Done', short: 'Done', tone: 'green',
-        run: () => handleStatusUpdate(task.id, TASK_STATUS.pendingCompletionApproval),
+        key: 'done',
+        label: isRejectedTask(task) ? 'Redo & Resubmit' : 'Mark Done',
+        short: isRejectedTask(task) ? 'Resubmit' : 'Done',
+        tone: isRejectedTask(task) ? 'orange' : 'green',
+        run: () => setTaskToSubmit(task),
       });
     }
     return out;
@@ -355,28 +397,50 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
             </div>
             <div className="mt-4 space-y-2">
               {returnedTasks.map((task: any) => {
-                const note = task.comments
-                  ?.split('\n')
-                  .filter((l: string) => l.startsWith('[Rejected by '))
-                  .pop() || '';
+                // What the approver actually asked for. Pre-thread rows only
+                // ever had the appended "[Rejected by …]" line to fall back on.
+                const note = task.changesRequestedNote
+                  || task.comments
+                    ?.split('\n')
+                    .filter((l: string) => l.startsWith('[Rejected by '))
+                    .pop()
+                  || '';
+                const byEditing = resubmitByEditing(task);
                 return (
                   <div
                     key={task.id}
-                    className="flex flex-col gap-2 rounded-lg bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-2 rounded-lg bg-white p-3 sm:flex-row sm:items-start sm:justify-between"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium" style={{ color: NAVY }}>{task.task}</p>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
                         {task.client}
-                        {note && <span className="italic text-orange-600"> · {note}</span>}
+                        {task.changesRequestedBy && (
+                          <span> · returned by {task.changesRequestedBy}</span>
+                        )}
                       </p>
+                      {/* Not truncated with the rest: this is the instruction to
+                          act on, and half of it is worse than none. */}
+                      {note && (
+                        <p className="mt-1.5 whitespace-pre-line text-xs leading-relaxed text-orange-800">
+                          {note}
+                        </p>
+                      )}
                     </div>
-                    <button
-                      onClick={() => setTaskToEdit(task)}
-                      className="shrink-0 self-start rounded-full border border-orange-300 bg-orange-100 px-3 py-1.5 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-200 sm:self-auto"
-                    >
-                      Edit &amp; Resubmit
-                    </button>
+                    <div className="flex shrink-0 items-center gap-2 self-start">
+                      <button
+                        onClick={() => setTaskThread(task)}
+                        className="rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-50"
+                      >
+                        Thread
+                      </button>
+                      <button
+                        onClick={() => (byEditing ? setTaskToEdit(task) : setTaskToSubmit(task))}
+                        className="rounded-full border border-orange-300 bg-orange-100 px-3 py-1.5 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-200"
+                      >
+                        {byEditing ? 'Edit & Resubmit' : 'Redo & Resubmit'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -405,6 +469,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                       actions={taskActions(task)}
                       isRejected={isRejectedTask(task)}
                       busy={busyIds.has(task.id)}
+                      onOpenThread={() => setTaskThread(task)}
                     />
                   ))}
                 </div>
@@ -453,7 +518,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                             />
                           </TableCell>
                           <TableCell>
-                            <div className="flex flex-wrap gap-1">
+                            <div className="flex flex-wrap items-center gap-1">
                               {taskActions(task).map(a => (
                                 <button
                                   key={a.key}
@@ -464,6 +529,14 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                                   {a.short}
                                 </button>
                               ))}
+                              <button
+                                onClick={() => setTaskThread(task)}
+                                title="Approval thread"
+                                aria-label="Open approval thread"
+                                className="flex h-[26px] w-[26px] items-center justify-center rounded-md border border-[#E7EDF4] bg-white text-[#1b365d] transition-colors hover:bg-[#F4F6F9]"
+                              >
+                                <MessageSquare size={13} />
+                              </button>
                               {isAwaitingApproval(task.status) && (
                                 <span className="text-[10px] italic text-yellow-600">Awaiting…</span>
                               )}
@@ -493,9 +566,31 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
         />
       )}
 
+      {taskToSubmit && user && (
+        <SubmitWorkModal
+          task={taskToSubmit}
+          user={user}
+          onClose={() => setTaskToSubmit(null)}
+          onSuccess={() => {
+            setTaskToSubmit(null);
+            loadMyTasks({ silent: true });
+          }}
+        />
+      )}
+
+      {taskThread && user && (
+        <TaskThreadModal
+          task={taskThread}
+          user={user}
+          onClose={() => setTaskThread(null)}
+          onPosted={() => loadMyTasks({ silent: true })}
+        />
+      )}
+
       {taskToEdit && (
         <EditTaskModal
           task={taskToEdit}
+          currentUser={user}
           onClose={() => setTaskToEdit(null)}
           onSuccess={() => {
             showSuccess('Task updated and resubmitted for approval!');

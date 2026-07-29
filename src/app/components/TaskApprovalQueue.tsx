@@ -3,7 +3,7 @@ import { ReviewTaskModal } from './ReviewTaskModal';
 import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
 import { TASK_STATUS, canApproveTask } from '../utils/taskStatus';
-import { ArrowRight, CheckCircle2, Clock, Search } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock, RotateCcw, Search } from 'lucide-react';
 
 interface TaskApprovalQueueProps {
   /**
@@ -135,6 +135,14 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
                     {new Date(task.targetDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                   </span>
                 )}
+                {/* Work you have already sent back once. Worth knowing before
+                    you open it, not after. */}
+                {task.revisionCount > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-orange-200 bg-orange-50 px-2 py-0.5 font-medium text-orange-700">
+                    <RotateCcw size={11} />
+                    Resubmitted {task.revisionCount}×
+                  </span>
+                )}
               </div>
             </div>
 
@@ -171,6 +179,7 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
           task={selectedTask}
           approverId={userId}
           approverName={userName}
+          approverRole={userRole}
           onClose={() => setSelectedTask(null)}
           onSuccess={() => { loadData(); setSelectedTask(null); }}
         />

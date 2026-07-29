@@ -2,14 +2,17 @@ import React, { useState } from 'react';
 import { Button } from './Button';
 import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
+import { TaskCommentThread } from './TaskCommentThread';
 import { TASK_STATUS } from '../utils/taskStatus';
-import { X, ClipboardCheck, Pencil, Check, ChevronDown } from 'lucide-react';
+import { X, ClipboardCheck, Pencil, Check, ChevronDown, RotateCcw } from 'lucide-react';
 
 interface ReviewTaskModalProps {
   task: any;
   /** Real user id ('user:7') — written to approved_by_id, which has an FK. */
   approverId: string;
   approverName: string;
+  /** Recorded on the approver's thread entries. Defaults to 'partner'. */
+  approverRole?: string;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -24,9 +27,11 @@ function priorityClass(p: string) {
   return 'border border-slate-300 bg-slate-100 text-slate-600';
 }
 
-export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuccess }: ReviewTaskModalProps) {
+export function ReviewTaskModal({
+  task, approverId, approverName, approverRole = 'partner', onClose, onSuccess,
+}: ReviewTaskModalProps) {
   const [loading, setLoading] = useState(false);
-  const [action, setAction] = useState<'approve' | 'edit' | 'reject' | null>(null);
+  const [action, setAction] = useState<'edit' | null>(null);
   const [editedTask, setEditedTask] = useState({
     task: task.task,
     description: task.description || '',
@@ -41,7 +46,23 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
     task.taxableAmount != null ? String(task.taxableAmount) : ''
   );
   const [billingNote, setBillingNote] = useState(task.billingDescription || '');
+  /**
+   * One box, two destinations. Whatever is written here goes into the task's
+   * approval thread — as the sign-off note when approving, or as what needs
+   * fixing when sending the work back. Two separate textareas for the same
+   * conversation is how a thread ends up half-recorded.
+   */
+  const [comment, setComment] = useState('');
   const { showSuccess, showError } = useToast();
+
+  /** The thread entry that accompanies a decision, or nothing if none was written. */
+  const commentPayload = (kind: 'approval' | 'change_request' | 'note') => {
+    const message = comment.trim();
+    if (!message) return {};
+    return {
+      comment: { message, authorId: approverId, authorName: approverName, authorRole: approverRole, kind },
+    };
+  };
 
   /**
    * The queue holds two different gates, and they mean opposite things.
@@ -85,6 +106,7 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
           billingFees: amount,
           billingDescription: billingNote.trim(),
         } : {}),
+        ...commentPayload('approval'),
       });
       if (response.success) {
         showSuccess(isCompletionReview
@@ -115,6 +137,7 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
         approvedById: approverId,
         approvedAt: new Date().toISOString(),
         ...(task.approverId ? {} : { approverId, approverName }),
+        ...commentPayload('approval'),
       });
       if (response.success) {
         showSuccess('Task updated and approved successfully');
@@ -130,32 +153,59 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
     }
   };
 
-  const handleReject = async () => {
+  /**
+   * Send the task back with what needs fixing.
+   *
+   * The reason is required. Sending work back used to write a bare
+   * "[Rejected by X on date]" with no reason at all, so the person receiving it
+   * learned only that it had been refused — and had to come and ask why. The
+   * note goes into the thread, and the server mirrors it onto the task so the
+   * assignee's dashboard can show it without opening anything.
+   */
+  const handleRequestChanges = async () => {
+    const reason = comment.trim();
+    if (!reason) {
+      showError('Say what needs changing before sending it back');
+      return;
+    }
+
     setLoading(true);
     try {
-      const rejectionNote = `[Rejected by ${approverName} on ${new Date().toLocaleDateString('en-IN')}]`;
-      const updatedComments = task.comments ? `${task.comments}\n${rejectionNote}` : rejectionNote;
-      const response = await tasksAPI.update(task.id, { status: rejectedStatus, comments: updatedComments });
+      const updates: any = {
+        status: rejectedStatus,
+        ...commentPayload('change_request'),
+      };
+
+      // The legacy marker, for the new-task gate only: 'Returned for correction'
+      // and EditTaskModal's resubmit both still read pre-thread rows out of it.
+      // Finished work does not get one — its round is tracked properly now, and
+      // the marker would offer "Edit & Resubmit" for work that needs redoing,
+      // not re-describing.
+      if (!isCompletionReview) {
+        const note = `[Rejected by ${approverName} on ${new Date().toLocaleDateString('en-IN')}]: ${reason}`;
+        updates.comments = task.comments ? `${task.comments}\n${note}` : note;
+      }
+
+      const response = await tasksAPI.update(task.id, updates);
       if (response.success) {
         showSuccess(isCompletionReview
-          ? 'Sent back to In Progress. Rejection noted in comments.'
-          : 'Task sent back to Pending. Rejection noted in comments.');
+          ? `Sent back to ${task.assignedTo} for changes.`
+          : 'Task sent back for correction.');
         onSuccess();
       } else {
-        showError(response.message || response.error || 'Failed to reject task');
+        showError(response.message || response.error || 'Failed to send the task back');
       }
     } catch (error) {
-      console.error('Error rejecting task:', error);
-      showError('Failed to reject task. Please try again.');
+      console.error('Error sending task back:', error);
+      showError('Failed to send the task back. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const subtitle = action === 'reject' ? 'Provide a reason for rejection'
-    : action === 'edit' ? 'Edit task details before approving'
-    : isCompletionReview ? 'Approve the completed work, or send it back'
-    : 'Approve, edit, or reject this task';
+  const subtitle = action === 'edit' ? 'Edit task details before approving'
+    : isCompletionReview ? 'Approve the completed work, or send it back for changes'
+    : 'Approve this task, edit it first, or send it back';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1728]/60 p-4 backdrop-blur-sm">
@@ -198,6 +248,15 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
                   </span>
                 </Row>
                 {task.comments && <Row label="Comments" value={task.comments} multiline />}
+                {/* How many times this has already come back. A third pass over
+                    the same work is worth a closer read than a first. */}
+                {task.revisionCount > 0 && (
+                  <Row label="Rounds">
+                    <span className="inline-block rounded-md border border-orange-200 bg-orange-50 px-2 py-0.5 text-[0.72rem] font-medium text-orange-700">
+                      Sent back {task.revisionCount}× before
+                    </span>
+                  </Row>
+                )}
               </dl>
 
               {/* The completion gate is where the fee is set. Accounts bills what
@@ -237,7 +296,41 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
                 </div>
               )}
             </div>
-          ) : (
+          ) : null}
+
+          {/* The conversation behind the decision. Shown at both gates and in
+              both modes: what the team said about this work is exactly what an
+              approver needs before releasing it to Accounts, and it is the only
+              place a send-back and its answer are recorded together. */}
+          {action !== 'edit' && (
+            <div className="mt-5 space-y-3">
+              <TaskCommentThread
+                taskId={task.id}
+                emptyHint={isCompletionReview
+                  ? 'The work was submitted without a note.'
+                  : 'Nothing has been said about this task yet.'}
+              />
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+                  Your comment{' '}
+                  <span className="font-normal text-muted-foreground">
+                    (required to send back)
+                  </span>
+                </label>
+                <textarea
+                  value={comment}
+                  onChange={e => setComment(e.target.value)}
+                  disabled={loading}
+                  rows={3}
+                  placeholder="What needs changing, or anything to note on approval…"
+                  className={`${inputCls} resize-none`}
+                />
+              </div>
+            </div>
+          )}
+
+          {action === 'edit' && (
             <div className="space-y-4">
               <div>
                 <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
@@ -285,8 +378,18 @@ export function ReviewTaskModal({ task, approverId, approverName, onClose, onSuc
               <Button size="sm" variant="secondary" onClick={() => setAction('edit')} disabled={loading}>
                 <Pencil size={14} /> Edit &amp; Approve
               </Button>
-              <Button size="sm" variant="danger" onClick={handleReject} disabled={loading}>
-                <X size={14} /> {loading ? 'Rejecting…' : 'Reject'}
+              {/* Not "Reject": the task is not thrown away, it goes back to the
+                  person who submitted it with what to fix. Disabled until a
+                  reason is written — sending work back without one is what made
+                  the old flow impossible to act on. */}
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={handleRequestChanges}
+                disabled={loading || !comment.trim()}
+                title={comment.trim() ? undefined : 'Write what needs changing first'}
+              >
+                <RotateCcw size={14} /> {loading ? 'Sending…' : 'Request Changes'}
               </Button>
               <Button size="sm" onClick={handleApprove} disabled={loading}>
                 <Check size={14} /> {loading ? 'Approving…' : 'Approve'}
