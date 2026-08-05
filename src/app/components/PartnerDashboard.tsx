@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { Button } from './Button';
-import { tasksAPI, usersAPI, inquiriesAPI } from '../services/api';
+import { tasksAPI, usersAPI, inquiriesAPI, billingAPI } from '../services/api';
 import { CreateTaskModal } from './CreateTaskModal';
 import { AddStaffModal } from './AddStaffModal';
 import { TaskApprovalQueue } from './TaskApprovalQueue';
@@ -9,8 +9,12 @@ import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { KPICard } from './KPICard';
 import { useLiveData } from '../hooks/useLiveData';
-import { statusColor, statusLabel, statusHex, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
-import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, AlertTriangle, CheckCircle2, Clock, X, Search } from 'lucide-react';
+import { statusColor, statusLabel, statusHex, isAwaitingApproval, isOpenTask } from '../utils/taskStatus';
+import {
+  filterByRange, financialYearLabel, formatINRCompact, monthOverMonth,
+  pendingBilling, totals, type BillingRecord,
+} from '../utils/revenue';
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, X, Search } from 'lucide-react';
 
 const NAVY = '#1b365d';
 const GREEN = '#4ea72e';
@@ -120,15 +124,18 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
     return parseInt(userId) || 0;
   };
 
+  const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [tasksResult, usersResult, inquiriesResult] = await Promise.allSettled([
-        tasksAPI.getAll(), usersAPI.getAll(), inquiriesAPI.getPending(),
+      const [tasksResult, usersResult, inquiriesResult, billingResult] = await Promise.allSettled([
+        tasksAPI.getAll(), usersAPI.getAll(), inquiriesAPI.getPending(), billingAPI.getAll(),
       ]);
       if (tasksResult.status === 'fulfilled') setTasks(tasksResult.value.data || []);
       if (usersResult.status === 'fulfilled') setUsers(usersResult.value.data || []);
       if (inquiriesResult.status === 'fulfilled') setInquiries(inquiriesResult.value.data || []);
+      if (billingResult.status === 'fulfilled') setBillingRecords(billingResult.value.data || []);
       setLastRefresh(new Date());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -136,16 +143,19 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
 
   const loadDataSilently = useCallback(async () => {
     try {
-      const [t, u, i] = await Promise.allSettled([tasksAPI.getAll(), usersAPI.getAll(), inquiriesAPI.getPending()]);
+      const [t, u, i, b] = await Promise.allSettled([
+        tasksAPI.getAll(), usersAPI.getAll(), inquiriesAPI.getPending(), billingAPI.getAll(),
+      ]);
       if (t.status === 'fulfilled') setTasks(t.value.data || []);
       if (u.status === 'fulfilled') setUsers(u.value.data || []);
       if (i.status === 'fulfilled') setInquiries(i.value.data || []);
+      if (b.status === 'fulfilled') setBillingRecords(b.value.data || []);
       setLastRefresh(new Date());
     } catch (e) { console.error(e); }
   }, []);
 
   useEffect(() => { loadData(); }, []);
-  useLiveData(['tasks', 'users', 'inquiries'], () => loadDataSilently());
+  useLiveData(['tasks', 'users', 'inquiries', 'billing'], () => loadDataSilently());
 
   const handleNoteChange = (key: string, value: string) => {
     const updated = { ...notes, [key]: value };
@@ -192,9 +202,13 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
       t.targetDate && toKey(new Date(t.targetDate)) === toKey(date) && isOpenTask(t.status));
 
   const taskApprovalCount = tasks.filter(t => isAwaitingApproval(t.status)).length;
-  const overdueCount = pendingTasks.filter(t => t.aging > 0).length;
-  const completedCount = tasks.filter(t => isFinishedTask(t.status)).length;
-  const activeCount = tasks.filter(t => isOpenTask(t.status)).length;
+
+  // Revenue roll-ups. Derived exactly as AdminDashboard derives them, from the
+  // same helpers, so the two screens cannot disagree about the firm's numbers.
+  const fyTotals = totals(filterByRange(billingRecords, 'fy'));
+  const mom = monthOverMonth(billingRecords);
+  const pendingBill = pendingBilling(tasks);
+  const fyLabel = financialYearLabel();
 
   // Week label
   const weekStart = weekDates[0];
@@ -257,10 +271,28 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
 
         {/* ── KPI tiles ── */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KPICard title="Active" value={activeCount} icon={<ClipboardList size={22} />} />
-          <KPICard title="Overdue" value={overdueCount} icon={<AlertTriangle size={22} />} variant="danger" />
-          <KPICard title="Completed" value={completedCount} icon={<CheckCircle2 size={22} />} variant="success" />
-          <KPICard title="For Approval" value={taskApprovalCount} icon={<Clock size={22} />} variant="warning" />
+          <KPICard
+            title={`Total revenue · ${fyLabel}`}
+            value={formatINRCompact(fyTotals.revenue)}
+            variant="success"
+            note="Invoices raised"
+          />
+          <KPICard
+            title="Revenue this month"
+            value={formatINRCompact(mom.current)}
+            trend={mom.change === null ? undefined : {
+              value: `${Math.abs(mom.change).toFixed(0)}% vs last month`,
+              isPositive: mom.change >= 0,
+            }}
+          />
+          {/* Sent for billing, invoice not yet raised. */}
+          <KPICard
+            title="Pending billing"
+            value={formatINRCompact(pendingBill.amount)}
+            variant="warning"
+            note={`${pendingBill.count} task${pendingBill.count === 1 ? '' : 's'} awaiting invoice`}
+          />
+          <KPICard title="Total Tasks" value={tasks.length} />
         </div>
 
         {/* ── Weekly planner ── */}

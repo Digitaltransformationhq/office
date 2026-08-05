@@ -25,10 +25,11 @@ import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
 import { useLiveData } from '../hooks/useLiveData';
-import { isAwaitingApproval } from '../utils/taskStatus';
+import { isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import {
   Loader2, UserPlus, Building2, UploadCloud, ClipboardCheck, Inbox,
   Users as UsersIcon, ClipboardList, FolderOpen, ArrowRight, ChevronDown, Search,
+  AlertTriangle, CheckCircle2, Clock,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -214,6 +215,19 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
   const categorySeries = padSlices(revenueByCategory(fyRecords), TASK_CATEGORIES);
   const fyLabel = financialYearLabel();
 
+  // ── Task roll-ups ──
+  // The operational half of the picture, moved here from the partner dashboard
+  // so admin sees the whole scenario — money and workload on one screen.
+  // Derived exactly as PartnerDashboard derives them, from the same helpers.
+  const activeCount = tasks.filter((t: any) => isOpenTask(t.status)).length;
+  const completedCount = tasks.filter((t: any) => isFinishedTask(t.status)).length;
+  const taskApprovalCount = tasks.filter((t: any) => isAwaitingApproval(t.status)).length;
+  // Overdue means past its target date and still open. A finished task that ran
+  // late is history, not something anyone can act on today.
+  const overdueCount = tasks.filter((t: any) =>
+    isOpenTask(t.status) && t.targetDate
+    && new Date(t.targetDate).getTime() < Date.now()).length;
+
   const uq = userSearch.trim().toLowerCase();
   const filteredUsers = users.filter(u => !uq ||
     (u.name || '').toLowerCase().includes(uq) ||
@@ -288,6 +302,15 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
               note={`${pending.count} task${pending.count === 1 ? '' : 's'} awaiting invoice`}
             />
             <KPICard title="Total Tasks" value={tasks.length} />
+          </div>
+
+          {/* Workload, beneath the money. Same four tiles the partner dashboard
+              used to carry, so nothing was lost when they moved. */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <KPICard title="Active" value={activeCount} icon={<ClipboardList size={22} />} />
+            <KPICard title="Overdue" value={overdueCount} icon={<AlertTriangle size={22} />} variant="danger" />
+            <KPICard title="Completed" value={completedCount} icon={<CheckCircle2 size={22} />} variant="success" />
+            <KPICard title="For Approval" value={taskApprovalCount} icon={<Clock size={22} />} variant="warning" />
           </div>
 
           {/* Approval queues, directly under the stat tiles: they are the two

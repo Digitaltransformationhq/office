@@ -83,6 +83,10 @@ export function TaskMIS({ user }: TaskMISProps) {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  // Always visible, for every role. The Filters panel below has one input per
+  // column, which is precise but only helps once you know which column holds
+  // what you are after; this matches across all of them at once.
+  const [search, setSearch] = useState('');
 
   const [clientFilter, setClientFilter] = useState('');
   const [taskFilter, setTaskFilter] = useState('');
@@ -197,12 +201,15 @@ export function TaskMIS({ user }: TaskMISProps) {
   };
 
   const clearFilters = () => {
+    setSearch('');
     setClientFilter(''); setTaskFilter(''); setCategoryFilter('all');
     setPriorityFilter('all'); setAssignedToFilter(''); setStatusFilter('all');
     setAssignmentStatusFilter('all');
   };
 
-  const hasFilters = clientFilter || taskFilter || categoryFilter !== 'all' ||
+  // Search counts as a filter, so Clear removes it too. Leaving it out would
+  // give a Clear button that visibly fails to restore the full list.
+  const hasFilters = search || clientFilter || taskFilter || categoryFilter !== 'all' ||
     priorityFilter !== 'all' || assignedToFilter || statusFilter !== 'all' ||
     assignmentStatusFilter !== 'all';
 
@@ -215,7 +222,11 @@ export function TaskMIS({ user }: TaskMISProps) {
     filterTab === 'pending-acceptance' ? pendingAcceptanceTasks :
     filterTab === 'pending' ? pendingTasks : tasks;
 
+  const q = search.trim().toLowerCase();
   const filtered = baseList
+    .filter(t => !q || [
+      t.client, t.task, t.category, t.assignedTo, t.priority, statusLabel(t.status), t.comments,
+    ].some(v => (v || '').toString().toLowerCase().includes(q)))
     .filter(t => !clientFilter || t.client.toLowerCase().includes(clientFilter.toLowerCase()))
     .filter(t => !taskFilter || t.task.toLowerCase().includes(taskFilter.toLowerCase()))
     .filter(t => categoryFilter === 'all' || t.category === categoryFilter)
@@ -342,6 +353,29 @@ export function TaskMIS({ user }: TaskMISProps) {
           <p className="mt-0.5 text-sm text-muted-foreground">{sorted.length} of {tasks.length} tasks</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Full width on a phone, where it takes its own line; fixed beside the
+              buttons from sm up. Shown to every role — the list is already
+              scoped to the signed-in user for anyone who is not a partner. */}
+          <div className="relative w-full sm:w-[240px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search tasks…"
+              aria-label="Search tasks"
+              className="w-full rounded-full border border-[#E7EDF4] bg-white py-2 pl-9 pr-9 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-foreground"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
           <button
             onClick={() => setShowFilters(f => !f)}
             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm font-medium transition-colors ${showFilters || hasFilters ? 'border-transparent bg-[#1b365d] text-white' : 'border-[#E7EDF4] bg-white text-[#1b365d] hover:bg-[#F4F6F9]'}`}
