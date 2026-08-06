@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Search, IndianRupee, AlertTriangle, ReceiptText, Undo2 } from 'lucide-react';
+import { Search, IndianRupee, AlertTriangle, ReceiptText, Undo2, XCircle } from 'lucide-react';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './Toast';
-import { billingAPI } from '../services/api';
+import { billingAPI, tasksAPI } from '../services/api';
 import { statusColor, statusLabel } from '../utils/taskStatus';
 import { formatINR, type BillingRecord } from '../utils/revenue';
 
@@ -38,6 +38,7 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
   const [search, setSearch] = useState('');
   const [billing, setBilling] = useState<any>(null);
   const [undoing, setUndoing] = useState<{ task: any; record: BillingRecord } | null>(null);
+  const [dropping, setDropping] = useState<any>(null);
   const [busy, setBusy] = useState(false);
 
   /*
@@ -55,6 +56,36 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
     for (const r of records) if (r.taskId) byTask.set(r.taskId, r);
     return (taskId: string) => byTask.get(taskId) || null;
   }, [records]);
+
+  /*
+   * Take a task out of the billing queue without invoicing it.
+   *
+   * The counterpart to removing a bill: that one withdraws an invoice already
+   * raised, this one withdraws work that was released for billing and should
+   * not be. Both land the task on 'Completed' — done, with nothing to charge —
+   * so neither leaves anything sitting in a queue.
+   *
+   * The task itself is not deleted. The work happened, and the record of who did
+   * it and when is worth more than a tidy list.
+   */
+  const drop = async () => {
+    if (!dropping) return;
+    setBusy(true);
+    try {
+      const r = await tasksAPI.update(dropping.id, { status: 'Completed' });
+      if (r.success) {
+        showSuccess(`${dropping.client || dropping.task} removed from billing`);
+        setDropping(null);
+        onBilled();
+      } else {
+        showError(r.error || 'Failed to remove it from billing');
+      }
+    } catch {
+      showError('Failed to remove it from billing. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const undo = async () => {
     if (!undoing) return;
@@ -131,12 +162,23 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
           <div className="divide-y divide-[#F1F4F8]">
             {awaiting.map(task => (
               <Row key={task.id} task={task} action={
-                <button
-                  onClick={() => setBilling(task)}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#1b365d] px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#142a4a]"
-                >
-                  <IndianRupee size={13} /> Mark as billed
-                </button>
+                <>
+                  {canUndo && (
+                    <button
+                      onClick={() => setDropping(task)}
+                      title="Remove from billing without raising an invoice"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[#E7EDF4] bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-[#FECACA] hover:bg-[#FEF2F2] hover:text-[#991B1B]"
+                    >
+                      <XCircle size={13} /> Remove
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setBilling(task)}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#1b365d] px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#142a4a]"
+                  >
+                    <IndianRupee size={13} /> Mark as billed
+                  </button>
+                </>
               } />
             ))}
           </div>
@@ -177,6 +219,21 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
           </div>
         )}
       </section>
+
+      {dropping && (
+        <ConfirmDialog
+          title="Remove from billing?"
+          message={
+            `${dropping.client || 'No client'} — ${dropping.task}${amountOf(dropping) > 0 ? ` · ${formatINR(amountOf(dropping))}` : ''}.\n\n` +
+            'No invoice is raised. The task is marked completed and leaves this queue, so nothing is left waiting to be billed.\n\n' +
+            'The task itself is kept — only its billing is withdrawn. To bill this work later it would have to be sent for billing again.'
+          }
+          confirmLabel={busy ? 'Removing…' : 'Remove from billing'}
+          variant="danger"
+          onConfirm={drop}
+          onCancel={() => setDropping(null)}
+        />
+      )}
 
       {undoing && (
         <ConfirmDialog
