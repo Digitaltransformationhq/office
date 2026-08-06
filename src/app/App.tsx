@@ -239,6 +239,7 @@ export default function App() {
         if (canAccessIncomeTax(user)) return <ITRRegister currentUser={user} />;
         if (user) setActiveView(user.role);
         return null;
+      case 'salary':
       case 'leave':
       case 'approvals':
         /**

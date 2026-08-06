@@ -3,7 +3,7 @@ import {
   LayoutDashboard, ClipboardList, Users, Inbox, Wallet, FileSpreadsheet,
   BarChart3, Settings as SettingsIcon, Building2, Calendar, Megaphone,
   FolderOpen, ClipboardCheck, CalendarDays, FileText, CalendarClock,
-  MessageCircle, HelpCircle, Database, Menu, ReceiptText, Landmark,
+  MessageCircle, HelpCircle, Database, Menu, ReceiptText, Landmark, Banknote,
   X, type LucideIcon,
 } from 'lucide-react';
 import {
@@ -38,6 +38,7 @@ const ICONS: Record<string, LucideIcon> = {
   clients: Building2,
   'gst-compliance': ReceiptText,
   'income-tax': Landmark,
+  salary: Banknote,
   inquiries: Inbox,
   billing: Wallet,
   'billing-reports': FileSpreadsheet,
@@ -66,7 +67,7 @@ type MenuItem = { label: string; id: string };
  *
  * To bring one back: delete it from this set. Nothing else needs changing.
  */
-const COMING_SOON = new Set(['leave', 'approvals']);
+const COMING_SOON = new Set(['leave', 'approvals', 'salary']);
 
 export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen, onMobileClose }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -83,6 +84,8 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
 
   // Spliced into each role's menu rather than listed per role, so the rules live
   // in one place and cannot disagree between partner, admin and staff.
+  const isPartnerOrAdmin = user.role === 'admin' || user.role === 'partner';
+
   const deskItems: MenuItem[] = [
     ...(canAccessClients(user) ? [{ label: 'Clients', id: 'clients' }] : []),
     ...(canAccessGstCompliance(user) ? [{ label: 'GST Compliance', id: 'gst-compliance' }] : []),
@@ -98,6 +101,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Billing', id: 'billing' },
+      { label: 'Salary', id: 'salary' },
       { label: 'Announcements', id: 'announcements' },
       { label: 'Reports', id: 'reports' },
       { label: 'Leave', id: 'leave' },
@@ -110,6 +114,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Billing', id: 'billing' },
+      { label: 'Salary', id: 'salary' },
       { label: 'Calendar', id: 'calendar' },
       { label: 'Announcements', id: 'announcements' },
       { label: 'Reports', id: 'reports' },
@@ -151,6 +156,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
   const currentMenu = menuItems[normalizeRole(user.role) ?? ''] || menuItems['team-member'];
   const filteredMenu = currentMenu.filter((item) => {
     if (item.id === 'billing' || item.id === 'billing-reports') return hasBillingAccess;
+    if (item.id === 'salary') return isPartnerOrAdmin;
     return true;
   });
 
