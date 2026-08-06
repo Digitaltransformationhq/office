@@ -10,7 +10,7 @@ import { TaskThreadModal } from './TaskThreadModal';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
 import { TASK_STATUS, statusColor, statusLabel, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
-import { Loader2, Plus, MessageSquarePlus, MessageSquare, RotateCcw } from 'lucide-react';
+import { Loader2, Plus, MessageSquarePlus, MessageSquare, RotateCcw, ChevronLeft } from 'lucide-react';
 
 interface TeamMemberDashboardProps {
   user?: {
@@ -511,9 +511,10 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
               {view !== 'active' && (
                 <button
                   onClick={() => setView('active')}
-                  className="text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-[#1b365d]"
                 >
-                  show active
+                  <ChevronLeft size={16} className="shrink-0" />
+                  Show active
                 </button>
               )}
             </div>

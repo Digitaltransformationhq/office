@@ -19,6 +19,11 @@ const HeaderContext = createContext<{ headers: string[]; setHeaders: (h: string[
  * On desktop this is a normal scrollable table. Under `md` the CSS in
  * index.css (`.responsive-table`) restyles each row as a stacked card, and
  * every cell shows its column label (captured automatically from the header).
+ *
+ * Styled to match the tables written by hand elsewhere in the app: a light
+ * header in small caps rather than a grey slab, hairline row rules, and a hover
+ * tint. Restyling here rather than replacing the nine callers keeps that
+ * stacked-card behaviour, which a plain table would lose.
  */
 export function Table({ children, className = '' }: TableProps) {
   const [headers, setHeaders] = useState<string[]>([]);
@@ -51,7 +56,7 @@ export function TableHeader({ children, className = '' }: TableProps) {
     setHeaders(prev => (prev.join('') === labels.join('') ? prev : labels));
   }, [children, setHeaders]);
 
-  return <thead className={`bg-muted ${className}`}>{children}</thead>;
+  return <thead className={`bg-[#FAFBFD] ${className}`}>{children}</thead>;
 }
 
 export function TableBody({ children, className = '' }: TableProps) {
@@ -64,12 +69,16 @@ export function TableRow({ children, className = '' }: TableProps) {
   const mapped = React.Children.map(children, (child) =>
     React.isValidElement(child) ? React.cloneElement(child as any, { __colIndex: i++ }) : child
   );
-  return <tr className={`border-b border-border hover:bg-muted/50 ${className}`}>{mapped}</tr>;
+  return (
+    <tr className={`border-b border-[#F1F4F8] transition-colors last:border-0 hover:bg-[#F7FAFF] ${className}`}>
+      {mapped}
+    </tr>
+  );
 }
 
 export function TableHead({ children, className = '' }: CellProps) {
   return (
-    <th className={`text-left px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm text-muted-foreground whitespace-nowrap ${className}`}>
+    <th className={`whitespace-nowrap border-b border-[#E7EDF4] px-3 py-2.5 text-left text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground md:px-4 ${className}`}>
       {children}
     </th>
   );
@@ -80,14 +89,14 @@ export function TableCell({ children, className = '', colSpan, __colIndex }: Cel
   // Full-width cells (e.g. empty-state messages) opt out of the label layout.
   if (colSpan) {
     return (
-      <td colSpan={colSpan} className={`rt-full px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm ${className}`}>
+      <td colSpan={colSpan} className={`rt-full px-3 py-2.5 text-[0.8rem] md:px-4 ${className}`}>
         {children}
       </td>
     );
   }
   const label = typeof __colIndex === 'number' ? headers[__colIndex] : undefined;
   return (
-    <td data-label={label || undefined} className={`px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm ${className}`}>
+    <td data-label={label || undefined} className={`px-3 py-2.5 text-[0.8rem] md:px-4 ${className}`}>
       {children}
     </td>
   );

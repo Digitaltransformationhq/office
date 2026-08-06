@@ -12,7 +12,7 @@ import { MarkAsBilledModal } from './MarkAsBilledModal';
 import { SubmitWorkModal } from './SubmitWorkModal';
 import { TaskThreadModal } from './TaskThreadModal';
 import { type BillingRecord } from '../utils/revenue';
-import { Loader2, X, IndianRupee, MessageSquare } from 'lucide-react';
+import { Loader2, X, IndianRupee, MessageSquare, ChevronLeft } from 'lucide-react';
 
 interface TeamLeaderDashboardProps {
   user?: {
@@ -45,6 +45,11 @@ const ACTION_TONE: Record<string, string> = {
 
 const shortDate = (d?: string) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—';
+
+/** Nothing recorded. An empty cell reads as a fault; this reads as a blank. */
+function Dash() {
+  return <span className="text-slate-300">—</span>;
+}
 
 export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const [allTasks, setAllTasks] = useState<any[]>([]);
@@ -267,9 +272,10 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
         {focus !== null && (
           <button
             onClick={() => setFocus(null)}
-            className="-mt-1 self-start text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            className="-mt-1 inline-flex items-center gap-1 self-start rounded-md py-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-[#1b365d]"
           >
-            ← show the whole dashboard
+            <ChevronLeft size={16} className="shrink-0" />
+            Show the whole dashboard
           </button>
         )}
 
@@ -301,9 +307,9 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                 <TableBody>
                   {pendingForBilling.map((task) => (
                     <TableRow key={task.id}>
-                      <TableCell className="rt-title font-medium">{task.client}</TableCell>
-                      <TableCell>{task.task}</TableCell>
-                      <TableCell className="text-muted-foreground">{task.assignedTo}</TableCell>
+                      <TableCell className="rt-title font-medium">{task.client || <Dash />}</TableCell>
+                      <TableCell>{task.task || <Dash />}</TableCell>
+                      <TableCell className="text-muted-foreground">{task.assignedTo || <Dash />}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {shortDate(task.completionDate)}
                       </TableCell>
@@ -356,7 +362,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                   </TableRow>
                 ) : myTasks.map((task) => (
                   <TableRow key={task.id}>
-                    <TableCell className="rt-title font-medium">{task.client}</TableCell>
+                    <TableCell className="rt-title font-medium">{task.client || <Dash />}</TableCell>
                     <TableCell>
                       {task.task}
                       {/* The status chip only says "In Progress" — it cannot say
@@ -431,9 +437,9 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                   </TableRow>
                 ) : teamTasks.map((task) => (
                   <TableRow key={task.id}>
-                    <TableCell className="rt-title font-medium">{task.assignedTo}</TableCell>
-                    <TableCell>{task.client}</TableCell>
-                    <TableCell>{task.task}</TableCell>
+                    <TableCell className="rt-title font-medium">{task.assignedTo || <Dash />}</TableCell>
+                    <TableCell>{task.client || <Dash />}</TableCell>
+                    <TableCell>{task.task || <Dash />}</TableCell>
                     <TableCell><StatusChip status={task.status} /></TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
                       {shortDate(task.targetDate)}
@@ -544,8 +550,8 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                     </TableRow>
                   ) : completedTasks.map((task) => (
                     <TableRow key={task.id}>
-                      <TableCell className="rt-title font-medium">{task.client}</TableCell>
-                      <TableCell>{task.task}</TableCell>
+                      <TableCell className="rt-title font-medium">{task.client || <Dash />}</TableCell>
+                      <TableCell>{task.task || <Dash />}</TableCell>
                       <TableCell className="text-muted-foreground">{task.assignedTo || '—'}</TableCell>
                       <TableCell><StatusChip status={task.status} /></TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
