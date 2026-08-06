@@ -62,9 +62,9 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
     try {
       const r = await billingAPI.delete(undoing.record.id);
       if (r.success) {
-        // The server also puts the task back to Pending for Billing and clears
-        // its completion date, so it returns to the queue above.
-        showSuccess(`Bill ${undoing.record.billNumber} removed — the task is back in the queue`);
+        // The server marks the task Completed rather than re-queueing it, so it
+        // leaves this screen entirely.
+        showSuccess(`Bill ${undoing.record.billNumber} removed`);
         setUndoing(null);
         onBilled();
       } else {
@@ -165,7 +165,7 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
                   action={canUndo && record ? (
                     <button
                       onClick={() => setUndoing({ task, record })}
-                      title="Remove this bill and send the task back for billing"
+                      title="Delete this invoice — the task is marked completed, not re-queued"
                       className="inline-flex items-center gap-1.5 rounded-full border border-[#E7EDF4] px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-[#FECACA] hover:bg-[#FEF2F2] hover:text-[#991B1B]"
                     >
                       <Undo2 size={13} /> Undo bill
@@ -182,11 +182,10 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
         <ConfirmDialog
           title="Remove this bill?"
           message={
-            `Bill ${undoing.record.billNumber} for ${undoing.task.client} — ${formatINR(Number(undoing.record.taxableAmount) || 0)}.
-
-` +
-            'The invoice record is deleted and the task returns to "Awaiting invoice", so revenue for the period drops by this amount. ' +
-            'This cannot be undone; the bill would have to be raised again.'
+            `Bill ${undoing.record.billNumber} for ${undoing.task.client} — ${formatINR(Number(undoing.record.taxableAmount) || 0)}.\n\n` +
+            'The invoice is deleted and revenue for the period drops by this amount. ' +
+            'The task is marked completed and does not return to "Awaiting invoice", so nothing is left waiting to be billed.\n\n' +
+            'This cannot be undone. To bill this work again it would have to be sent for billing afresh.'
           }
           confirmLabel={busy ? 'Removing…' : 'Remove bill'}
           variant="danger"

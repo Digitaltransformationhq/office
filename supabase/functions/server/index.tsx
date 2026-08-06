@@ -3765,12 +3765,21 @@ app.delete('/make-server-0abfa7cf/billing-records/:recordId', async (c) => {
     // guards on the type; this one did not.
     const billingData = typeof record === 'string' ? JSON.parse(record) : record;
 
-    // Deleting the bill undoes the step that completed the task, so the
-    // completion date it stamped has to come off with it — otherwise the task
-    // reads as finished on a date it is no longer finished on.
+    /*
+     * The bill is withdrawn, not sent back.
+     *
+     * This exists for Accounts having invoiced the wrong task. Returning it to
+     * 'Pending for Billing' would put it straight back in their queue as work
+     * still to invoice, which is the opposite of what removing the bill means —
+     * they would raise it again, or spend the rest of the year stepping over it.
+     *
+     * So the task lands on 'Completed': the work was done, it simply has no
+     * invoice against it. Its completion date stays, because that is still when
+     * the work finished; only the billing is undone.
+     */
     await supabase
       .from('tasks')
-      .update({ status: 'Pending for Billing', completion_date: null })
+      .update({ status: 'Completed' })
       .eq('id', billingData.taskId);
 
     // Delete the billing record
