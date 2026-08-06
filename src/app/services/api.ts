@@ -110,6 +110,12 @@ function transformClient(client: any) {
     name: client.name,
     industry: client.industry,
     gst: client.gst,
+    /** The form field is `gstin`; the column is the legacy `gst`. Exposed under
+     *  both names so neither side has to remember which it is. */
+    gstin: client.gst,
+    itrApplicable: client.itr_applicable !== false,
+    /** 'Filing' or 'Non-filer' — on record, but no return is due from this firm. */
+    clientType: client.client_type || 'Filing',
     contact: client.contact,
     email: client.email,
     status: client.status,
@@ -338,6 +344,383 @@ export const clientsAPI = {
       ...result,
       data: result.data ? transformClient(result.data) : null,
     };
+  },
+};
+
+// ============================================
+// ITR REGISTER
+// ============================================
+// clients (PAN) -> itr_filings (one row per client per financial year).
+// There is no ITR client table: see docs/itr-register.md.
+
+/** Every state a return can be in. Ordered as the work flows. */
+export const ITR_STATUSES = [
+  'Pending',
+  'Data Requested',
+  'Data Not Provided',
+  'Data Received',
+  'In Preparation',
+  'Ready to File',
+  'Filed',
+  'Not Applicable',
+] as const;
+
+export type ItrStatus = typeof ITR_STATUSES[number];
+
+export const ITR_FORMS = ['ITR-1', 'ITR-2', 'ITR-3', 'ITR-4', 'ITR-5', 'ITR-6', 'ITR-7'] as const;
+
+/** One return, for one client, for one year. */
+export interface ItrFiling {
+  id: string;
+  clientId: string;
+  clientName: string;
+  pan: string | null;
+  fileNumber: string | null;
+  /** 'Non-filer' clients should not appear here; surfaced so the UI can say so if they do. */
+  clientType: string;
+  financialYear: string;
+  itrForm: string | null;
+  status: ItrStatus;
+  /** The control list's own words, kept verbatim — see the importer. */
+  dataNote: string | null;
+  statusNote: string | null;
+  partnerRemark: string | null;
+  regime: 'Old' | 'New' | null;
+  /** May be null even when filed: two rows on the sheet say only "DONE". */
+  filedOn: string | null;
+  acknowledgementNo: string | null;
+  isAudit: boolean;
+  /** Business income other than speculation or F&O — moves the due date to 31 August. */
+  businessIncome: boolean;
+  dueDate: string | null;
+  cpc: boolean;
+  itrV: boolean;
+  computation: boolean;
+  financialStatement: boolean;
+  challan: boolean;
+  wpGroup: string | null;
+
+  /** Where the invoice has got to. Set by Accounts, not by the ITR desk. */
+  billingStatus: 'Not Ready' | 'Pending' | 'Billed' | 'Returned';
+  billNumber: string | null;
+  billDate: string | null;
+  billingRemarks: string | null;
+  billedByName: string | null;
+  billedAt: string | null;
+  /** Why Accounts sent it back. Kept after correction — the record is the point. */
+  returnedReason: string | null;
+  returnedByName: string | null;
+  returnedAt: string | null;
+  returnCount: number;
+  responsiblePersonId: string | null;
+  responsiblePersonName: string | null;
+  remarks: string | null;
+  updatedByName: string | null;
+}
+
+function transformItrFiling(row: any): ItrFiling {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    clientName: row.clients?.name || row.client_id,
+    pan: row.clients?.pan ?? null,
+    fileNumber: row.clients?.file_number ?? null,
+    clientType: row.clients?.client_type || 'Filing',
+    financialYear: row.financial_year,
+    itrForm: row.itr_form,
+    status: row.status,
+    dataNote: row.data_note,
+    statusNote: row.status_note,
+    partnerRemark: row.partner_remark,
+    regime: row.regime,
+    filedOn: row.filed_on,
+    acknowledgementNo: row.acknowledgement_no,
+    isAudit: !!row.is_audit,
+    businessIncome: !!row.business_income,
+    dueDate: row.due_date,
+    cpc: !!row.cpc,
+    itrV: !!row.itr_v,
+    computation: !!row.computation,
+    financialStatement: !!row.financial_statement,
+    challan: !!row.challan,
+    wpGroup: row.wp_group,
+    billingStatus: row.billing_status || 'Not Ready',
+    billNumber: row.bill_number,
+    billDate: row.bill_date,
+    billingRemarks: row.billing_remarks,
+    billedByName: row.billed_by_name,
+    billedAt: row.billed_at,
+    returnedReason: row.returned_reason,
+    returnedByName: row.returned_by_name,
+    returnedAt: row.returned_at,
+    returnCount: row.return_count || 0,
+    responsiblePersonId: row.responsible_person_id,
+    responsiblePersonName: row.responsible_person_name,
+    remarks: row.remarks,
+    updatedByName: row.updated_by_name,
+  };
+}
+
+export const itrAPI = {
+  /** Every return for one financial year, in a single request. */
+  getRegister: async (financialYear: string) => {
+    const result = await fetchAPI(`/itr/register?fy=${encodeURIComponent(financialYear)}`);
+    return {
+      ...result,
+      data: {
+        financialYear,
+        filings: (result.data?.filings || []).map(transformItrFiling) as ItrFiling[],
+      },
+    };
+  },
+
+  getFinancialYears: async () => {
+    const result = await fetchAPI('/itr/financial-years');
+    return { ...result, data: (result.data || []) as string[] };
+  },
+
+  /**
+   * Returns waiting on Accounts, and the ones Accounts sent back.
+   * `fy` is optional — omit it to see every year at once.
+   */
+  getBillingQueue: async (financialYear?: string) => {
+    const qs = financialYear ? `?fy=${encodeURIComponent(financialYear)}` : '';
+    const result = await fetchAPI(`/itr/billing-queue${qs}`);
+    return { ...result, data: (result.data || []).map(transformItrFiling) as ItrFiling[] };
+  },
+
+  /** Accounts raises the invoice. */
+  markBilled: async (filingId: string, details: {
+    billNumber: string;
+    billDate?: string;
+    acknowledgementNo?: string;
+    remarks?: string;
+    billedById?: string;
+    billedByName?: string;
+  }) => {
+    const result = await fetchAPI(`/itr/filings/${encodeURIComponent(filingId)}/bill`, {
+      method: 'PUT',
+      body: JSON.stringify(details),
+    });
+    return { ...result, data: result.data ? transformItrFiling(result.data) : null };
+  },
+
+  /** Accounts sends it back for correction. The reason is required. */
+  returnForCorrection: async (filingId: string, details: {
+    reason: string;
+    returnedById?: string;
+    returnedByName?: string;
+  }) => {
+    const result = await fetchAPI(`/itr/filings/${encodeURIComponent(filingId)}/return`, {
+      method: 'PUT',
+      body: JSON.stringify(details),
+    });
+    return { ...result, data: result.data ? transformItrFiling(result.data) : null };
+  },
+
+  /** Create or update one return. Upsert on (client, year). */
+  saveFiling: async (filing: Partial<ItrFiling> & { clientId: string; financialYear: string }) => {
+    const result = await fetchAPI('/itr/filings', {
+      method: 'PUT',
+      body: JSON.stringify(filing),
+    });
+    return { ...result, data: result.data ? transformItrFiling(result.data) : null };
+  },
+};
+
+// ============================================
+// GST COMPLIANCE REGISTER
+// ============================================
+// See docs/gst-compliance.md.
+
+/** One GST registration — a GSTIN held under a client's PAN. */
+export interface GstRegistration {
+  id: string;
+  clientId: string;
+  clientName: string;
+  pan: string | null;
+  /** The office's own code for this registration ("167", "DNG-BHV"). */
+  codeNo: string | null;
+  gstin: string;
+  tradeName: string | null;
+  state: string | null;
+  filingFrequency: 'Monthly' | 'Quarterly' | 'Composition' | 'Annual' | 'Irregular' | 'Not Applicable';
+  responsiblePersonId: string | null;
+  responsiblePersonName: string | null;
+  billingFrequency: string | null;
+  contactPerson: string | null;
+  mobileNumber: string | null;
+  emailId: string | null;
+  cashLedger: number;
+  creditLedger: number;
+  reclaimedAmount: number;
+  status: 'Active' | 'Suspended' | 'Cancelled';
+  notes: string | null;
+}
+
+/** Every state a cell of the register can be in. Ordered as the work flows. */
+export const GST_FILING_STATUSES = [
+  'Pending',
+  'Message Sent',
+  'Data Not Provided',
+  'Data Received',
+  'OTP Awaited',
+  'Challan Sent',
+  'Nil',
+  'Filed',
+  'Not Applicable',
+] as const;
+
+export type GstFilingStatus = typeof GST_FILING_STATUSES[number];
+
+/** One return, for one registration, for one period. */
+export interface GstFiling {
+  id: string;
+  registrationId: string;
+  returnType: 'GSTR-1' | 'GSTR-3B' | 'GSTR-4' | 'GSTR-9' | 'GSTR-9C' | 'CMP-08' | 'Other';
+  financialYear: string;
+  periodKey: string;
+  periodLabel: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  dueDate: string | null;
+  status: GstFilingStatus;
+  dataReceivedOn: string | null;
+  filedOn: string | null;
+  arn: string | null;
+  updatedByName: string | null;
+  remarks: string | null;
+  updatedAt: string | null;
+}
+
+function transformGstRegistration(row: any): GstRegistration {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    // Embedded from the joined client, so the grid can show who a GSTIN belongs
+    // to without a second request per row.
+    clientName: row.clients?.name || row.trade_name || row.gstin,
+    pan: row.clients?.pan ?? null,
+    codeNo: row.code_no,
+    gstin: row.gstin,
+    tradeName: row.trade_name,
+    state: row.state,
+    filingFrequency: row.filing_frequency,
+    responsiblePersonId: row.responsible_person_id,
+    responsiblePersonName: row.responsible_person_name,
+    billingFrequency: row.billing_frequency,
+    contactPerson: row.contact_person,
+    mobileNumber: row.mobile_number,
+    emailId: row.email_id,
+    cashLedger: Number(row.cash_ledger) || 0,
+    creditLedger: Number(row.credit_ledger) || 0,
+    reclaimedAmount: Number(row.reclaimed_amount) || 0,
+    status: row.status,
+    notes: row.notes,
+  };
+}
+
+function transformGstFiling(row: any): GstFiling {
+  return {
+    id: row.id,
+    registrationId: row.registration_id,
+    returnType: row.return_type,
+    financialYear: row.financial_year,
+    periodKey: row.period_key,
+    periodLabel: row.period_label,
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
+    dueDate: row.due_date,
+    status: row.status,
+    dataReceivedOn: row.data_received_on,
+    filedOn: row.filed_on,
+    arn: row.arn,
+    updatedByName: row.updated_by_name,
+    remarks: row.remarks,
+    updatedAt: row.updated_at,
+  };
+}
+
+export const gstAPI = {
+  /**
+   * The whole register for one financial year in a single request.
+   *
+   * The grid is 136 rows by 24 columns; fetching each registration's filings
+   * separately would be 136 round trips to render one screen.
+   */
+  getRegister: async (financialYear: string) => {
+    const result = await fetchAPI(`/gst/register?fy=${encodeURIComponent(financialYear)}`);
+    return {
+      ...result,
+      data: {
+        financialYear,
+        registrations: (result.data?.registrations || []).map(transformGstRegistration),
+        filings: (result.data?.filings || []).map(transformGstFiling),
+      },
+    };
+  },
+
+  getFinancialYears: async () => {
+    const result = await fetchAPI('/gst/financial-years');
+    return { ...result, data: (result.data || []) as string[] };
+  },
+
+  /**
+   * The portal login for one registration. Always an explicit act against a
+   * named registration — credentials are never part of a list payload.
+   */
+  getCredentials: async (registrationId: string) => {
+    const result = await fetchAPI(`/gst/registrations/${encodeURIComponent(registrationId)}/credentials`);
+    return {
+      ...result,
+      data: result.data
+        ? { userId: result.data.portal_user_id, password: result.data.portal_password }
+        : null,
+    };
+  },
+
+  createRegistration: async (registration: Partial<GstRegistration> & { clientId: string; gstin: string }) => {
+    const result = await fetchAPI('/gst/registrations', {
+      method: 'POST',
+      body: JSON.stringify(registration),
+    });
+    return { ...result, data: result.data ? transformGstRegistration(result.data) : null };
+  },
+
+  updateRegistration: async (registrationId: string, updates: Partial<GstRegistration>) => {
+    const result = await fetchAPI(`/gst/registrations/${encodeURIComponent(registrationId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+    return { ...result, data: result.data ? transformGstRegistration(result.data) : null };
+  },
+
+  /**
+   * Set the state of one cell. Upsert: most periods have no row until someone
+   * first touches them, so this creates as often as it updates.
+   */
+  saveFiling: async (filing: {
+    registrationId: string;
+    returnType: GstFiling['returnType'];
+    financialYear: string;
+    periodKey: string;
+    periodLabel: string;
+    periodStart?: string | null;
+    periodEnd?: string | null;
+    dueDate?: string | null;
+    status: GstFilingStatus;
+    filedOn?: string | null;
+    dataReceivedOn?: string | null;
+    arn?: string | null;
+    remarks?: string | null;
+    updatedById?: string;
+    updatedByName?: string;
+  }) => {
+    const result = await fetchAPI('/gst/filings', {
+      method: 'PUT',
+      body: JSON.stringify(filing),
+    });
+    return { ...result, data: result.data ? transformGstFiling(result.data) : null };
   },
 };
 

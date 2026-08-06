@@ -26,17 +26,161 @@ CREATE TABLE IF NOT EXISTS users (
 -- ============================================
 -- CLIENTS TABLE
 -- ============================================
+-- One row per PAN. PAN is the firm's unique client code and is enforced as such
+-- by a partial unique index below; the GST registrations held under it live in
+-- client_gst_registrations. See add-gst-compliance-register.sql.
+--
+-- industry and contact are nullable: the Add Client form has only ever required
+-- a name, and declaring them NOT NULL meant a client without an industry failed
+-- to save.
 CREATE TABLE IF NOT EXISTS clients (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  industry TEXT NOT NULL,
+  pan TEXT,
+  firm_name TEXT,
+  -- The office's own file/group code. Not unique — a family or group of related
+  -- clients shares one ("SAHAJ", "KANJIBHAI").
+  file_number TEXT,
+  industry TEXT,
+  -- Legacy single GSTIN, kept as a mirror of the first active registration
+  -- because tasks, billing and client search all read it. The registrations
+  -- table is the source of truth.
   gst TEXT,
-  contact TEXT NOT NULL,
+  contact TEXT,
+  mobile_number TEXT,
   email TEXT,
+  email_id TEXT,
+  -- Whether an ITR is due for this PAN at all: one return per financial year, so
+  -- a flag suffices here where GST needs a table.
+  itr_applicable BOOLEAN DEFAULT TRUE,
   status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive')),
+  -- Annual fee per service. Previously declared only in an archived one-off, so
+  -- a database built from this file had none of them and the fee schedule on the
+  -- Add/Edit Client form had nowhere to land.
+  itr_fees DECIMAL(10, 2) DEFAULT 0,
+  gst_fees DECIMAL(10, 2) DEFAULT 0,
+  gst_annual_return_fees DECIMAL(10, 2) DEFAULT 0,
+  accounting_fees DECIMAL(10, 2) DEFAULT 0,
+  audit_fees DECIMAL(10, 2) DEFAULT 0,
+  company_act_fees DECIMAL(10, 2) DEFAULT 0,
+  tds_fees DECIMAL(10, 2) DEFAULT 0,
+  pf_esic_pt_labour_fees DECIMAL(10, 2) DEFAULT 0,
+  consultancy_fees DECIMAL(10, 2) DEFAULT 0,
+  total_fees DECIMAL(10, 2) DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Partial, so the clients with no PAN recorded yet do not collide on NULL.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_pan_unique ON clients (pan) WHERE pan IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_clients_file_number ON clients(file_number);
+
+-- ============================================
+-- GST REGISTRATIONS
+-- ============================================
+-- One row per GSTIN, under the client holding that PAN. A client may hold
+-- several — different states, branches or verticals — each filed separately and
+-- each on its own frequency. See add-gst-compliance-register.sql.
+CREATE TABLE IF NOT EXISTS client_gst_registrations (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  -- The office's own code for this registration ("167", "DNG-BHV", "TSSPL").
+  -- Free text on purpose: the existing codes are not all numeric.
+  code_no TEXT,
+  gstin TEXT NOT NULL UNIQUE,
+  trade_name TEXT,
+  state TEXT,
+  -- 'Composition' dealers file GSTR-4 annually instead of GSTR-1/3B, so this
+  -- changes which returns exist, not only how often they fall due.
+  filing_frequency TEXT NOT NULL DEFAULT 'Monthly'
+    CHECK (filing_frequency IN ('Monthly', 'Quarterly', 'Composition', 'Annual', 'Irregular', 'Not Applicable')),
+  -- Denormalised alongside the id: the register must stay readable after a staff
+  -- member leaves, and the id is set to NULL when they do.
+  responsible_person_id TEXT,
+  responsible_person_name TEXT,
+  billing_frequency TEXT
+    CHECK (billing_frequency IS NULL OR billing_frequency IN ('Monthly', 'Quarter', 'Half Year', 'Annual', 'NA')),
+  -- GST portal credentials. Excluded from the list endpoint and served only on
+  -- an explicit single-registration fetch. See docs/gst-compliance.md.
+  portal_user_id TEXT,
+  portal_password TEXT,
+  contact_person TEXT,
+  mobile_number TEXT,
+  email_id TEXT,
+  -- Balances as last checked on the portal: a snapshot, not a running account.
+  cash_ledger DECIMAL(14, 2) DEFAULT 0,
+  credit_ledger DECIMAL(14, 2) DEFAULT 0,
+  reclaimed_amount DECIMAL(14, 2) DEFAULT 0,
+  ledger_checked_on DATE,
+  registration_date DATE,
+  status TEXT NOT NULL DEFAULT 'Active'
+    CHECK (status IN ('Active', 'Suspended', 'Cancelled')),
+  cancellation_date DATE,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  FOREIGN KEY (responsible_person_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_gst_registrations_client ON client_gst_registrations(client_id);
+CREATE INDEX IF NOT EXISTS idx_gst_registrations_status ON client_gst_registrations(status);
+CREATE INDEX IF NOT EXISTS idx_gst_registrations_person ON client_gst_registrations(responsible_person_id);
+
+-- ============================================
+-- GST FILINGS
+-- ============================================
+-- One row per (registration, return, period) — a cell of the old spreadsheet,
+-- unpacked so it can hold more than one value.
+--
+--   Pending ──> Message Sent ──> Data Received ──> Challan Sent ──> Filed
+--      │             │                 │
+--      │             └──> Data Not Provided        └──> OTP Awaited
+--      └──> Not Applicable                         └──> Nil
+CREATE TABLE IF NOT EXISTS gst_filings (
+  id TEXT PRIMARY KEY,
+  registration_id TEXT NOT NULL,
+  return_type TEXT NOT NULL
+    CHECK (return_type IN ('GSTR-1', 'GSTR-3B', 'GSTR-4', 'GSTR-9', 'GSTR-9C', 'CMP-08', 'Other')),
+  financial_year TEXT NOT NULL,
+  -- Sortable and stable, so a period can be addressed without parsing a label:
+  -- '2026-04' monthly, '2026-27-Q1' quarterly, '2026-27' annual.
+  period_key TEXT NOT NULL,
+  -- What a person reads: "APRIL'26", "Q1 2026-27", "FY 2026-27".
+  period_label TEXT NOT NULL,
+  period_start DATE,
+  period_end DATE,
+  due_date DATE,
+  status TEXT NOT NULL DEFAULT 'Pending'
+    CHECK (status IN ('Pending', 'Message Sent', 'Data Not Provided', 'Data Received',
+                      'OTP Awaited', 'Challan Sent', 'Nil', 'Filed', 'Not Applicable')),
+  -- The half of the cell the spreadsheet could not record: a date says when it
+  -- was filed but not when the data arrived, so nothing showed how long a return
+  -- sat waiting.
+  data_received_on DATE,
+  filed_on DATE,
+  arn TEXT,
+  updated_by_id TEXT,
+  updated_by_name TEXT,
+  remarks TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  FOREIGN KEY (registration_id) REFERENCES client_gst_registrations(id) ON DELETE CASCADE,
+  FOREIGN KEY (updated_by_id) REFERENCES users(id) ON DELETE SET NULL,
+  -- Makes period generation and the Excel import idempotent: re-running either
+  -- updates the existing cell instead of creating a duplicate beside it.
+  UNIQUE (registration_id, return_type, period_key),
+  -- 'Filed' without a date is the one state that would quietly corrupt the
+  -- register: it reads as done while leaving nothing to prove when.
+  CONSTRAINT gst_filings_filed_on_required
+    CHECK ((status = 'Filed' AND filed_on IS NOT NULL) OR (status <> 'Filed' AND filed_on IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_gst_filings_year ON gst_filings(financial_year, period_key);
+CREATE INDEX IF NOT EXISTS idx_gst_filings_registration ON gst_filings(registration_id, financial_year);
+-- "What is still outstanding" — the question the spreadsheet was scanned for.
+CREATE INDEX IF NOT EXISTS idx_gst_filings_open ON gst_filings(status, due_date)
+  WHERE status NOT IN ('Filed', 'Not Applicable');
 
 -- ============================================
 -- TASKS TABLE
@@ -207,6 +351,18 @@ CREATE TRIGGER update_tasks_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_gst_registrations_updated_at ON client_gst_registrations;
+CREATE TRIGGER update_gst_registrations_updated_at
+  BEFORE UPDATE ON client_gst_registrations
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_gst_filings_updated_at ON gst_filings;
+CREATE TRIGGER update_gst_filings_updated_at
+  BEFORE UPDATE ON gst_filings
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
 -- ============================================
 -- INSERT KAPS & CO. USERS
 -- ============================================
@@ -231,24 +387,20 @@ INSERT INTO users (id, name, email, role, status, last_login, created_at) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================
--- INSERT SAMPLE CLIENTS
+-- SAMPLE CLIENTS AND TASKS — REMOVED
 -- ============================================
-INSERT INTO clients (id, name, industry, gst, contact, email, status, created_at) VALUES
-  ('client:1', 'ABC Enterprises', 'Manufacturing', '24XXXXX1234X1Z5', '9876543210', 'abc@example.com', 'Active', NOW()),
-  ('client:2', 'XYZ Corporation', 'IT Services', '24XXXXX5678X1Z9', '9876543211', 'xyz@example.com', 'Active', NOW()),
-  ('client:3', 'PQR Industries', 'Retail', '24XXXXX9012X1Z3', '9876543212', 'pqr@example.com', 'Active', NOW())
-ON CONFLICT (id) DO NOTHING;
-
--- ============================================
--- INSERT SAMPLE TASKS
--- ============================================
-INSERT INTO tasks (id, client, task, category, assigned_to, assigned_to_id, priority, status, start_date, target_date, hours_logged, budgeted_fee, estimated_hours, comments, created_at) VALUES
-  ('task:1', 'ABC Enterprises', 'GST Return Filing', 'GST', 'Harshangi Prajapati', 'user:3', 'High', 'In Progress', '2026-04-20', '2026-04-28', 4, 5000, 8, '', NOW()),
-  ('task:2', 'XYZ Corporation', 'Income Tax Return', 'Income Tax', 'Krunal Roy', 'user:2', 'Urgent', 'Pending', '2026-04-15', '2026-04-26', 0, 8000, 12, '', NOW()),
-  ('task:3', 'PQR Industries', 'Audit Report', 'Audit', 'Anjali Vasava', 'user:7', 'Medium', 'Pending', '2026-04-22', '2026-05-05', 0, 15000, 20, '', NOW()),
-  ('task:4', 'ABC Enterprises', 'TDS Return', 'Income Tax', 'Ankit Patel', 'user:9', 'High', 'In Progress', '2026-04-18', '2026-04-27', 2, 3000, 5, '', NOW()),
-  ('task:5', 'XYZ Corporation', 'Financial Statement Preparation', 'Accounts', 'Rashmin Parmar', 'user:5', 'Medium', 'Pending', '2026-04-25', '2026-05-10', 0, 12000, 16, '', NOW())
-ON CONFLICT (id) DO NOTHING;
+-- This file used to seed three demo clients (ABC Enterprises, XYZ Corporation,
+-- PQR Industries, with placeholder GSTINs of the form 24XXXXX...) and five demo
+-- tasks against them.
+--
+-- They are gone because this is not a demo database. The clients carried a
+-- GSTIN, so once add-gst-compliance-register.sql began backfilling
+-- clients.gst into the GST register they turned into three fake registrations
+-- sitting in the middle of the real compliance grid — and re-running this file
+-- would have quietly put them back.
+--
+-- The users above are real staff and are still seeded: a database with no users
+-- has nobody who can log in to create any.
 
 -- ============================================
 -- ENABLE ROW LEVEL SECURITY (OPTIONAL)

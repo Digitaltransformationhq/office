@@ -30,7 +30,12 @@ export type ChangeTopic =
   | 'billing'
   | 'notifications'
   | 'announcements'
-  | 'inquiries';
+  | 'inquiries'
+  // The GST register. One topic for both registrations and filings: the
+  // compliance grid reads them together and would refetch both either way.
+  | 'gst'
+  // The ITR register.
+  | 'itr';
 
 const CHANNEL = 'office-changes';
 const EVENT = 'changed';

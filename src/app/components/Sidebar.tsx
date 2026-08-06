@@ -3,10 +3,13 @@ import {
   LayoutDashboard, ClipboardList, Users, Inbox, Wallet, FileSpreadsheet,
   BarChart3, Settings as SettingsIcon, Building2, Calendar, Megaphone,
   FolderOpen, ClipboardCheck, CalendarDays, FileText, CalendarClock,
-  MessageCircle, HelpCircle, Database, Menu,
+  MessageCircle, HelpCircle, Database, Menu, ReceiptText, Landmark,
   X, type LucideIcon,
 } from 'lucide-react';
-import { normalizeRole, roleLabel } from '../utils/roles';
+import {
+  normalizeRole, roleLabel,
+  canAccessClients, canAccessGstCompliance, canAccessIncomeTax,
+} from '../utils/roles';
 
 interface User {
   id: string;
@@ -33,6 +36,8 @@ const ICONS: Record<string, LucideIcon> = {
   team: Users,
   users: Users,
   clients: Building2,
+  'gst-compliance': ReceiptText,
+  'income-tax': Landmark,
   inquiries: Inbox,
   billing: Wallet,
   'billing-reports': FileSpreadsheet,
@@ -76,12 +81,21 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
 
   const hasBillingAccess = user.role === 'admin' || user.email === 'audit1@kapsca.in';
 
+  // Spliced into each role's menu rather than listed per role, so the rules live
+  // in one place and cannot disagree between partner, admin and staff.
+  const deskItems: MenuItem[] = [
+    ...(canAccessClients(user) ? [{ label: 'Clients', id: 'clients' }] : []),
+    ...(canAccessGstCompliance(user) ? [{ label: 'GST Compliance', id: 'gst-compliance' }] : []),
+    ...(canAccessIncomeTax(user) ? [{ label: 'Income Tax Return', id: 'income-tax' }] : []),
+  ];
+
   const menuItems: Record<string, MenuItem[]> = {
     initialize: [{ label: 'Initialize Database', id: 'init' }],
     partner: [
       { label: 'Dashboard', id: 'dashboard' },
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
+      ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Billing', id: 'billing' },
       { label: 'Announcements', id: 'announcements' },
@@ -93,7 +107,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Dashboard', id: 'dashboard' },
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
-      { label: 'Clients', id: 'clients' },
+      ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Billing', id: 'billing' },
       { label: 'Calendar', id: 'calendar' },
@@ -108,6 +122,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Dashboard', id: 'dashboard' },
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
+      ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Announcements', id: 'announcements' },
       { label: 'Approvals', id: 'approvals' },
@@ -117,6 +132,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Dashboard', id: 'dashboard' },
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
+      ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Announcements', id: 'announcements' },
       { label: 'Leave', id: 'leave' },
@@ -220,7 +236,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
         </div>
 
         {/* Navigation */}
-        <nav className={`flex-1 overflow-y-auto pt-3 pb-2 ${compact ? 'px-2' : 'px-3'}`}>
+        <nav className={`sidebar-scroll flex-1 overflow-y-auto pt-3 pb-2 ${compact ? 'px-2' : 'px-3'}`}>
           {filteredMenu.map((item) => {
             const Icon = ICONS[item.id] ?? LayoutDashboard;
             const parked = COMING_SOON.has(item.id);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { KPICard } from './KPICard';
+import { ITRBillingQueue } from './ITRBillingQueue';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
 import { Button } from './Button';
 import { Input } from './Input';
@@ -26,7 +27,7 @@ interface BillingProps {
   };
 }
 
-type TabId = 'revenue' | 'fees';
+type TabId = 'revenue' | 'fees' | 'itr';
 
 export function Billing({ user }: BillingProps) {
   const [records, setRecords] = useState<BillingRecord[]>([]);
@@ -158,6 +159,7 @@ export function Billing({ user }: BillingProps) {
         {([
           { id: 'revenue' as TabId, label: 'Revenue analytics' },
           { id: 'fees' as TabId, label: 'Client fee structure' },
+          { id: 'itr' as TabId, label: 'ITR billing' },
         ]).map(t => (
           <button
             key={t.id}
@@ -173,7 +175,11 @@ export function Billing({ user }: BillingProps) {
         ))}
       </div>
 
-      {tab === 'revenue' ? (
+      {tab === 'itr' ? (
+        /* Accounts is not given the ITR register itself — see canAccessIncomeTax
+           in utils/roles — so the queue lives here, where they already are. */
+        <ITRBillingQueue currentUser={user ?? null} />
+      ) : tab === 'revenue' ? (
         <div className="space-y-4">
           {/* Range filter — one row above the charts */}
           <div className="flex flex-wrap items-center gap-2">

@@ -51,3 +51,51 @@ export function roleLabel(role: string | null | undefined): string {
   const r = normalizeRole(role);
   return r ? LABELS[r] : 'Unknown';
 }
+
+/**
+ * Section access.
+ *
+ * Most sections are gated by role. These three are also gated by desk: the GST
+ * register and the income-tax list are each run by one staff member, who needs
+ * them without being made a partner. Same shape as the existing Billing rule,
+ * which lets audit1@kapsca.in in.
+ *
+ * Defined here, not in Sidebar, because the menu and the route in App.tsx must
+ * agree. Anywhere they differ produces either an item that is visible and then
+ * refuses to open, or a section hidden from the menu but still reachable by a
+ * typed view or a stale link.
+ */
+const GST_DESK = 'gst1@kapsca.in';
+const ITR_DESK = 'caoffice@kapsca.in';
+
+/** What every access check needs to know about the signed-in user. */
+export interface AccessUser {
+  role?: string | null;
+  email?: string | null;
+}
+
+/** Stored addresses vary in case and carry stray whitespace; compare normalised. */
+function emailOf(user: AccessUser | null | undefined): string {
+  return (user?.email || '').trim().toLowerCase();
+}
+
+function isPartnerOrAdmin(user: AccessUser | null | undefined): boolean {
+  const role = normalizeRole(user?.role);
+  return role === 'admin' || role === 'partner';
+}
+
+/** The client master. Both desks need it — each keeps its own list current. */
+export function canAccessClients(user: AccessUser | null | undefined): boolean {
+  if (!user) return false;
+  return isPartnerOrAdmin(user) || emailOf(user) === GST_DESK || emailOf(user) === ITR_DESK;
+}
+
+export function canAccessGstCompliance(user: AccessUser | null | undefined): boolean {
+  if (!user) return false;
+  return isPartnerOrAdmin(user) || emailOf(user) === GST_DESK;
+}
+
+export function canAccessIncomeTax(user: AccessUser | null | undefined): boolean {
+  if (!user) return false;
+  return isPartnerOrAdmin(user) || emailOf(user) === ITR_DESK;
+}

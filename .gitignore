@@ -30,3 +30,23 @@ Thumbs.db
 
 # Supabase CLI local state
 supabase/.temp/
+
+# Client data. The GST and ITR workbooks carry every client's PAN, GSTIN,
+# contact details and GST portal password, and the SQL generated from them
+# carries the same. None of it belongs in version control — the repo deploys to
+# Vercel on push. Regenerate the import with scripts/import-gst-report.py when
+# it is needed. See docs/gst-compliance.md.
+*.xlsx
+*.xls
+gst-import*.sql
+gst-annual*.sql
+itr-import*.sql
+
+# Python bytecode from scripts/
+__pycache__/
+*.pyc
+
+# Generated client imports (PII + portal passwords)
+nonfilers*.sql
+
+itr-import*.sql

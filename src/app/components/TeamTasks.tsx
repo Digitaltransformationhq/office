@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { tasksAPI, usersAPI } from '../services/api';
-import { ChevronDown, Users } from 'lucide-react';
+import { Users, ArrowRight } from 'lucide-react';
 import { UserManagement } from './UserManagement';
 import { useLiveData } from '../hooks/useLiveData';
-import { statusColor, statusLabel, isOpenTask } from '../utils/taskStatus';
+import { isOpenTask } from '../utils/taskStatus';
+import { TeamWorkloadModal } from './TeamWorkloadModal';
 
 interface Task {
   id: string;
@@ -29,12 +30,6 @@ interface User {
 
 const NAVY = '#1b365d';
 
-function priorityMeta(p: string) {
-  if (p === 'Urgent' || p === 'High') return { dot: '#ef4444', accent: '#ef4444' };
-  if (p === 'Medium') return { dot: '#f59e0b', accent: '#f59e0b' };
-  return { dot: '#94a3b8', accent: 'transparent' };
-}
-
 function initials(name?: string) {
   if (!name) return '—';
   const parts = name.trim().split(/\s+/);
@@ -57,7 +52,7 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedUser, setSelectedUser] = useState<string>('all');
+  const [viewing, setViewing] = useState<{ id: string; name: string; role?: string } | null>(null);
   const [tab, setTab] = useState<'workload' | 'users'>('workload');
   const isAdmin = user?.role === 'admin';
 
@@ -80,7 +75,6 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
 
   const staffMembers = users.filter(u => u.role === 'team-member' || u.role === 'team-leader');
   const pendingTasks = tasks.filter(t => isOpenTask(t.status));
-  const filteredTasks = selectedUser === 'all' ? pendingTasks : pendingTasks.filter(t => t.assignedToId === selectedUser);
   const isHigh = (p: string) => p === 'High' || p === 'Urgent';
 
   return (
@@ -113,10 +107,15 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
       {isAdmin && tab === 'users' && <UserManagement embedded />}
 
       {(!isAdmin || tab === 'workload') && (
+        loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#1b365d] border-t-transparent" />
+          </div>
+        ) : (
         <>
       {/* All-staff summary — a distinct navy banner, set apart from the member tiles */}
       <button
-        onClick={() => setSelectedUser('all')}
+        onClick={() => setViewing({ id: 'all', name: 'All Staff' })}
         className="flex flex-wrap items-center justify-between gap-5 rounded-xl px-5 py-4 text-left transition-all"
         style={{ background: 'linear-gradient(135deg, #1b365d 0%, #0f2039 100%)' }}
       >
@@ -146,12 +145,12 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
         {staffMembers.map(user => {
           const userPending = pendingTasks.filter(t => t.assignedToId === user.id);
           const load = workload(userPending.length);
-          const selected = selectedUser === user.id;
           return (
             <button
               key={user.id}
-              onClick={() => setSelectedUser(user.id)}
-              className={`flex flex-col rounded-xl border p-4 text-left transition-all ${selected ? 'border-[#1b365d] bg-[rgba(27,54,93,0.04)]' : 'border-[#E7EDF4] bg-white hover:border-[#d5dfea] hover:shadow-sm'}`}
+              onClick={() => setViewing({ id: user.id, name: user.name, role: user.role })}
+              title={`View ${user.name}'s pending tasks`}
+              className="group flex flex-col rounded-xl border border-[#E7EDF4] bg-white p-4 text-left transition-all hover:border-[#d5dfea] hover:shadow-sm"
             >
               <div className="flex items-center gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold" style={{ backgroundColor: 'rgba(27,54,93,0.08)', color: NAVY }}>
@@ -168,102 +167,30 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
                   <p className="text-2xl font-semibold leading-none" style={{ color: NAVY }}>{userPending.length}</p>
                   <p className="mt-1 text-xs text-muted-foreground">pending tasks</p>
                 </div>
-                <p className="text-xs text-muted-foreground">{userPending.filter(t => isHigh(t.priority)).length} high priority</p>
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors group-hover:text-[#1b365d]">
+                  {userPending.filter(t => isHigh(t.priority)).length} high priority
+                  <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
+                </span>
               </div>
             </button>
           );
         })}
       </div>
 
-      {/* Task list */}
-      <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
-        <div className="flex flex-col gap-3 border-b border-[#E7EDF4] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-sm font-semibold" style={{ color: NAVY }}>Pending Tasks</h2>
-            <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">{filteredTasks.length}</span>
-          </div>
-          <div className="relative inline-flex">
-            <select
-              value={selectedUser}
-              onChange={e => setSelectedUser(e.target.value)}
-              className="appearance-none rounded-lg border border-[#E7EDF4] bg-white py-2 pl-3 pr-9 text-sm text-foreground/80 outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
-            >
-              <option value="all">All staff ({pendingTasks.length})</option>
-              {staffMembers.map(user => (
-                <option key={user.id} value={user.id}>
-                  {user.name} ({pendingTasks.filter(t => t.assignedToId === user.id).length})
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          </div>
-        </div>
-
-        <div className="p-4">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#1b365d] border-t-transparent" />
-            </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">No pending tasks found.</div>
-          ) : (
-            <div className="space-y-3">
-              {filteredTasks.map(task => {
-                const pm = priorityMeta(task.priority);
-                const overdue = task.targetDate && new Date(task.targetDate) < new Date();
-                return (
-                  <div
-                    key={task.id}
-                    className="rounded-xl border border-[#E7EDF4] p-4 transition-all hover:border-[#d5dfea] hover:shadow-[0_10px_30px_-20px_rgba(10,23,40,0.5)]"
-                    style={{ borderLeftWidth: '3px', borderLeftColor: pm.accent === 'transparent' ? '#E7EDF4' : pm.accent }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold" style={{ color: NAVY }}>{task.task}</p>
-                        <p className="truncate text-xs text-muted-foreground">{task.client}</p>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1.5">
-                        <span className={`whitespace-nowrap rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
-                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-foreground/70">
-                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pm.dot }} />
-                          {task.priority}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#F1F4F8] pt-3 text-xs sm:grid-cols-4">
-                      <Meta label="Assigned to">
-                        <span className="flex items-center gap-1.5">
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full text-[0.55rem] font-semibold" style={{ backgroundColor: 'rgba(27,54,93,0.08)', color: NAVY }}>{initials(task.assignedTo)}</span>
-                          <span className="truncate" style={{ color: NAVY }}>{task.assignedTo}</span>
-                        </span>
-                      </Meta>
-                      <Meta label="Category"><span style={{ color: NAVY }}>{task.category || '—'}</span></Meta>
-                      <Meta label="Start"><span style={{ color: NAVY }}>{task.startDate ? new Date(task.startDate).toLocaleDateString('en-IN') : '—'}</span></Meta>
-                      <Meta label="Target">
-                        <span className={overdue ? 'font-medium text-[#c0392b]' : ''} style={overdue ? undefined : { color: NAVY }}>
-                          {task.targetDate ? new Date(task.targetDate).toLocaleDateString('en-IN') : '—'}
-                        </span>
-                      </Meta>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
         </>
+        )
       )}
-    </div>
-  );
-}
 
-function Meta({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{label}</p>
-      <p className="mt-0.5 truncate text-[0.8rem] font-medium">{children}</p>
+      {viewing && (
+        <TeamWorkloadModal
+          title={viewing.id === 'all' ? 'All Staff' : viewing.name}
+          subtitle={viewing.id === 'all' ? `${staffMembers.length} members` : roleLabel(viewing.role || '')}
+          initials={viewing.id === 'all' ? undefined : initials(viewing.name)}
+          tasks={viewing.id === 'all' ? pendingTasks : pendingTasks.filter(t => t.assignedToId === viewing.id)}
+          showAssignee={viewing.id === 'all'}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   );
 }

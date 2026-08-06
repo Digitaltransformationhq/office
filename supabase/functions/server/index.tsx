@@ -1538,31 +1538,91 @@ app.get('/make-server-0abfa7cf/clients', async (c) => {
   }
 });
 
+/**
+ * The client form's field names, mapped to their columns.
+ *
+ * Both directions of this were broken. The create endpoint listed five fields by
+ * hand and read `body.gst` while the form sends `gstin`, so PAN, firm name, GSTIN
+ * and all nine fee amounts were silently discarded on every new client. The
+ * update endpoint passed the request body straight to Postgres, which has no
+ * `firmName` or `itrFees` column, so editing a client failed outright.
+ */
+const CLIENT_COLUMNS: Record<string, string> = {
+  name: 'name',
+  firmName: 'firm_name',
+  fileNumber: 'file_number',
+  industry: 'industry',
+  pan: 'pan',
+  contact: 'contact',
+  mobileNumber: 'mobile_number',
+  email: 'email',
+  emailId: 'email_id',
+  status: 'status',
+  clientType: 'client_type',
+  itrApplicable: 'itr_applicable',
+  itrFees: 'itr_fees',
+  gstFees: 'gst_fees',
+  gstAnnualReturnFees: 'gst_annual_return_fees',
+  accountingFees: 'accounting_fees',
+  auditFees: 'audit_fees',
+  companyActFees: 'company_act_fees',
+  tdsFees: 'tds_fees',
+  pfEsicPtLabourFees: 'pf_esic_pt_labour_fees',
+  consultancyFees: 'consultancy_fees',
+  totalFees: 'total_fees',
+};
+
+/** Uppercased and trimmed, with an empty string becoming NULL so the partial
+ *  unique index on PAN treats "not recorded" as absent rather than as a value. */
+function normaliseCode(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toUpperCase();
+  return trimmed || null;
+}
+
+function toClientRow(body: Record<string, any>) {
+  const row: Record<string, any> = {};
+  for (const [field, column] of Object.entries(CLIENT_COLUMNS)) {
+    if (body[field] !== undefined) row[column] = body[field];
+  }
+  if ('pan' in row) row.pan = normaliseCode(row.pan);
+  // The form calls it gstin; the column is the legacy `gst`. Kept as a mirror of
+  // the primary registration — client_gst_registrations is the source of truth.
+  const gstin = body.gstin ?? body.gst;
+  if (gstin !== undefined) row.gst = normaliseCode(gstin);
+  return row;
+}
+
 app.post('/make-server-0abfa7cf/clients', async (c) => {
   try {
     const body = await c.req.json();
-    const clientId = `client:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    if (!body.name) {
+      return c.json({ success: false, error: 'Client name is required' }, 400);
+    }
 
-    const client = {
-      id: clientId,
-      name: body.name,
-      industry: body.industry,
-      gst: body.gst,
-      contact: body.contact,
-      email: body.email,
-      status: body.status || 'Active',
-    };
+    const row = toClientRow(body);
 
-    const { data, error } = await supabase
-      .from('clients')
-      .insert([client])
-      .select()
-      .single();
+    // PAN is the client's unique code, so a second client under an existing PAN
+    // is a mistake worth naming rather than a constraint violation to relay.
+    if (row.pan) {
+      const { data: clash } = await supabase
+        .from('clients').select('id, name').eq('pan', row.pan).maybeSingle();
+      if (clash) {
+        return c.json({
+          success: false,
+          error: `PAN ${row.pan} already belongs to ${clash.name}`,
+          existingClientId: clash.id,
+        }, 409);
+      }
+    }
 
+    row.id = `client:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    row.status = row.status || 'Active';
+
+    const { data, error } = await supabase.from('clients').insert([row]).select().single();
     if (error) throw error;
 
     await broadcastChange('clients');
-
 
     return c.json({ success: true, data });
   } catch (error) {
@@ -1575,10 +1635,23 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
   try {
     const clientId = c.req.param('clientId');
     const body = await c.req.json();
+    const row = toClientRow(body);
+
+    if (row.pan) {
+      const { data: clash } = await supabase
+        .from('clients').select('id, name').eq('pan', row.pan).neq('id', clientId).maybeSingle();
+      if (clash) {
+        return c.json({
+          success: false,
+          error: `PAN ${row.pan} already belongs to ${clash.name}`,
+          existingClientId: clash.id,
+        }, 409);
+      }
+    }
 
     const { data, error } = await supabase
       .from('clients')
-      .update(body)
+      .update(row)
       .eq('id', clientId)
       .select()
       .single();
@@ -1587,11 +1660,572 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
 
     await broadcastChange('clients');
 
-
     return c.json({ success: true, data });
   } catch (error) {
     console.log('Error updating client:', error);
-    return c.json({ success: false, error: 'Failed to update client' }, 500);
+    return c.json({ success: false, error: 'Failed to update client', details: String(error) }, 500);
+  }
+});
+
+// ============================================
+// ITR REGISTER
+// ============================================
+// See docs/itr-register.md. clients (PAN) -> itr_filings (one per year).
+// No separate ITR client table: 89% of the control list is already in clients.
+
+const ITR_FILING_COLUMNS: Record<string, string> = {
+  itrForm: 'itr_form',
+  status: 'status',
+  dataNote: 'data_note',
+  statusNote: 'status_note',
+  partnerRemark: 'partner_remark',
+  regime: 'regime',
+  filedOn: 'filed_on',
+  acknowledgementNo: 'acknowledgement_no',
+  isAudit: 'is_audit',
+  businessIncome: 'business_income',
+  dueDate: 'due_date',
+  cpc: 'cpc',
+  itrV: 'itr_v',
+  computation: 'computation',
+  financialStatement: 'financial_statement',
+  challan: 'challan',
+  wpGroup: 'wp_group',
+  responsiblePersonId: 'responsible_person_id',
+  responsiblePersonName: 'responsible_person_name',
+  remarks: 'remarks',
+};
+
+/**
+ * The register for one financial year: every return, with its client.
+ *
+ * One request for the whole year. The screen is a few hundred rows and fetching
+ * the client per row would be a few hundred round trips to paint it.
+ */
+app.get('/make-server-0abfa7cf/itr/register', async (c) => {
+  try {
+    const financialYear = c.req.query('fy');
+    if (!financialYear) {
+      return c.json({ success: false, error: 'fy query parameter is required' }, 400);
+    }
+
+    const { data, error } = await supabase
+      .from('itr_filings')
+      .select('*, clients ( id, name, pan, file_number, client_type )')
+      .eq('financial_year', financialYear)
+      .order('id', { ascending: true });
+
+    if (error) throw error;
+
+    return c.json({ success: true, data: { financialYear, filings: data || [] } });
+  } catch (error) {
+    console.log('Error fetching ITR register:', error);
+    return c.json({ success: false, error: 'Failed to fetch the ITR register', details: String(error) }, 500);
+  }
+});
+
+/**
+ * The returns waiting on Accounts, plus the ones Accounts has sent back.
+ *
+ * Both in one call: the billing screen shows them together, and a return that
+ * has bounced is the first thing the person raising invoices needs to see.
+ */
+app.get('/make-server-0abfa7cf/itr/billing-queue', async (c) => {
+  try {
+    const financialYear = c.req.query('fy');
+    let query = supabase
+      .from('itr_filings')
+      .select('*, clients ( id, name, pan, file_number, client_type, itr_fees )')
+      .in('billing_status', ['Pending', 'Returned'])
+      .order('filed_on', { ascending: true });
+
+    if (financialYear) query = query.eq('financial_year', financialYear);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return c.json({ success: true, data: data || [] });
+  } catch (error) {
+    console.log('Error fetching the ITR billing queue:', error);
+    return c.json({ success: false, error: 'Failed to fetch the billing queue', details: String(error) }, 500);
+  }
+});
+
+/** Accounts raises the invoice. */
+app.put('/make-server-0abfa7cf/itr/filings/:id/bill', async (c) => {
+  try {
+    const body = await c.req.json();
+    const billNumber = String(body.billNumber || '').trim();
+    if (!billNumber) {
+      return c.json({ success: false, error: 'A bill number is required' }, 400);
+    }
+
+    const { data, error } = await supabase
+      .from('itr_filings')
+      .update({
+        billing_status: 'Billed',
+        bill_number: billNumber,
+        bill_date: body.billDate || new Date().toISOString().slice(0, 10),
+        acknowledgement_no: body.acknowledgementNo || null,
+        billing_remarks: body.remarks || null,
+        billed_by_id: body.billedById || null,
+        billed_by_name: body.billedByName || null,
+        billed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', c.req.param('id'))
+      .select('*, clients ( id, name, pan, file_number, client_type, itr_fees )')
+      .single();
+
+    if (error) throw error;
+
+    await broadcastChange('itr');
+    await broadcastChange('billing');
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error billing the ITR return:', error);
+    return c.json({ success: false, error: 'Failed to record the bill', details: String(error) }, 500);
+  }
+});
+
+/**
+ * Accounts sends it back for correction.
+ *
+ * A reason is required. "Sent back" with no explanation puts the return in a
+ * queue nobody can act on, which is worse than not sending it back at all.
+ */
+app.put('/make-server-0abfa7cf/itr/filings/:id/return', async (c) => {
+  try {
+    const body = await c.req.json();
+    const reason = String(body.reason || '').trim();
+    if (!reason) {
+      return c.json({ success: false, error: 'A reason is required to send a return back' }, 400);
+    }
+
+    const id = c.req.param('id');
+    const { data: current } = await supabase
+      .from('itr_filings').select('return_count').eq('id', id).maybeSingle();
+
+    const { data, error } = await supabase
+      .from('itr_filings')
+      .update({
+        billing_status: 'Returned',
+        returned_reason: reason,
+        returned_by_id: body.returnedById || null,
+        returned_by_name: body.returnedByName || null,
+        returned_at: new Date().toISOString(),
+        return_count: (current?.return_count || 0) + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select('*, clients ( id, name, pan, file_number, client_type, itr_fees )')
+      .single();
+
+    if (error) throw error;
+
+    await broadcastChange('itr');
+    await broadcastChange('billing');
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error returning the ITR filing:', error);
+    return c.json({ success: false, error: 'Failed to send the return back', details: String(error) }, 500);
+  }
+});
+
+/** Which financial years the register holds returns for. */
+app.get('/make-server-0abfa7cf/itr/financial-years', async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from('itr_filings')
+      .select('financial_year')
+      .order('financial_year', { ascending: false });
+
+    if (error) throw error;
+
+    return c.json({ success: true, data: [...new Set((data || []).map((r: any) => r.financial_year))] });
+  } catch (error) {
+    console.log('Error fetching ITR financial years:', error);
+    return c.json({ success: false, error: 'Failed to fetch financial years' }, 500);
+  }
+});
+
+/**
+ * Create or update one return.
+ *
+ * Upsert on (client, year), the same key the import uses, so the two cannot
+ * produce competing rows for one client's year.
+ */
+app.put('/make-server-0abfa7cf/itr/filings', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { clientId, financialYear } = body;
+
+    if (!clientId || !financialYear) {
+      return c.json({ success: false, error: 'clientId and financialYear are required' }, 400);
+    }
+
+    const row = pickColumns(body, ITR_FILING_COLUMNS);
+    row.id = `itrfil:${clientId.replace(/^client:pan:/, '')}:${financialYear}`;
+    row.client_id = clientId;
+    row.financial_year = financialYear;
+    row.updated_by_id = body.updatedById || null;
+    row.updated_by_name = body.updatedByName || null;
+    row.updated_at = new Date().toISOString();
+
+    // Unlike GST, a filed return may legitimately have no date — two rows on the
+    // control list say only "DONE". Moving OUT of Filed still clears it, so a
+    // stale date cannot linger against a return that is no longer filed.
+    if (row.status !== undefined && row.status !== 'Filed') row.filed_on = null;
+
+    /*
+     * Filing hands the return to Accounts. Done here rather than in the browser
+     * so it holds however the status was changed, and read from the stored row
+     * rather than trusted from the request: a client that has already been
+     * billed must not be dragged back into the queue by someone re-saving the
+     * return, and one Accounts has sent back must not silently un-return itself.
+     */
+    if (row.status !== undefined) {
+      const { data: current } = await supabase
+        .from('itr_filings')
+        .select('billing_status')
+        .eq('client_id', clientId)
+        .eq('financial_year', financialYear)
+        .maybeSingle();
+
+      const billing = current?.billing_status || 'Not Ready';
+
+      if (row.status === 'Filed') {
+        // 'Returned' also becomes 'Pending': re-filing after a correction is
+        // exactly the act of sending it back to Accounts.
+        if (billing === 'Not Ready' || billing === 'Returned') row.billing_status = 'Pending';
+      } else if (billing === 'Pending') {
+        // Un-filed before anyone invoiced it — take it back out of the queue.
+        row.billing_status = 'Not Ready';
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('itr_filings')
+      .upsert([row], { onConflict: 'client_id,financial_year' })
+      .select('*, clients ( id, name, pan, file_number, client_type )')
+      .single();
+
+    if (error) throw error;
+
+    await broadcastChange('itr');
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error saving ITR filing:', error);
+    return c.json({ success: false, error: 'Failed to save the return', details: String(error) }, 500);
+  }
+});
+
+// ============================================
+// GST COMPLIANCE REGISTER
+// ============================================
+// See docs/gst-compliance.md. clients (PAN) -> client_gst_registrations (GSTIN)
+// -> gst_filings (one row per return per period).
+
+/**
+ * Everything about a registration except the portal login.
+ *
+ * Credentials are fetched separately and deliberately: the compliance grid lists
+ * every registration in one call, and putting passwords in that payload would
+ * put all 136 of them in the browser of anyone who opened the screen.
+ */
+const GST_REGISTRATION_FIELDS = `
+  id, client_id, code_no, gstin, trade_name, state, filing_frequency,
+  responsible_person_id, responsible_person_name, billing_frequency,
+  contact_person, mobile_number, email_id,
+  cash_ledger, credit_ledger, reclaimed_amount, ledger_checked_on,
+  registration_date, status, cancellation_date, notes, created_at, updated_at
+`;
+
+const GST_REGISTRATION_COLUMNS: Record<string, string> = {
+  clientId: 'client_id',
+  codeNo: 'code_no',
+  gstin: 'gstin',
+  tradeName: 'trade_name',
+  state: 'state',
+  filingFrequency: 'filing_frequency',
+  responsiblePersonId: 'responsible_person_id',
+  responsiblePersonName: 'responsible_person_name',
+  billingFrequency: 'billing_frequency',
+  portalUserId: 'portal_user_id',
+  portalPassword: 'portal_password',
+  contactPerson: 'contact_person',
+  mobileNumber: 'mobile_number',
+  emailId: 'email_id',
+  cashLedger: 'cash_ledger',
+  creditLedger: 'credit_ledger',
+  reclaimedAmount: 'reclaimed_amount',
+  ledgerCheckedOn: 'ledger_checked_on',
+  registrationDate: 'registration_date',
+  status: 'status',
+  cancellationDate: 'cancellation_date',
+  notes: 'notes',
+};
+
+const GST_FILING_COLUMNS: Record<string, string> = {
+  returnType: 'return_type',
+  financialYear: 'financial_year',
+  periodKey: 'period_key',
+  periodLabel: 'period_label',
+  periodStart: 'period_start',
+  periodEnd: 'period_end',
+  dueDate: 'due_date',
+  status: 'status',
+  dataReceivedOn: 'data_received_on',
+  filedOn: 'filed_on',
+  arn: 'arn',
+  remarks: 'remarks',
+};
+
+function pickColumns(body: Record<string, any>, map: Record<string, string>) {
+  const row: Record<string, any> = {};
+  for (const [field, column] of Object.entries(map)) {
+    if (body[field] !== undefined) row[column] = body[field];
+  }
+  return row;
+}
+
+/**
+ * The register for one financial year: every registration, plus that year's
+ * filings, in a single request.
+ *
+ * The grid is 136 rows by 24 columns. Fetching filings per registration would be
+ * 136 round trips to render one screen.
+ */
+app.get('/make-server-0abfa7cf/gst/register', async (c) => {
+  try {
+    const financialYear = c.req.query('fy');
+    if (!financialYear) {
+      return c.json({ success: false, error: 'fy query parameter is required' }, 400);
+    }
+
+    const [registrations, filings] = await Promise.all([
+      supabase
+        .from('client_gst_registrations')
+        .select(`${GST_REGISTRATION_FIELDS}, clients ( id, name, pan, file_number )`)
+        .order('code_no', { ascending: true }),
+      supabase
+        .from('gst_filings')
+        .select('*')
+        .eq('financial_year', financialYear)
+        .order('period_key', { ascending: true }),
+    ]);
+
+    if (registrations.error) throw registrations.error;
+    if (filings.error) throw filings.error;
+
+    return c.json({
+      success: true,
+      data: {
+        financialYear,
+        registrations: registrations.data || [],
+        filings: filings.data || [],
+      },
+    });
+  } catch (error) {
+    console.log('Error fetching GST register:', error);
+    return c.json({ success: false, error: 'Failed to fetch GST register', details: String(error) }, 500);
+  }
+});
+
+/** Which financial years the register holds anything for. */
+app.get('/make-server-0abfa7cf/gst/financial-years', async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from('gst_filings')
+      .select('financial_year')
+      .order('financial_year', { ascending: false });
+
+    if (error) throw error;
+
+    const years = [...new Set((data || []).map((r: any) => r.financial_year))];
+    return c.json({ success: true, data: years });
+  } catch (error) {
+    console.log('Error fetching GST financial years:', error);
+    return c.json({ success: false, error: 'Failed to fetch financial years' }, 500);
+  }
+});
+
+app.get('/make-server-0abfa7cf/gst/registrations/:id', async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from('client_gst_registrations')
+      .select(`${GST_REGISTRATION_FIELDS}, clients ( id, name, pan, file_number )`)
+      .eq('id', c.req.param('id'))
+      .single();
+
+    if (error) throw error;
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error fetching GST registration:', error);
+    return c.json({ success: false, error: 'Failed to fetch registration' }, 500);
+  }
+});
+
+/**
+ * The portal login for one registration.
+ *
+ * Separate from every other read so that fetching a password is always a
+ * deliberate act against a named registration, never a side effect of opening a
+ * list. There is no per-role restriction on it yet — see the credentials section
+ * of docs/gst-compliance.md.
+ */
+app.get('/make-server-0abfa7cf/gst/registrations/:id/credentials', async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from('client_gst_registrations')
+      .select('id, gstin, portal_user_id, portal_password')
+      .eq('id', c.req.param('id'))
+      .single();
+
+    if (error) throw error;
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error fetching GST credentials:', error);
+    return c.json({ success: false, error: 'Failed to fetch credentials' }, 500);
+  }
+});
+
+app.post('/make-server-0abfa7cf/gst/registrations', async (c) => {
+  try {
+    const body = await c.req.json();
+    const gstin = typeof body.gstin === 'string' ? body.gstin.trim().toUpperCase() : '';
+
+    if (!gstin) return c.json({ success: false, error: 'GSTIN is required' }, 400);
+    if (!body.clientId) return c.json({ success: false, error: 'clientId is required' }, 400);
+
+    // A GSTIN is unique nationally, so the same registration appearing under a
+    // second client is always a mistake — and one worth naming, because the
+    // likely cause is the client having been entered twice.
+    const { data: clash } = await supabase
+      .from('client_gst_registrations')
+      .select('id, client_id, clients ( name )')
+      .eq('gstin', gstin)
+      .maybeSingle();
+
+    if (clash) {
+      const owner = (clash as any).clients?.name || clash.client_id;
+      return c.json({
+        success: false,
+        error: `GSTIN ${gstin} is already registered under ${owner}`,
+        existingRegistrationId: clash.id,
+      }, 409);
+    }
+
+    const row = pickColumns(body, GST_REGISTRATION_COLUMNS);
+    row.gstin = gstin;
+    row.id = `gstreg:${gstin}`;
+    row.status = row.status || 'Active';
+    row.filing_frequency = row.filing_frequency || 'Monthly';
+
+    const { data, error } = await supabase
+      .from('client_gst_registrations')
+      .insert([row])
+      .select(GST_REGISTRATION_FIELDS)
+      .single();
+
+    if (error) throw error;
+
+    await broadcastChange('gst');
+    await broadcastChange('clients');
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error creating GST registration:', error);
+    return c.json({ success: false, error: 'Failed to create registration', details: String(error) }, 500);
+  }
+});
+
+app.put('/make-server-0abfa7cf/gst/registrations/:id', async (c) => {
+  try {
+    const body = await c.req.json();
+    const row = pickColumns(body, GST_REGISTRATION_COLUMNS);
+
+    // The GSTIN is the row's identity and the id is derived from it. Changing it
+    // would silently orphan every filing already recorded against it, so a
+    // correction means deleting the registration and adding it again.
+    delete row.gstin;
+
+    const { data, error } = await supabase
+      .from('client_gst_registrations')
+      .update(row)
+      .eq('id', c.req.param('id'))
+      .select(GST_REGISTRATION_FIELDS)
+      .single();
+
+    if (error) throw error;
+
+    await broadcastChange('gst');
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error updating GST registration:', error);
+    return c.json({ success: false, error: 'Failed to update registration', details: String(error) }, 500);
+  }
+});
+
+/**
+ * Set the state of one cell of the register.
+ *
+ * Upsert rather than update, because most cells have no row yet: the import only
+ * writes periods that were worked on, so the first time anyone touches a month
+ * it is being created, not edited. Keyed on
+ * (registration, return type, period) — the same key the import uses, so the two
+ * cannot produce competing rows for one cell.
+ */
+app.put('/make-server-0abfa7cf/gst/filings', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { registrationId, returnType, periodKey } = body;
+
+    if (!registrationId || !returnType || !periodKey) {
+      return c.json({
+        success: false,
+        error: 'registrationId, returnType and periodKey are required',
+      }, 400);
+    }
+
+    const row = pickColumns(body, GST_FILING_COLUMNS);
+    row.id = `gstfil:${registrationId.replace(/^gstreg:/, '')}:${returnType}:${periodKey}`;
+    row.registration_id = registrationId;
+    row.return_type = returnType;
+    row.period_key = periodKey;
+    row.updated_by_id = body.updatedById || null;
+    row.updated_by_name = body.updatedByName || null;
+    row.updated_at = new Date().toISOString();
+
+    // The database rejects 'Filed' without a date and any other status with one.
+    // Clearing the counterpart here means moving a cell back out of Filed just
+    // works, instead of failing on a constraint the user never sees.
+    if (row.status === 'Filed') {
+      if (!row.filed_on) row.filed_on = new Date().toISOString().slice(0, 10);
+    } else if (row.status !== undefined) {
+      row.filed_on = null;
+    }
+
+    const { data, error } = await supabase
+      .from('gst_filings')
+      .upsert([row], { onConflict: 'registration_id,return_type,period_key' })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await broadcastChange('gst');
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error saving GST filing:', error);
+    return c.json({ success: false, error: 'Failed to save filing', details: String(error) }, 500);
   }
 });
 

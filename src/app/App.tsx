@@ -25,8 +25,11 @@ import { InquiryManagement } from './components/InquiryManagement';
 import { ToastProvider } from './components/Toast';
 import { Reports } from './components/Reports';
 import { ClientManagement } from './components/ClientManagement';
+import { GSTCompliance } from './components/GSTCompliance';
+import { ITRRegister } from './components/ITRRegister';
 import { enablePush, pushPermission } from './services/push';
 import { viewForType, typeFromUrl, NOTIF_PARAM } from './utils/notifications';
+import { canAccessClients, canAccessGstCompliance, canAccessIncomeTax } from './utils/roles';
 
 interface User {
   id: string;
@@ -218,8 +221,22 @@ export default function App() {
         // Users are now managed inside the Team section
         setActiveView('team-tasks');
         return null;
+      /**
+       * Both gated by the same rules the sidebar builds its menu from — see
+       * canAccessClients / canAccessGstCompliance in utils/roles. Checked here
+       * as well as there, so a typed view or a stale link cannot reach a section
+       * the menu does not offer.
+       */
       case 'clients':
-        if (user && user.role === 'admin') return <ClientManagement />;
+        if (canAccessClients(user)) return <ClientManagement />;
+        if (user) setActiveView(user.role);
+        return null;
+      case 'gst-compliance':
+        if (canAccessGstCompliance(user)) return <GSTCompliance currentUser={user} />;
+        if (user) setActiveView(user.role);
+        return null;
+      case 'income-tax':
+        if (canAccessIncomeTax(user)) return <ITRRegister currentUser={user} />;
         if (user) setActiveView(user.role);
         return null;
       case 'leave':
