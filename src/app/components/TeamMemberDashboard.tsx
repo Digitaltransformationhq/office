@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { KPICard } from './KPICard';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
 import { tasksAPI } from '../services/api';
 import { CreateInquiryModal } from './CreateInquiryModal';
 import { CreateTaskModal } from './CreateTaskModal';
@@ -59,6 +58,21 @@ interface TaskAction {
   short: string;
   tone: keyof typeof cardActionTone;
   run: () => void;
+}
+
+/** Priority as a dot, the same three colours the Tasks section uses. */
+function priorityDot(p: string) {
+  if (p === 'Urgent' || p === 'High') return '#ef4444';
+  if (p === 'Medium') return '#f59e0b';
+  return '#94a3b8';
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="px-3 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+      {children}
+    </th>
+  );
 }
 
 const shortDate = (d?: string) =>
@@ -474,79 +488,104 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                   ))}
                 </div>
 
-                {/* Desktop — the table already labels its Action column */}
-                <div className="hidden md:block">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Client</TableHead>
-                        <TableHead>Task</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Priority</TableHead>
-                        <TableHead>Due</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {activeTasks.map((task: any) => (
-                        <TableRow
-                          key={task.id}
-                          className={
-                            isRejectedTask(task) ? 'bg-orange-50/40' :
-                            task.status === 'Overdue' ? 'bg-red-50/40' : ''
-                          }
-                        >
-                          <TableCell className="font-medium">{task.client}</TableCell>
-                          <TableCell>{task.task}</TableCell>
-                          <TableCell>
-                            <Chip label={task.category || '—'} color="border border-blue-200 bg-blue-50 text-blue-700" />
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={task.priority || 'Medium'}
-                              color={priorityColor[task.priority] || 'border border-slate-300 bg-slate-100 text-slate-600'}
-                            />
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-muted-foreground">
-                            {shortDate(task.targetDate)}
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={statusLabel(task.status)}
-                              color={statusColor(task.status)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap items-center gap-1">
-                              {taskActions(task).map(a => (
-                                <button
-                                  key={a.key}
-                                  onClick={a.run}
-                                  disabled={busyIds.has(task.id)}
-                                  className={`${actionBtn} disabled:cursor-not-allowed disabled:opacity-60 ${tableActionTone[a.tone]}`}
-                                >
-                                  {a.short}
-                                </button>
-                              ))}
+                {/* Desktop. Same table as the Tasks section: one raw table
+                    rather than the shared component, a light header, client and
+                    task in one cell, and priority as a dot instead of a chip —
+                    three coloured chips a row turned every row into a traffic
+                    light with nothing standing out. */}
+                <table className="hidden w-full min-w-[860px] table-fixed border-collapse text-[0.8rem] md:table">
+                  <colgroup>
+                    <col style={{ width: '34%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '15%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '180px' }} />
+                  </colgroup>
+                  <thead className="bg-[#F9FAFB]">
+                    <tr className="border-b border-[#E7EDF4]">
+                      <Th>Client &amp; Task</Th>
+                      <Th>Category</Th>
+                      <Th>Priority</Th>
+                      <Th>Status</Th>
+                      <Th>Due</Th>
+                      <Th>Actions</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeTasks.map((task: any) => (
+                      <tr
+                        key={task.id}
+                        className={`border-b border-[#EFF3F8] transition-colors hover:bg-[#F9FBFD] ${
+                          isRejectedTask(task) ? 'bg-[#FFF7ED]' :
+                          task.status === 'Overdue' ? 'bg-[#FEF2F2]' : ''
+                        }`}
+                      >
+                        <td className="px-3 py-3">
+                          <p className="truncate text-[0.82rem] font-medium" style={{ color: NAVY }} title={task.client}>
+                            {task.client}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground" title={task.task}>{task.task}</p>
+                        </td>
+
+                        <td className="px-3 py-3">
+                          <span
+                            className="inline-block max-w-full truncate rounded-md px-2 py-0.5 text-[0.7rem] font-medium"
+                            style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}
+                            title={task.category || '—'}
+                          >
+                            {task.category || '—'}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-3">
+                          <span className="inline-flex items-center gap-1.5 text-[0.78rem] text-foreground/80">
+                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: priorityDot(task.priority) }} />
+                            {task.priority || '—'}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-3">
+                          <div className="flex flex-col items-start gap-1">
+                            <span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>
+                              {statusLabel(task.status)}
+                            </span>
+                            {isAwaitingApproval(task.status) && (
+                              <span className="text-[0.62rem] italic text-muted-foreground">Awaiting sign-off</span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">
+                          {shortDate(task.targetDate)}
+                        </td>
+
+                        <td className="whitespace-nowrap px-3 py-3">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {taskActions(task).map(a => (
                               <button
-                                onClick={() => setTaskThread(task)}
-                                title="Approval thread"
-                                aria-label="Open approval thread"
-                                className="flex h-[26px] w-[26px] items-center justify-center rounded-md border border-[#E7EDF4] bg-white text-[#1b365d] transition-colors hover:bg-[#F4F6F9]"
+                                key={a.key}
+                                onClick={a.run}
+                                disabled={busyIds.has(task.id)}
+                                className={`${actionBtn} disabled:cursor-not-allowed disabled:opacity-60 ${tableActionTone[a.tone]}`}
                               >
-                                <MessageSquare size={13} />
+                                {a.short}
                               </button>
-                              {isAwaitingApproval(task.status) && (
-                                <span className="text-[10px] italic text-yellow-600">Awaiting…</span>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                            ))}
+                            <button
+                              onClick={() => setTaskThread(task)}
+                              title="Approval thread"
+                              aria-label="Open approval thread"
+                              className="flex h-[26px] w-[26px] items-center justify-center rounded-md border border-[#E7EDF4] bg-white text-[#1b365d] transition-colors hover:bg-[#F4F6F9]"
+                            >
+                              <MessageSquare size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </>
             )}
           </CardContent>
