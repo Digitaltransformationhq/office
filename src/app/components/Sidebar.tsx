@@ -80,7 +80,18 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const hasBillingAccess = user.role === 'admin' || user.email === 'audit1@kapsca.in';
+  /*
+   * Billing access.
+   *
+   * team-leader IS the Accounts desk — roleLabel renders it as "Accounts" — so
+   * the role carries the access rather than one address, and a second person on
+   * that desk needs no code change. The email stays as well: it survives a
+   * change of role, which is exactly when someone would otherwise silently lose
+   * the section they run.
+   */
+  const hasBillingAccess = user.role === 'admin'
+    || normalizeRole(user.role) === 'team-leader'
+    || user.email === 'audit1@kapsca.in';
 
   // Spliced into each role's menu rather than listed per role, so the rules live
   // in one place and cannot disagree between partner, admin and staff.
@@ -128,6 +139,9 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
       ...deskItems,
+      // Labelled Accounts rather than Billing: for this desk it is not one
+      // function among many, it is the job. Same screen either way.
+      { label: 'Accounts', id: 'billing' },
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Announcements', id: 'announcements' },
       { label: 'Approvals', id: 'approvals' },
