@@ -1,15 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { Search, IndianRupee, AlertTriangle, ReceiptText } from 'lucide-react';
+import { Search, IndianRupee, AlertTriangle, ReceiptText, Undo2 } from 'lucide-react';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
+import { ConfirmDialog } from './ConfirmDialog';
+import { useToast } from './Toast';
+import { billingAPI } from '../services/api';
 import { statusColor, statusLabel } from '../utils/taskStatus';
-import { formatINR } from '../utils/revenue';
+import { formatINR, type BillingRecord } from '../utils/revenue';
 
 const NAVY = '#1b365d';
 
 interface TaskBillingQueueProps {
   tasks: any[];
+  /** Needed to find the invoice behind a billed task, so it can be undone. */
+  records: BillingRecord[];
   user?: { id: string; name: string; email: string; role: string };
-  /** Refetch after a bill is raised, so the task leaves the queue. */
+  /** Refetch after a bill is raised or removed, so the lists and the revenue
+   *  figures both move together. */
   onBilled: () => void;
 }
 
@@ -27,9 +33,49 @@ const shortDate = (d?: string) =>
  * they answer a different question — how the firm is doing — which is not this
  * desk's to read.
  */
-export function TaskBillingQueue({ tasks, user, onBilled }: TaskBillingQueueProps) {
+export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBillingQueueProps) {
+  const { showSuccess, showError } = useToast();
   const [search, setSearch] = useState('');
   const [billing, setBilling] = useState<any>(null);
+  const [undoing, setUndoing] = useState<{ task: any; record: BillingRecord } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  /*
+   * Only an admin can take a bill back.
+   *
+   * It is the correction for Accounts having billed something by mistake, so it
+   * cannot sit with the desk that made the mistake — otherwise the record and
+   * the check on it are the same person.
+   */
+  const canUndo = user?.role === 'admin';
+
+  /** The invoice raised against a task, if there is one. */
+  const recordFor = useMemo(() => {
+    const byTask = new Map<string, BillingRecord>();
+    for (const r of records) if (r.taskId) byTask.set(r.taskId, r);
+    return (taskId: string) => byTask.get(taskId) || null;
+  }, [records]);
+
+  const undo = async () => {
+    if (!undoing) return;
+    setBusy(true);
+    try {
+      const r = await billingAPI.delete(undoing.record.id);
+      if (r.success) {
+        // The server also puts the task back to Pending for Billing and clears
+        // its completion date, so it returns to the queue above.
+        showSuccess(`Bill ${undoing.record.billNumber} removed — the task is back in the queue`);
+        setUndoing(null);
+        onBilled();
+      } else {
+        showError(r.error || 'Failed to remove the bill');
+      }
+    } catch {
+      showError('Failed to remove the bill. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const { awaiting, billed } = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -109,10 +155,45 @@ export function TaskBillingQueue({ tasks, user, onBilled }: TaskBillingQueueProp
           </p>
         ) : (
           <div className="divide-y divide-[#F1F4F8]">
-            {billed.map(task => <Row key={task.id} task={task} />)}
+            {billed.map(task => {
+              const record = recordFor(task.id);
+              return (
+                <Row
+                  key={task.id}
+                  task={task}
+                  billNumber={record?.billNumber}
+                  action={canUndo && record ? (
+                    <button
+                      onClick={() => setUndoing({ task, record })}
+                      title="Remove this bill and send the task back for billing"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[#E7EDF4] px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-[#FECACA] hover:bg-[#FEF2F2] hover:text-[#991B1B]"
+                    >
+                      <Undo2 size={13} /> Undo bill
+                    </button>
+                  ) : undefined}
+                />
+              );
+            })}
           </div>
         )}
       </section>
+
+      {undoing && (
+        <ConfirmDialog
+          title="Remove this bill?"
+          message={
+            `Bill ${undoing.record.billNumber} for ${undoing.task.client} — ${formatINR(Number(undoing.record.taxableAmount) || 0)}.
+
+` +
+            'The invoice record is deleted and the task returns to "Awaiting invoice", so revenue for the period drops by this amount. ' +
+            'This cannot be undone; the bill would have to be raised again.'
+          }
+          confirmLabel={busy ? 'Removing…' : 'Remove bill'}
+          variant="danger"
+          onConfirm={undo}
+          onCancel={() => setUndoing(null)}
+        />
+      )}
 
       {billing && user && (
         <MarkAsBilledModal
@@ -126,7 +207,7 @@ export function TaskBillingQueue({ tasks, user, onBilled }: TaskBillingQueueProp
   );
 }
 
-function Row({ task, action }: { task: any; action?: React.ReactNode }) {
+function Row({ task, action, billNumber }: { task: any; action?: React.ReactNode; billNumber?: string }) {
   const amount = amountOf(task);
   return (
     <div className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:gap-4">
@@ -137,6 +218,7 @@ function Row({ task, action }: { task: any; action?: React.ReactNode }) {
           {task.assignedTo || 'Unassigned'}
           {task.category && ` · ${task.category}`}
           {task.completionDate && ` · completed ${shortDate(task.completionDate)}`}
+          {billNumber && ` · ${billNumber}`}
         </p>
         {/* The note the partner left when releasing it — often the only place
             that says what to put on the invoice. */}

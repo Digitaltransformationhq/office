@@ -191,7 +191,7 @@ export function Billing({ user }: BillingProps) {
       </div>
 
       {tab === 'tasks' ? (
-        <TaskBillingQueue tasks={tasks} user={user} onBilled={loadData} />
+        <TaskBillingQueue tasks={tasks} records={records} user={user} onBilled={loadData} />
       ) : tab === 'itr' ? (
         /* Accounts is not given the ITR register itself — see canAccessIncomeTax
            in utils/roles — so the queue lives here, where they already are. */
@@ -255,52 +255,63 @@ export function Billing({ user }: BillingProps) {
           />
 
           {/* Top clients */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Top clients by revenue</CardTitle>
-                <span className="text-sm text-muted-foreground">
-                  {byClient.length > 10 ? `Top 10 of ${byClient.length} · ` : ''}{rangeLabel}
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
+          <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E7EDF4] px-5 py-4">
+              <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Top clients by revenue</h3>
+              <span className="text-xs text-muted-foreground">
+                {byClient.length > 10 ? `Top 10 of ${byClient.length} · ` : ''}{rangeLabel}
+              </span>
+            </div>
+
+            {byClient.length === 0 ? (
+              <p className="px-5 py-12 text-center text-sm text-muted-foreground">
+                No revenue billed in this period.
+              </p>
+            ) : (
               <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[220px]">Client</TableHead>
-                      <TableHead className="text-right">Bills</TableHead>
-                      <TableHead className="text-right">Revenue</TableHead>
-                      <TableHead className="text-right">Share</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {byClient.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                          No revenue billed in this period.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      byClient.slice(0, 10).map(slice => (
-                        <TableRow key={slice.key} className="hover:bg-muted/50">
-                          <TableCell className="font-medium">{slice.label}</TableCell>
-                          <TableCell className="text-right tabular-nums">{slice.count}</TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums" style={{ color: NAVY }}>
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#E7EDF4] bg-[#FAFBFD]">
+                      <th className="px-5 py-2.5 text-left text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Client</th>
+                      <th className="px-3 py-2.5 text-right text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Bills</th>
+                      <th className="px-3 py-2.5 text-right text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Revenue</th>
+                      <th className="px-5 py-2.5 text-right text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byClient.slice(0, 10).map(slice => {
+                      const share = summary.revenue > 0 ? (slice.revenue / summary.revenue) * 100 : 0;
+                      return (
+                        <tr key={slice.key} className="border-b border-[#F1F4F8] transition-colors last:border-0 hover:bg-[#F7FAFF]">
+                          <td className="max-w-[320px] px-5 py-2.5">
+                            <p className="truncate text-[0.84rem] font-medium" style={{ color: NAVY }} title={slice.label}>
+                              {slice.label}
+                            </p>
+                          </td>
+                          <td className="px-3 py-2.5 text-right identifier text-[0.8rem] text-foreground/75">{slice.count}</td>
+                          <td className="px-3 py-2.5 text-right identifier text-[0.84rem] font-semibold" style={{ color: NAVY }}>
                             {formatINR(slice.revenue)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-muted-foreground">
-                            {summary.revenue > 0 ? `${((slice.revenue / summary.revenue) * 100).toFixed(1)}%` : '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                          </td>
+                          <td className="px-5 py-2.5">
+                            {/* The number alone makes the reader compare two decimals
+                                down a column; the bar does that comparison for them. */}
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-[#EEF2F7]">
+                                <span className="block h-full rounded-full" style={{ width: `${Math.max(share, 1)}%`, backgroundColor: NAVY }} />
+                              </span>
+                              <span className="identifier w-11 shrink-0 text-right text-[0.78rem] text-muted-foreground">
+                                {share > 0 ? `${share.toFixed(1)}%` : '—'}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            </CardContent>
-          </Card>
+            )}
+          </section>
         </div>
       ) : (tab === 'fees' && isPartnerOrAdmin) ? (
         <div className="space-y-4">
