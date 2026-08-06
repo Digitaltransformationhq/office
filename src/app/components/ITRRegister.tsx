@@ -144,7 +144,7 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
 
       <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
         <div className="flex flex-col gap-3 border-b border-[#E7EDF4] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative w-full lg:w-[280px]">
+          <div className="relative w-full min-w-0 lg:flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={search}
@@ -153,7 +153,7 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
               className="w-full rounded-lg border border-[#E7EDF4] bg-white py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
             />
           </div>
-          <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+          <div className="grid shrink-0 grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
             <Select value={person} onChange={setPerson} label="Everyone">
               {people.map(p => <option key={p} value={p}>{p}</option>)}
             </Select>
