@@ -192,11 +192,18 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     });
   });
 
-  const categories = Array.from(categoryMap.entries()).map(([name, data]) => ({
-    name,
-    count: data.count,
-    avgTime: data.count > 0 ? `${(data.totalHours / data.count).toFixed(1)} hrs` : '0 hrs',
-  }));
+  const categories = Array.from(categoryMap.entries())
+    .map(([name, data]) => ({
+      name,
+      count: data.count,
+      hours: data.totalHours,
+      avgHours: data.count > 0 ? data.totalHours / data.count : 0,
+    }))
+    // Busiest first. The map is built in first-seen order, which tells the
+    // reader nothing about where the firm's work actually goes.
+    .sort((a, b) => b.count - a.count);
+
+  const categoryTotal = categories.reduce((sum, c) => sum + c.count, 0);
 
   const NAVY = '#1b365d';
 
@@ -342,40 +349,64 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
 
 
         {/* Task Categories */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Task Categories</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Tasks</TableHead>
-                  <TableHead>Avg Time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {categories.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                      No task categories found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  categories.map((cat, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{cat.name}</TableCell>
-                      <TableCell>{cat.count}</TableCell>
-                      <TableCell>{cat.avgTime}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E7EDF4] px-5 py-4">
+            <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Task categories</h3>
+            <span className="text-xs text-muted-foreground">
+              {categoryTotal} task{categoryTotal === 1 ? '' : 's'} across {categories.length}
+            </span>
+          </div>
 
+          {categories.length === 0 ? (
+            <p className="px-5 py-12 text-center text-sm text-muted-foreground">No task categories yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-[#E7EDF4] bg-[#FAFBFD]">
+                    <th className="px-5 py-2.5 text-left text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Category</th>
+                    <th className="px-3 py-2.5 text-right text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Tasks</th>
+                    <th className="px-5 py-2.5 text-right text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Share</th>
+                    <th className="px-5 py-2.5 text-right text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Avg time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map(cat => {
+                    const share = categoryTotal > 0 ? (cat.count / categoryTotal) * 100 : 0;
+                    return (
+                      <tr key={cat.name} className="border-b border-[#F1F4F8] transition-colors last:border-0 hover:bg-[#F7FAFF]">
+                        <td className="max-w-[300px] px-5 py-2.5">
+                          <p className="truncate text-[0.84rem] font-medium" style={{ color: NAVY }} title={cat.name}>
+                            {cat.name}
+                          </p>
+                        </td>
+                        <td className="px-3 py-2.5 text-right identifier text-[0.84rem] font-semibold" style={{ color: NAVY }}>
+                          {cat.count}
+                        </td>
+                        <td className="px-5 py-2.5">
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-[#EEF2F7]">
+                              <span className="block h-full rounded-full" style={{ width: `${Math.max(share, 1)}%`, backgroundColor: NAVY }} />
+                            </span>
+                            <span className="identifier w-11 shrink-0 text-right text-[0.78rem] text-muted-foreground">
+                              {share.toFixed(1)}%
+                            </span>
+                          </div>
+                        </td>
+                        {/* Hours are logged per task and mostly are not, so a
+                            column of "0.0 hrs" reads as a broken calculation.
+                            It says so instead. */}
+                        <td className="px-5 py-2.5 text-right identifier text-[0.8rem] text-muted-foreground">
+                          {cat.hours > 0 ? `${cat.avgHours.toFixed(1)} hrs` : <span className="text-slate-300">not logged</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
       </div>
 
