@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { itrAPI, type ItrFiling } from '../services/api';
+import { itrAPI, discussionsAPI, type ItrFiling } from '../services/api';
 import { useToast } from './Toast';
 import { useLiveData } from '../hooks/useLiveData';
 import { ITRFilingModal } from './ITRFilingModal';
-import { Search, AlertTriangle, CheckCircle2, Clock, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ClientDiscussionsModal } from './ClientDiscussionsModal';
+import { Search, AlertTriangle, CheckCircle2, Clock, ChevronDown, ChevronLeft, ChevronRight, MessageSquareText } from 'lucide-react';
 import { ITR_STATUS_META, ITR_CHECKLIST, itrDueDate, itrIsOverdue } from '../utils/itr';
 import { financialYearOf, formatDate } from '../utils/gst';
 
@@ -41,19 +42,27 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<ItrFiling | null>(null);
+  /** The client whose discussion log is open. */
+  const [talking, setTalking] = useState<ItrFiling | null>(null);
+  /** clientId -> the day that client was last spoken to. */
+  const [lastTalked, setLastTalked] = useState<Record<string, string>>({});
 
   useEffect(() => { load(); }, [financialYear]);
-  useLiveData(['itr'], () => load({ silent: true }));
+  useLiveData(['itr', 'discussions'], () => load({ silent: true }));
 
   const load = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
       if (!silent) setLoading(true);
-      const [register, list] = await Promise.all([
+      const [register, list, talked] = await Promise.all([
         itrAPI.getRegister(financialYear),
         itrAPI.getFinancialYears(),
+        // One row per client rather than every thread: the register only needs a
+        // date against a name.
+        discussionsAPI.getLatestDates(),
       ]);
       setFilings(register.data.filings);
       setYears([...new Set([defaultItrYear(), ...(list.data || [])])].sort().reverse());
+      if (talked.success) setLastTalked(talked.data);
     } catch {
       if (!silent) showError('Failed to load the ITR register');
     } finally {
@@ -186,11 +195,17 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
                 const due = f.dueDate || itrDueDate(f.financialYear, f.isAudit, f.businessIncome);
                 const late = itrIsOverdue(f.status, due);
                 const docs = ITR_CHECKLIST.filter(d => f[d.key]).length;
+                const talked = lastTalked[f.clientId];
                 return (
-                  <button
+                  /* A row, not a button: the discussion log needs its own
+                     control, and a button cannot legally sit inside a button. */
+                  <div
                     key={f.id}
+                    className="flex w-full flex-col gap-2 px-5 py-3 transition-colors hover:bg-[#F7FAFF] sm:flex-row sm:items-center sm:gap-4"
+                  >
+                  <button
                     onClick={() => setEditing(f)}
-                    className="flex w-full flex-col gap-2 px-5 py-3 text-left transition-colors hover:bg-[#F7FAFF] sm:flex-row sm:items-center sm:gap-4"
+                    className="flex min-w-0 flex-1 flex-col gap-2 text-left sm:flex-row sm:items-center sm:gap-4"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[0.86rem] font-medium" style={{ color: NAVY }}>{f.clientName}</p>
@@ -227,6 +242,23 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
                       </span>
                     </div>
                   </button>
+
+                    {/* The date is on the face of it, not behind the click.
+                        Knowing this client was last spoken to in April is the
+                        thing that makes anyone open the log at all. */}
+                    <button
+                      onClick={() => setTalking(f)}
+                      title={talked ? `Last discussed ${formatDate(talked)}` : 'No discussions recorded'}
+                      className={`inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border px-2.5 py-1.5 text-[0.68rem] font-medium transition-colors sm:self-auto ${
+                        talked
+                          ? 'border-[#C7D7EC] bg-[#F8FBFF] text-[#1b365d] hover:border-[#1b365d] hover:bg-[#EEF4FC]'
+                          : 'border-[#E7EDF4] text-muted-foreground hover:border-[#C7D7EC] hover:bg-[#F8FBFF] hover:text-[#1b365d]'
+                      }`}
+                    >
+                      <MessageSquareText size={13} />
+                      <span className="sm:w-[54px] sm:text-left">{talked ? formatDate(talked) : 'Log'}</span>
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -250,6 +282,21 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
           </>
         )}
       </section>
+
+      {talking && (
+        <ClientDiscussionsModal
+          client={{
+            id: talking.clientId,
+            name: talking.clientName,
+            pan: talking.pan,
+            fileNumber: talking.fileNumber,
+          }}
+          currentUser={currentUser}
+          onClose={() => setTalking(null)}
+          onRecorded={(clientId, discussedOn) =>
+            setLastTalked(prev => ({ ...prev, [clientId]: discussedOn }))}
+        />
+      )}
 
       {editing && (
         <ITRFilingModal

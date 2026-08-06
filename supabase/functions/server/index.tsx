@@ -1668,6 +1668,143 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
 });
 
 // ============================================
+// CLIENT DISCUSSIONS
+// ============================================
+// A dated record of what was discussed with a client. Append-only by design —
+// see supabase/sql/add-client-discussions.sql for why there is no update path.
+
+const DISCUSSION_MODES = ['In person', 'Phone', 'WhatsApp', 'Email', 'Video call', 'Other'];
+
+/** The whole thread for one client, most recent conversation first. */
+app.get('/make-server-0abfa7cf/clients/:clientId/discussions', async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from('client_discussions')
+      .select('*')
+      .eq('client_id', c.req.param('clientId'))
+      .order('discussed_on', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return c.json({ success: true, data: data || [] });
+  } catch (error) {
+    console.log('Error fetching client discussions:', error);
+    return c.json({ success: false, error: 'Failed to fetch the discussion history', details: String(error) }, 500);
+  }
+});
+
+/**
+ * When each client was last spoken to, across the whole book.
+ *
+ * One row per client rather than the full threads: the register only needs to
+ * show "last discussed 12 days ago" against a name, and pulling every note for
+ * 441 clients to derive one date each would be absurd.
+ */
+app.get('/make-server-0abfa7cf/client-discussions/latest', async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from('client_discussions')
+      .select('client_id, discussed_on')
+      .order('discussed_on', { ascending: false });
+
+    if (error) throw error;
+
+    const latest: Record<string, string> = {};
+    for (const row of data || []) {
+      // Ordered newest first, so the first sighting of a client is its latest.
+      if (!latest[row.client_id]) latest[row.client_id] = row.discussed_on;
+    }
+
+    return c.json({ success: true, data: latest });
+  } catch (error) {
+    console.log('Error fetching latest discussions:', error);
+    return c.json({ success: false, error: 'Failed to fetch discussion dates' }, 500);
+  }
+});
+
+/**
+ * Record a discussion.
+ *
+ * There is deliberately no PUT. The record is worth something because it cannot
+ * be rewritten after the fact; a correction is a new entry saying so.
+ */
+app.post('/make-server-0abfa7cf/clients/:clientId/discussions', async (c) => {
+  try {
+    const clientId = c.req.param('clientId');
+    const body = await c.req.json();
+
+    const note = String(body.note ?? '').trim();
+    if (!note) {
+      return c.json({ success: false, error: 'A note of what was discussed is required' }, 400);
+    }
+    if (!body.recordedByName) {
+      return c.json({ success: false, error: 'The record must name who is writing it' }, 400);
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const discussedOn = String(body.discussedOn || today).slice(0, 10);
+    // A conversation cannot have happened tomorrow. Guards a mistyped year as
+    // much as anything deliberate.
+    if (discussedOn > today) {
+      return c.json({ success: false, error: 'A discussion cannot be dated in the future' }, 400);
+    }
+
+    const row = {
+      id: `disc:${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+      client_id: clientId,
+      discussed_on: discussedOn,
+      mode: DISCUSSION_MODES.includes(body.mode) ? body.mode : 'In person',
+      note,
+      participants: body.participants || null,
+      follow_up: body.followUp || null,
+      recorded_by_id: body.recordedById || null,
+      recorded_by_name: body.recordedByName,
+    };
+
+    const { data, error } = await supabase
+      .from('client_discussions')
+      .insert([row])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await broadcastChange('discussions');
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error recording the discussion:', error);
+    return c.json({ success: false, error: 'Failed to record the discussion', details: String(error) }, 500);
+  }
+});
+
+/**
+ * Remove an entry. Admin only, enforced by the caller.
+ *
+ * The only way anything leaves this table. Kept narrow because a log that staff
+ * can prune is not a log — but an entry filed against the wrong client has to be
+ * removable by somebody.
+ */
+app.delete('/make-server-0abfa7cf/client-discussions/:id', async (c) => {
+  try {
+    const { error } = await supabase
+      .from('client_discussions')
+      .delete()
+      .eq('id', c.req.param('id'));
+
+    if (error) throw error;
+
+    await broadcastChange('discussions');
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.log('Error deleting the discussion:', error);
+    return c.json({ success: false, error: 'Failed to delete the entry', details: String(error) }, 500);
+  }
+});
+
+// ============================================
 // ITR REGISTER
 // ============================================
 // See docs/itr-register.md. clients (PAN) -> itr_filings (one per year).

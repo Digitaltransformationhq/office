@@ -35,7 +35,9 @@ export type ChangeTopic =
   // compliance grid reads them together and would refetch both either way.
   | 'gst'
   // The ITR register.
-  | 'itr';
+  | 'itr'
+  // The client discussion log.
+  | 'discussions';
 
 const CHANNEL = 'office-changes';
 const EVENT = 'changed';

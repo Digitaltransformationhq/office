@@ -529,6 +529,82 @@ export const itrAPI = {
 };
 
 // ============================================
+// CLIENT DISCUSSIONS
+// ============================================
+
+/** One recorded conversation with a client. */
+export interface ClientDiscussion {
+  id: string;
+  clientId: string;
+  /** The day the conversation happened. */
+  discussedOn: string;
+  mode: 'In person' | 'Phone' | 'WhatsApp' | 'Email' | 'Video call' | 'Other';
+  note: string;
+  participants: string | null;
+  followUp: string | null;
+  recordedById: string | null;
+  recordedByName: string;
+  /** The day it was written down — not the same thing as `discussedOn`, and the
+   *  gap between them is what tells you how contemporaneous the note is. */
+  createdAt: string;
+}
+
+function transformDiscussion(row: any): ClientDiscussion {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    discussedOn: row.discussed_on,
+    mode: row.mode,
+    note: row.note,
+    participants: row.participants,
+    followUp: row.follow_up,
+    recordedById: row.recorded_by_id,
+    recordedByName: row.recorded_by_name,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * The discussion log.
+ *
+ * Note what is missing: there is no `update`. Entries cannot be edited, because
+ * a note that can be rewritten later is no use as a record of what was said at
+ * the time. A correction is a new entry.
+ */
+export const discussionsAPI = {
+  /** The whole thread for one client, newest conversation first. */
+  getForClient: async (clientId: string) => {
+    const result = await fetchAPI(`/clients/${encodeURIComponent(clientId)}/discussions`);
+    return { ...result, data: (result.data || []).map(transformDiscussion) as ClientDiscussion[] };
+  },
+
+  /** `{ [clientId]: lastDiscussedOn }` across the whole book, for the register. */
+  getLatestDates: async () => {
+    const result = await fetchAPI('/client-discussions/latest');
+    return { ...result, data: (result.data || {}) as Record<string, string> };
+  },
+
+  record: async (clientId: string, entry: {
+    discussedOn?: string;
+    mode?: string;
+    note: string;
+    participants?: string;
+    followUp?: string;
+    recordedById?: string;
+    recordedByName: string;
+  }) => {
+    const result = await fetchAPI(`/clients/${encodeURIComponent(clientId)}/discussions`, {
+      method: 'POST',
+      body: JSON.stringify(entry),
+    });
+    return { ...result, data: result.data ? transformDiscussion(result.data) : null };
+  },
+
+  /** Admin only. The one way anything leaves the log. */
+  delete: async (id: string) => fetchAPI(`/client-discussions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+};
+
+// ============================================
 // GST COMPLIANCE REGISTER
 // ============================================
 // See docs/gst-compliance.md.
