@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Button } from './Button';
 import { useToast } from './Toast';
 import { X, Check, AlertTriangle, CalendarCheck } from 'lucide-react';
-import { itrAPI, ITR_FORMS, type ItrFiling, type ItrStatus } from '../services/api';
-import { NAVY, inputCls, overlayCls, panelCls } from './clientModalUI';
+import { itrAPI, ITR_FORMS, ITR_DATA_MEDIUMS, ITR_DATA_MEDIUM_HINTS,
+  type ItrFiling, type ItrStatus, type ItrDataMedium } from '../services/api';
+import { NAVY, SelectField, inputCls, overlayCls, panelCls } from './clientModalUI';
 import { ITR_STATUS_META, ITR_STATUS_GROUPS, ITR_CHECKLIST, itrDueDate, itrIsOverdue } from '../utils/itr';
 import { dueNote, formatDate, today } from '../utils/gst';
 
@@ -33,6 +34,7 @@ export function ITRFilingModal({ filing, currentUser, onClose, onSaved }: ITRFil
   const [status, setStatus] = useState<ItrStatus>(filing.status);
   const [itrForm, setItrForm] = useState(filing.itrForm || '');
   const [filedOn, setFiledOn] = useState(filing.filedOn || '');
+  const [dataMedium, setDataMedium] = useState<string>(filing.dataMedium || '');
   const [businessIncome, setBusinessIncome] = useState(filing.businessIncome);
   const [isAudit, setIsAudit] = useState(filing.isAudit);
   const [checks, setChecks] = useState({
@@ -71,6 +73,23 @@ export function ITRFilingModal({ filing, currentUser, onClose, onSaved }: ITRFil
   // The documents are collected after the event, so they only make sense once
   // the return is actually filed.
   const showChecklist = status === 'Filed' || hasChecklist;
+
+  /*
+   * How the data arrived, asked at the moment it arrives.
+   *
+   * Shown from Data received onwards rather than at that status alone: a return
+   * often goes straight on to In preparation in the same sitting, and a field
+   * that vanishes the moment you move the status along can never be filled in
+   * afterwards. It stays visible so it can still be answered late.
+   *
+   * Required only at Data received — the point at which someone is standing
+   * there with the papers and knows. The 208 returns already past that stage
+   * came in from the control list with no medium on record and nobody now knows
+   * what it was; demanding one would only get a guess written down as fact.
+   */
+  const showDataMedium = status === 'Data Received' || status === 'In Preparation'
+    || status === 'Ready to File' || status === 'Filed' || !!filing.dataMedium;
+  const mediumRequired = status === 'Data Received';
 
   /*
    * Filed can only be reached through Ready to File.
@@ -113,6 +132,10 @@ export function ITRFilingModal({ filing, currentUser, onClose, onSaved }: ITRFil
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mediumRequired && !dataMedium) {
+      showError('Say how the data was received');
+      return;
+    }
     setSaving(true);
     try {
       const response = await itrAPI.saveFiling({
@@ -120,6 +143,7 @@ export function ITRFilingModal({ filing, currentUser, onClose, onSaved }: ITRFil
         financialYear: filing.financialYear,
         itrForm: itrForm || null,
         status,
+        dataMedium: (dataMedium || null) as ItrDataMedium | null,
         // Unlike GST this may stay empty: the office has filed returns whose
         // date was never written down, and refusing to save one would mean
         // either losing the fact or inventing a date.
@@ -234,14 +258,48 @@ export function ITRFilingModal({ filing, currentUser, onClose, onSaved }: ITRFil
               ))}
             </div>
 
+            {/*
+              How the papers came in.
+              
+              Given the same treatment as "Filed on" — a tinted panel in the
+              status's own colour — while it is the question being asked, and
+              dropped back to a plain field once the return has moved on and it
+              is only being carried along.
+            */}
+            {showDataMedium && (
+              mediumRequired ? (
+                <div className="mt-5 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] p-4">
+                  <label className="mb-1.5 block text-sm font-medium text-[#1E40AF]">
+                    How was the data received? <span className="text-[#c0392b]">*</span>
+                  </label>
+                  <MediumSelect value={dataMedium} onChange={setDataMedium} tone="blue" />
+                  <p className="mt-1.5 text-[0.7rem] text-[#1E40AF]/70">
+                    Recorded now, while whoever took it in still knows.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-5">
+                  <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
+                    How the data was received
+                  </label>
+                  <MediumSelect value={dataMedium} onChange={setDataMedium} />
+                  {!dataMedium && (
+                    <p className="mt-1.5 text-[0.7rem] text-muted-foreground">
+                      Never recorded for this return. Leave it blank rather than guess.
+                    </p>
+                  )}
+                </div>
+              )
+            )}
+
             {showFilingDetails && (
               <>
                 <div className="mt-5">
                   <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>ITR form</label>
-                  <select value={itrForm} onChange={e => setItrForm(e.target.value)} className={`${inputCls} appearance-none`}>
+                  <SelectField value={itrForm} onChange={e => setItrForm(e.target.value)}>
                     <option value="">Not decided</option>
                     {ITR_FORMS.map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
 
                 {/* Both of these move the deadline, so each option says which
@@ -250,14 +308,13 @@ export function ITRFilingModal({ filing, currentUser, onClose, onSaved }: ITRFil
                   <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
                     Business income other than speculation or F&amp;O
                   </label>
-                  <select
+                  <SelectField
                     value={businessIncome ? 'yes' : 'no'}
                     onChange={e => setBusinessIncome(e.target.value === 'yes')}
-                    className={`${inputCls} appearance-none`}
                   >
                     <option value="no">No — due 31 July</option>
                     <option value="yes">Yes — due 31 August</option>
-                  </select>
+                  </SelectField>
                 </div>
 
                 <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-lg border border-[#E7EDF4] px-3.5 py-2.5 text-sm">
@@ -380,6 +437,38 @@ export function ITRFilingModal({ filing, currentUser, onClose, onSaved }: ITRFil
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The medium dropdown.
+ *
+ * Its own component rather than the shared SelectField because inside the blue
+ * panel it has to take the panel's border, and because each option carries the
+ * half-line of explanation that stops "In person" and "Collected from client"
+ * being read as the same thing.
+ */
+function MediumSelect({ value, onChange, tone }: {
+  value: string; onChange: (v: string) => void; tone?: 'blue';
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={`${inputCls} appearance-none pr-9 ${tone === 'blue' ? 'border-[#BFDBFE] bg-white' : ''}`}
+      >
+        <option value="">Not recorded</option>
+        {ITR_DATA_MEDIUMS.map(m => (
+          <option key={m} value={m}>
+            {m}{ITR_DATA_MEDIUM_HINTS[m] ? ` — ${ITR_DATA_MEDIUM_HINTS[m]}` : ''}
+          </option>
+        ))}
+      </select>
+      <svg className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 9l6 6 6-6" />
+      </svg>
     </div>
   );
 }

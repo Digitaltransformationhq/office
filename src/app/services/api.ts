@@ -369,6 +369,36 @@ export type ItrStatus = typeof ITR_STATUSES[number];
 
 export const ITR_FORMS = ['ITR-1', 'ITR-2', 'ITR-3', 'ITR-4', 'ITR-5', 'ITR-6', 'ITR-7'] as const;
 
+/**
+ * How a client's papers reached the office.
+ *
+ * A closed list, so the answer can be counted. Left as free text it would fill
+ * up with 'whatsapp', 'Whatsapp' and 'on wtsp', which is no use to anyone
+ * looking at how the year's data actually came in.
+ */
+export const ITR_DATA_MEDIUMS = [
+  'In person',
+  'Collected from client',
+  'Courier / Post',
+  'Email',
+  'WhatsApp',
+  'Cloud link',
+  'Pen drive',
+  'Downloaded from portal',
+  'Other',
+] as const;
+
+export type ItrDataMedium = typeof ITR_DATA_MEDIUMS[number];
+
+/** The bit of explanation each option needs, where the name alone is ambiguous. */
+export const ITR_DATA_MEDIUM_HINTS: Partial<Record<ItrDataMedium, string>> = {
+  'In person': 'client brought it in',
+  'Collected from client': 'someone from the office fetched it',
+  'Cloud link': 'Drive, Dropbox, a shared folder',
+  'Pen drive': 'including a Tally backup on a disk',
+  'Downloaded from portal': 'AIS / 26AS / TIS',
+};
+
 /** One return, for one client, for one year. */
 export interface ItrFiling {
   id: string;
@@ -383,6 +413,9 @@ export interface ItrFiling {
   status: ItrStatus;
   /** The control list's own words, kept verbatim — see the importer. */
   dataNote: string | null;
+  /** How the papers reached the office. Null means it was never recorded —
+   *  which is true of every return that came in from the control list. */
+  dataMedium: ItrDataMedium | null;
   statusNote: string | null;
   partnerRemark: string | null;
   regime: 'Old' | 'New' | null;
@@ -430,6 +463,7 @@ function transformItrFiling(row: any): ItrFiling {
     itrForm: row.itr_form,
     status: row.status,
     dataNote: row.data_note,
+    dataMedium: row.data_medium,
     statusNote: row.status_note,
     partnerRemark: row.partner_remark,
     regime: row.regime,

@@ -1814,6 +1814,7 @@ const ITR_FILING_COLUMNS: Record<string, string> = {
   itrForm: 'itr_form',
   status: 'status',
   dataNote: 'data_note',
+  dataMedium: 'data_medium',
   statusNote: 'status_note',
   partnerRemark: 'partner_remark',
   regime: 'regime',
