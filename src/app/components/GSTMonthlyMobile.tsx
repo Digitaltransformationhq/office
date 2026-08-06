@@ -94,7 +94,7 @@ export function GSTMonthlyMobile({
             <p className="truncate text-[0.85rem] font-medium" style={{ color: NAVY }}>
               {registration.clientName}
             </p>
-            <p className="mt-0.5 truncate font-mono text-[0.62rem] text-muted-foreground/70">
+            <p className="mt-0.5 truncate identifier text-[0.72rem] text-muted-foreground/70">
               {registration.codeNo ? `${registration.codeNo} · ` : ''}{registration.gstin}
             </p>
             <p className="mt-0.5 truncate text-[0.68rem] text-muted-foreground">

@@ -166,7 +166,7 @@ function Row({ filing, onBill, onReturn }: { filing: ItrFiling; onBill: () => vo
             </span>
           )}
         </div>
-        <p className="truncate font-mono text-[0.64rem] text-muted-foreground/75">
+        <p className="truncate identifier text-[0.74rem] text-muted-foreground/75">
           {filing.pan || 'No PAN'}
           {filing.fileNumber && ` · ${filing.fileNumber}`}
           {filing.responsiblePersonName && ` · ${filing.responsiblePersonName}`}

@@ -448,7 +448,7 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
                             </span>
                           )}
                         </div>
-                        <p className="truncate font-mono text-[0.6rem] text-muted-foreground/70">
+                        <p className="truncate identifier text-[0.7rem] text-muted-foreground/70">
                           {r.codeNo ? `${r.codeNo} · ` : ''}{r.gstin}
                         </p>
                       </td>

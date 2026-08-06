@@ -194,7 +194,7 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[0.86rem] font-medium" style={{ color: NAVY }}>{f.clientName}</p>
-                      <p className="truncate font-mono text-[0.64rem] text-muted-foreground/75">
+                      <p className="truncate identifier text-[0.74rem] text-muted-foreground/75">
                         {f.pan || 'No PAN'}
                         {f.fileNumber && ` · ${f.fileNumber}`}
                         {f.responsiblePersonName && ` · ${f.responsiblePersonName}`}

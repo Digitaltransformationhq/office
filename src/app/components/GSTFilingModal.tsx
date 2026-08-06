@@ -139,7 +139,7 @@ export function GSTFilingModal({
               <p className="mt-1.5 truncate text-[0.88rem] font-medium text-foreground/85" title={registration.clientName}>
                 {registration.clientName}
               </p>
-              <p className="mt-0.5 truncate font-mono text-[0.68rem] text-muted-foreground">
+              <p className="mt-0.5 truncate identifier text-[0.76rem] text-muted-foreground">
                 {registration.gstin} · {registration.filingFrequency}
               </p>
             </div>

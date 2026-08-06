@@ -190,7 +190,7 @@ export function ClientManagement() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[0.85rem] font-medium" style={{ color: NAVY }}>{client.name}</p>
                         <div className="flex items-center gap-1.5">
-                          <p className="truncate font-mono text-[0.62rem] text-muted-foreground/70">
+                          <p className="truncate identifier text-[0.72rem] text-muted-foreground/70">
                             {client.pan || 'No PAN'}
                           </p>
                           <NonFilerTag type={client.clientType} />
@@ -203,7 +203,7 @@ export function ClientManagement() {
                       <dl className="divide-y divide-[#F1F4F8] border-t border-[#F1F4F8] px-3.5">
                         <CardRow label="Industry">{client.industry || <Dash />}</CardRow>
                         <CardRow label="GSTIN">
-                          <span className="break-all font-mono text-xs">{client.gstin || client.gst || <Dash />}</span>
+                          <span className="identifier break-all text-[0.8rem]">{client.gstin || client.gst || <Dash />}</span>
                         </CardRow>
                         <CardRow label="Contact">{client.contact || client.mobileNumber || <Dash />}</CardRow>
                         <div className="flex items-center justify-end gap-2 py-2.5">
@@ -266,10 +266,10 @@ export function ClientManagement() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-2.5 font-mono text-[0.72rem] text-foreground/75">
+                        <td className="px-3 py-2.5 identifier text-[0.78rem] text-foreground/75">
                           {client.pan || <Dash />}
                         </td>
-                        <td className="px-3 py-2.5 font-mono text-[0.72rem] text-foreground/75">
+                        <td className="px-3 py-2.5 identifier text-[0.78rem] text-foreground/75">
                           {client.gstin || client.gst || <Dash />}
                         </td>
                         <td className="px-3 py-2.5 text-[0.8rem] text-foreground/75">

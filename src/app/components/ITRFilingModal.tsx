@@ -161,7 +161,7 @@ export function ITRFilingModal({ filing, currentUser, onClose, onSaved }: ITRFil
                   F.Y. {filing.financialYear}
                 </span>
               </div>
-              <p className="mt-1 truncate font-mono text-[0.68rem] text-muted-foreground">
+              <p className="mt-1 truncate identifier text-[0.76rem] text-muted-foreground">
                 {filing.pan || 'No PAN'}
                 {filing.fileNumber && ` · file ${filing.fileNumber}`}
                 {filing.responsiblePersonName && ` · ${filing.responsiblePersonName}`}

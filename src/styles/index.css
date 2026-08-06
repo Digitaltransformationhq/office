@@ -134,3 +134,21 @@
 .sidebar-scroll::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* ============================================================
+   Client identifiers — PAN, GSTIN, file and code numbers.
+
+   Set in the UI face (Inter) rather than a monospace one. A code
+   font sitting under every client name reads as machine output
+   rather than a record of a person, which is the wrong register
+   for a client list.
+
+   Tabular figures keep digits aligning down the column, which is
+   the only thing the monospace was actually doing for us. The
+   small tracking stops long unbroken strings like a 15-character
+   GSTIN closing up.
+   ============================================================ */
+.identifier {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
