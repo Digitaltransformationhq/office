@@ -59,6 +59,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const [taskThread, setTaskThread] = useState<any | null>(null);
   const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const [focus, setFocus] = useState<null | 'mine' | 'billing' | 'team' | 'approvals' | 'completed'>(null);
   const timeAgo = useTimeAgo(lastRefresh);
   const { showError } = useToast();
 
@@ -167,10 +168,21 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
     );
   }
 
+  /*
+   * Which tile has been tapped, or null for the whole dashboard.
+   *
+   * This screen is several sections rather than one list, so a tile hides the
+   * others instead of filtering rows. Same result from the reader's side —
+   * tapping a number shows what it counts — without folding three tables that
+   * carry different columns into one.
+   */
+  const focused = (key: string) => focus === null || focus === key;
+
   const isOpen = (t: any) => isOpenTask(t.status);
   const myTasks = user ? allTasks.filter(t => t.assignedToId === user.id && isOpen(t)) : [];
   const teamTasks = allTasks.filter(t => t.assignedToId !== user?.id && isOpen(t));
   const approvalQueue = allTasks.filter(t => isAwaitingApproval(t.status));
+  const completedTasks = allTasks.filter(t => isFinishedTask(t.status));
 
   // Pending for Billing tasks — newest completion first
   const pendingForBilling = allTasks
@@ -211,7 +223,12 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
         {/* No icons: at 2-up on a narrow screen the icon leaves too little room
             for the title, which then overflows into it. */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <KPICard title="My Tasks" value={myTasks.length} />
+          <KPICard
+            title="My Tasks"
+            value={myTasks.length}
+            onClick={() => setFocus(focus === 'mine' ? null : 'mine')}
+            selected={focus === 'mine'}
+          />
           {/* Billing is this desk's work, so it belongs in the headline numbers
               rather than only in the table below. Reads straight off
               pendingForBilling, so the two can never disagree, and it drops the
@@ -220,18 +237,44 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
             title="For Billing"
             value={pendingForBilling.length}
             variant="warning"
+            onClick={() => setFocus(focus === 'billing' ? null : 'billing')}
+            selected={focus === 'billing'}
           />
-          <KPICard title="Team Tasks" value={teamTasks.length} />
-          <KPICard title="Pending Approvals" value={approvalQueue.length} variant="warning" />
+          <KPICard
+            title="Team Tasks"
+            value={teamTasks.length}
+            onClick={() => setFocus(focus === 'team' ? null : 'team')}
+            selected={focus === 'team'}
+          />
+          <KPICard
+            title="Pending Approvals"
+            value={approvalQueue.length}
+            variant="warning"
+            onClick={() => setFocus(focus === 'approvals' ? null : 'approvals')}
+            selected={focus === 'approvals'}
+          />
           <KPICard
             title="Completed"
-            value={allTasks.filter(t => isFinishedTask(t.status)).length}
+            value={completedTasks.length}
             variant="success"
+            onClick={() => setFocus(focus === 'completed' ? null : 'completed')}
+            selected={focus === 'completed'}
           />
         </div>
 
+        {/* Without this, focusing a tile hides the rest of the dashboard with
+            no visible way back other than guessing the tile toggles. */}
+        {focus !== null && (
+          <button
+            onClick={() => setFocus(null)}
+            className="-mt-1 self-start text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+          >
+            ← show the whole dashboard
+          </button>
+        )}
+
         {/* ── Pending for Billing — priority section ── */}
-        {pendingForBilling.length > 0 && (
+        {focused('billing') && pendingForBilling.length > 0 && (
           <Card className="border-amber-200 bg-amber-50/40">
             <CardHeader>
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -288,6 +331,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
         )}
 
         {/* ── My tasks ── */}
+        {focused('mine') && (
         <Card>
           <CardHeader>
             <CardTitle>My Tasks</CardTitle>
@@ -359,7 +403,10 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
           </CardContent>
         </Card>
 
+        )}
+
         {/* ── Team tasks ── */}
+        {focused('team') && (
         <Card>
           <CardHeader>
             <CardTitle>Team Tasks</CardTitle>
@@ -398,7 +445,10 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
           </CardContent>
         </Card>
 
+        )}
+
         {/* ── Approvals + workload ── */}
+        {focused('approvals') && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {/* Parked alongside the sidebar item. Left visible so the feature is
               discoverable, but View All is inert — otherwise this panel would be
@@ -457,6 +507,67 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
             </div>
           </section>
         </div>
+        )}
+
+        {/* ── Completed ──
+            The only tile without a section of its own, so it had a number and
+            nowhere to send you. Read-only: finished work needs no actions, and
+            the thread stays reachable because that is where the history is. */}
+        {focus === 'completed' && (
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <CardTitle>Completed</CardTitle>
+                <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  {completedTasks.length}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Task</TableHead>
+                    <TableHead>Assigned</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Completed</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {completedTasks.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        Nothing completed yet.
+                      </TableCell>
+                    </TableRow>
+                  ) : completedTasks.map((task) => (
+                    <TableRow key={task.id}>
+                      <TableCell className="rt-title font-medium">{task.client}</TableCell>
+                      <TableCell>{task.task}</TableCell>
+                      <TableCell className="text-muted-foreground">{task.assignedTo || '—'}</TableCell>
+                      <TableCell><StatusChip status={task.status} /></TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {shortDate(task.completionDate || task.targetDate)}
+                      </TableCell>
+                      <TableCell>
+                        <button
+                          onClick={() => setTaskThread(task)}
+                          title="Approval thread"
+                          aria-label="Open approval thread"
+                          className="flex h-[26px] w-[26px] items-center justify-center rounded-md border border-[#E7EDF4] bg-white text-[#1b365d] transition-colors hover:bg-[#F4F6F9]"
+                        >
+                          <MessageSquare size={13} />
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Approval Queue Modal */}
