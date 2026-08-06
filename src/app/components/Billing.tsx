@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { KPICard } from './KPICard';
 import { ITRBillingQueue } from './ITRBillingQueue';
+import { TaskBillingQueue } from './TaskBillingQueue';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
 import { Button } from './Button';
 import { Input } from './Input';
@@ -27,15 +28,22 @@ interface BillingProps {
   };
 }
 
-type TabId = 'revenue' | 'fees' | 'itr';
+type TabId = 'tasks' | 'revenue' | 'fees' | 'itr';
 
 export function Billing({ user }: BillingProps) {
+  /*
+   * Revenue analytics and the client fee schedule answer "how is the firm
+   * doing", which is a partner's question. The Accounts desk gets the two
+   * queues it works from and nothing else — the figures are not theirs to read,
+   * and showing them would also bury the work under charts.
+   */
+  const isPartnerOrAdmin = user?.role === 'admin' || user?.role === 'partner';
   const [records, setRecords] = useState<BillingRecord[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<TabId>('revenue');
+  const [tab, setTab] = useState<TabId>(isPartnerOrAdmin ? 'revenue' : 'tasks');
   const [range, setRange] = useState<RangeId>('fy');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState<any>(null);
@@ -138,16 +146,20 @@ export function Billing({ user }: BillingProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-[1.6rem] font-semibold tracking-tight" style={{ color: NAVY }}>
-            Billing &amp; Revenue
+            {isPartnerOrAdmin ? 'Billing & Revenue' : 'Accounts'}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Revenue by person and category — plus the client fee structure
+            {isPartnerOrAdmin
+              ? 'Revenue by person and category — plus the client fee structure'
+              : 'Work released for billing, and what has already been invoiced'}
           </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={exportBreakdown}>
-            <Download size={14} className="mr-1.5 inline" /> Export CSV
-          </Button>
+          {isPartnerOrAdmin && (
+            <Button size="sm" variant="secondary" onClick={exportBreakdown}>
+              <Download size={14} className="mr-1.5 inline" /> Export CSV
+            </Button>
+          )}
           <Button size="sm" variant="secondary" onClick={loadData}>
             <RefreshCw size={14} className="mr-1.5 inline" /> Refresh
           </Button>
@@ -157,8 +169,11 @@ export function Billing({ user }: BillingProps) {
       {/* Tabs */}
       <div className="flex gap-1 border-b border-[#E7EDF4]">
         {([
-          { id: 'revenue' as TabId, label: 'Revenue analytics' },
-          { id: 'fees' as TabId, label: 'Client fee structure' },
+          { id: 'tasks' as TabId, label: 'Task billing' },
+          ...(isPartnerOrAdmin ? [
+            { id: 'revenue' as TabId, label: 'Revenue analytics' },
+            { id: 'fees' as TabId, label: 'Client fee structure' },
+          ] : []),
           { id: 'itr' as TabId, label: 'ITR billing' },
         ]).map(t => (
           <button
@@ -175,11 +190,13 @@ export function Billing({ user }: BillingProps) {
         ))}
       </div>
 
-      {tab === 'itr' ? (
+      {tab === 'tasks' ? (
+        <TaskBillingQueue tasks={tasks} user={user} onBilled={loadData} />
+      ) : tab === 'itr' ? (
         /* Accounts is not given the ITR register itself — see canAccessIncomeTax
            in utils/roles — so the queue lives here, where they already are. */
         <ITRBillingQueue currentUser={user ?? null} />
-      ) : tab === 'revenue' ? (
+      ) : (tab === 'revenue' && isPartnerOrAdmin) ? (
         <div className="space-y-4">
           {/* Range filter — one row above the charts */}
           <div className="flex flex-wrap items-center gap-2">
@@ -285,7 +302,7 @@ export function Billing({ user }: BillingProps) {
             </CardContent>
           </Card>
         </div>
-      ) : (
+      ) : (tab === 'fees' && isPartnerOrAdmin) ? (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Contracted annual fees per client. This is the agreed fee structure, not billed revenue.
@@ -391,7 +408,7 @@ export function Billing({ user }: BillingProps) {
             </CardContent>
           </Card>
         </div>
-      )}
+      ) : null}
 
       {/* Record payment against an invoice */}
 
