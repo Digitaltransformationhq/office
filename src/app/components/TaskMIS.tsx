@@ -5,7 +5,7 @@ import { EditTaskModal } from './EditTaskModal';
 import { CreateTaskModal } from './CreateTaskModal';
 import { SubmitWorkModal } from './SubmitWorkModal';
 import { TaskThreadModal } from './TaskThreadModal';
-import { statusColor, statusLabel, isOpenTask, isFinishedTask } from '../utils/taskStatus';
+import { statusColor, statusLabel, isOpenTask, isFinishedTask, TASK_STATUS } from '../utils/taskStatus';
 import { useLiveData } from '../hooks/useLiveData';
 import {
   Search, SlidersHorizontal, Check, X, Repeat2,
@@ -77,7 +77,7 @@ const searchCls =
 export function TaskMIS({ user }: TaskMISProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterTab, setFilterTab] = useState<'all' | 'completed' | 'pending' | 'pending-acceptance'>('all');
+  const [filterTab, setFilterTab] = useState<'all' | 'completed' | 'pending' | 'in-progress' | 'pending-acceptance'>('all');
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateTask, setShowCreateTask] = useState(false);
@@ -214,12 +214,22 @@ export function TaskMIS({ user }: TaskMISProps) {
     assignmentStatusFilter !== 'all';
 
   const completedTasks = tasks.filter(t => isFinishedTask(t.status));
-  const pendingTasks = tasks.filter(t => isOpenTask(t.status));
+  const inProgressTasks = tasks.filter(t => t.status === TASK_STATUS.inProgress);
+  /*
+   * Open work that nobody has started.
+   *
+   * Deliberately excludes In Progress, which used to be counted here: "pending"
+   * covering both meant the number could not answer either question — how much
+   * is untouched, and how much is actually being worked on. The two together
+   * still make up the open total, so nothing is lost from the count.
+   */
+  const pendingTasks = tasks.filter(t => isOpenTask(t.status) && t.status !== TASK_STATUS.inProgress);
   const pendingAcceptanceTasks = tasks.filter(t => t.assignmentStatus === 'Pending Acceptance');
 
   const baseList =
     filterTab === 'completed' ? completedTasks :
     filterTab === 'pending-acceptance' ? pendingAcceptanceTasks :
+    filterTab === 'in-progress' ? inProgressTasks :
     filterTab === 'pending' ? pendingTasks : tasks;
 
   const q = search.trim().toLowerCase();
@@ -261,6 +271,7 @@ export function TaskMIS({ user }: TaskMISProps) {
   const stats = [
     { label: 'Total', val: tasks.length, tab: 'all' as const, dot: NAVY },
     { label: 'Pending', val: pendingTasks.length, tab: 'pending' as const, dot: '#f59e0b' },
+    { label: 'In Progress', val: inProgressTasks.length, tab: 'in-progress' as const, dot: '#7c3aed' },
     { label: 'Completed', val: completedTasks.length, tab: 'completed' as const, dot: '#4ea72e' },
     { label: 'For Acceptance', val: pendingAcceptanceTasks.length, tab: 'pending-acceptance' as const, dot: '#3b82f6' },
   ];
@@ -399,7 +410,7 @@ export function TaskMIS({ user }: TaskMISProps) {
       </div>
 
       {/* Stat tiles */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {stats.map(s => {
           const active = filterTab === s.tab;
           return (
