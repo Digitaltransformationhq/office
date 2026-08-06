@@ -186,6 +186,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
   const [taskThread, setTaskThread] = useState<any | null>(null);
   /** Tasks with an in-flight status write, so their buttons can't be double-fired. */
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<'all' | 'active' | 'in-progress' | 'awaiting' | 'completed'>('active');
   /** Mirror of busyIds readable from the poll timer, which closes over stale state. */
   const busyRef = useRef(false);
   busyRef.current = busyIds.size > 0;
@@ -315,8 +316,26 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
   }
 
   const activeTasks = tasks.filter(t => isOpenTask(t.status));
+  const inProgressTasks = tasks.filter(t => t.status === 'In Progress');
+  const awaitingTasks = tasks.filter(t => isAwaitingApproval(t.status));
+  const completedTasks = tasks.filter(t => isFinishedTask(t.status));
+
+  /*
+   * The list below the tiles shows whichever one is selected.
+   *
+   * 'active' is the default because that is what this section showed before the
+   * tiles did anything, and it is the answer to the question someone opens their
+   * own dashboard to ask.
+   */
+  const VIEWS = {
+    all: { label: 'All Tasks', tasks },
+    active: { label: 'Active Tasks', tasks: activeTasks },
+    'in-progress': { label: 'In Progress', tasks: inProgressTasks },
+    awaiting: { label: 'Awaiting Approval', tasks: awaitingTasks },
+    completed: { label: 'Completed', tasks: completedTasks },
+  } as const;
+  const shownTasks = VIEWS[view].tasks;
   const returnedTasks = tasks.filter(isRejectedTask);
-  const count = (status: string) => tasks.filter(t => t.status === status).length;
 
   /** One definition of what a task offers, rendered two ways (card + table). */
   const taskActions = (task: any): TaskAction[] => {
@@ -382,21 +401,40 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
         {/* ── Stat tiles ── */}
         {/* No icons: at 2-up on a narrow screen the icon leaves too little room
             for the title, which then overflows into it. */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {/* Each tile filters the list below. Clicking the applied one clears
+            back to Active rather than leaving the screen with nothing chosen. */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <KPICard
+            title="Total Tasks"
+            value={tasks.length}
+            onClick={() => setView(view === 'all' ? 'active' : 'all')}
+            selected={view === 'all'}
+          />
           <KPICard
             title="Active"
             value={activeTasks.length}
+            onClick={() => setView('active')}
+            selected={view === 'active'}
           />
-          <KPICard title="In Progress" value={count('In Progress')} />
+          <KPICard
+            title="In Progress"
+            value={inProgressTasks.length}
+            onClick={() => setView(view === 'in-progress' ? 'active' : 'in-progress')}
+            selected={view === 'in-progress'}
+          />
           <KPICard
             title="Awaiting Approval"
-            value={tasks.filter(t => isAwaitingApproval(t.status)).length}
+            value={awaitingTasks.length}
             variant="warning"
+            onClick={() => setView(view === 'awaiting' ? 'active' : 'awaiting')}
+            selected={view === 'awaiting'}
           />
           <KPICard
             title="Completed"
-            value={tasks.filter(t => isFinishedTask(t.status)).length}
+            value={completedTasks.length}
             variant="success"
+            onClick={() => setView(view === 'completed' ? 'active' : 'completed')}
+            selected={view === 'completed'}
           />
         </div>
 
@@ -465,18 +503,32 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
         {/* ── Active tasks ── */}
         <Card>
           <CardHeader>
-            <CardTitle>Active Tasks</CardTitle>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <CardTitle>{VIEWS[view].label}</CardTitle>
+              <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {shownTasks.length}
+              </span>
+              {view !== 'active' && (
+                <button
+                  onClick={() => setView('active')}
+                  className="text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                >
+                  show active
+                </button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            {activeTasks.length === 0 ? (
+            {shownTasks.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                No active tasks. All caught up.
+                {view === 'active' ? 'No active tasks. All caught up.'
+                  : `Nothing under ${VIEWS[view].label.toLowerCase()}.`}
               </p>
             ) : (
               <>
                 {/* Mobile — purpose-built cards */}
                 <div className="space-y-3 p-4 md:hidden">
-                  {activeTasks.map((task: any) => (
+                  {shownTasks.map((task: any) => (
                     <TaskCard
                       key={task.id}
                       task={task}
@@ -513,7 +565,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {activeTasks.map((task: any) => (
+                    {shownTasks.map((task: any) => (
                       <tr
                         key={task.id}
                         className={`border-b border-[#EFF3F8] transition-colors hover:bg-[#F9FBFD] ${
