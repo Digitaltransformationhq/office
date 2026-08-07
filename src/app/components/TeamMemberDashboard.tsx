@@ -9,6 +9,7 @@ import { SubmitWorkModal } from './SubmitWorkModal';
 import { TaskThreadModal } from './TaskThreadModal';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
+import { DailyTodoList } from './DailyTodoList';
 import { TASK_STATUS, statusColor, statusLabel, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import { Loader2, Plus, MessageSquarePlus, MessageSquare, RotateCcw, ChevronLeft } from 'lucide-react';
 
@@ -437,6 +438,13 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
             selected={view === 'completed'}
           />
         </div>
+
+        {/* ── My to-do list ──
+            A private daily list. Sits above the firm's work rather than below
+            it: this is the one thing on the page that belongs only to the
+            person reading it, and a pad you have to scroll to find is a pad you
+            stop using. */}
+        <DailyTodoList user={user} />
 
         {/* ── Returned for correction ── */}
         {returnedTasks.length > 0 && (

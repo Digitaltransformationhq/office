@@ -563,6 +563,69 @@ export const itrAPI = {
 };
 
 // ============================================
+// PERSONAL TO-DO LIST
+// ============================================
+
+/** One line on somebody's private list. */
+export interface Todo {
+  id: string;
+  userId: string;
+  body: string;
+  done: boolean;
+  /** The day it was ticked, in the OWNER's local reckoning — not the server's. */
+  doneOn: string | null;
+  doneAt: string | null;
+  position: number;
+  createdAt: string;
+}
+
+function transformTodo(row: any): Todo {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    body: row.body,
+    done: !!row.done,
+    doneOn: row.done_on,
+    doneAt: row.done_at,
+    position: row.position ?? 0,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * A private daily list. Every call carries the owner, and the server matches on
+ * it, so one person's list can never be reached through another's session.
+ */
+export const todosAPI = {
+  /** Everything open, plus the last week of ticked items for the caller to
+   *  filter down to its own idea of today. */
+  getMine: async (userId: string) => {
+    const result = await fetchAPI(`/todos?userId=${encodeURIComponent(userId)}`);
+    return { ...result, data: (result.data || []).map(transformTodo) as Todo[] };
+  },
+
+  add: async (userId: string, body: string) => {
+    const result = await fetchAPI('/todos', {
+      method: 'POST',
+      body: JSON.stringify({ userId, body }),
+    });
+    return { ...result, data: result.data ? transformTodo(result.data) : null };
+  },
+
+  /** `doneOn` must be the browser's local date — see the Todo interface. */
+  update: async (id: string, userId: string, patch: { body?: string; done?: boolean; doneOn?: string }) => {
+    const result = await fetchAPI(`/todos/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ userId, ...patch }),
+    });
+    return { ...result, data: result.data ? transformTodo(result.data) : null };
+  },
+
+  delete: async (id: string, userId: string) =>
+    fetchAPI(`/todos/${encodeURIComponent(id)}?userId=${encodeURIComponent(userId)}`, { method: 'DELETE' }),
+};
+
+// ============================================
 // CLIENT DISCUSSIONS
 // ============================================
 

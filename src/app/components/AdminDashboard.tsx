@@ -24,6 +24,7 @@ import { TaskApprovalQueue } from './TaskApprovalQueue';
 import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
+import { DailyTodoList } from './DailyTodoList';
 import { useLiveData } from '../hooks/useLiveData';
 import { isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import {
@@ -258,6 +259,13 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
             <p className="mt-1 text-sm text-muted-foreground">System management and configuration</p>
           </div>
         </div>
+
+        {/* ── My to-do list ──
+            A private daily list. Sits above the firm's work rather than below
+            it: this is the one thing on the page that belongs only to the
+            person reading it, and a pad you have to scroll to find is a pad you
+            stop using. */}
+        <DailyTodoList user={user} />
 
         {/* ── Control panel overview ── */}
         <div className="space-y-4">

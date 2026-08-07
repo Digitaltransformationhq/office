@@ -1668,6 +1668,171 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
 });
 
 // ============================================
+// PERSONAL TO-DO LIST
+// ============================================
+// One private list per person. See supabase/sql/add-personal-todos.sql for why
+// this is neither a task nor a calendar event.
+//
+// Every handler here is scoped to one owner. That is the same trust model as the
+// rest of this server — the browser holds the anon key and the function is what
+// enforces the boundary — but it is worth being deliberate about: a list nobody
+// else can see is the whole reason anyone writes an honest one.
+
+/**
+ * One person's working list.
+ *
+ * Returns everything still open plus anything they ticked recently, and lets the
+ * browser decide which of those counts as "today". The client is the only side
+ * that knows the owner's local date; the server sitting in UTC would clear a
+ * ticked item at half past five in the morning.
+ */
+app.get('/make-server-0abfa7cf/todos', async (c) => {
+  try {
+    const userId = c.req.query('userId');
+    if (!userId) return c.json({ success: false, error: 'userId is required' }, 400);
+
+    // A week of ticked items is more than the panel shows, but it means the
+    // browser can pick its own day boundary without another round trip.
+    const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+
+    const { data, error } = await supabase
+      .from('personal_todos')
+      .select('*')
+      .eq('user_id', userId)
+      .or(`done.eq.false,done_on.gte.${since}`)
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    return c.json({ success: true, data: data || [] });
+  } catch (error) {
+    console.log('Error fetching to-dos:', error);
+    return c.json({ success: false, error: 'Failed to fetch your list', details: String(error) }, 500);
+  }
+});
+
+/** Add a line. It goes to the bottom, under whatever is already waiting. */
+app.post('/make-server-0abfa7cf/todos', async (c) => {
+  try {
+    const body = await c.req.json();
+    const owner = body.userId;
+    const text = String(body.body ?? '').trim();
+
+    if (!owner) return c.json({ success: false, error: 'userId is required' }, 400);
+    if (!text) return c.json({ success: false, error: 'Write something to do' }, 400);
+
+    // Bottom of the open list. Read rather than counted, so deleting items
+    // cannot make two rows share a position.
+    const { data: last } = await supabase
+      .from('personal_todos')
+      .select('position')
+      .eq('user_id', owner)
+      .order('position', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data, error } = await supabase
+      .from('personal_todos')
+      .insert([{
+        id: `todo:${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+        user_id: owner,
+        body: text,
+        position: (last?.position ?? 0) + 1,
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error adding a to-do:', error);
+    return c.json({ success: false, error: 'Failed to add it', details: String(error) }, 500);
+  }
+});
+
+/**
+ * Tick, untick, or reword an item.
+ *
+ * `userId` is required and matched in the WHERE clause, so a stray id cannot
+ * reach into somebody else's list even by accident.
+ */
+app.put('/make-server-0abfa7cf/todos/:id', async (c) => {
+  try {
+    const body = await c.req.json();
+    const owner = body.userId;
+    if (!owner) return c.json({ success: false, error: 'userId is required' }, 400);
+
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+    if (body.body !== undefined) {
+      const text = String(body.body).trim();
+      if (!text) return c.json({ success: false, error: 'An item cannot be blank' }, 400);
+      patch.body = text;
+    }
+
+    if (body.done !== undefined) {
+      patch.done = !!body.done;
+      if (body.done) {
+        // The owner's own date, sent from the browser. Falling back to the
+        // server's would file anything ticked before 05:30 IST under yesterday.
+        patch.done_on = String(body.doneOn || new Date().toISOString().slice(0, 10)).slice(0, 10);
+        patch.done_at = new Date().toISOString();
+      } else {
+        // Unticking has to clear both, or the CHECK constraint rejects the row —
+        // which is the constraint doing its job.
+        patch.done_on = null;
+        patch.done_at = null;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('personal_todos')
+      .update(patch)
+      .eq('id', c.req.param('id'))
+      .eq('user_id', owner)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return c.json({ success: false, error: 'That item is not on your list' }, 404);
+
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error updating a to-do:', error);
+    return c.json({ success: false, error: 'Failed to update it', details: String(error) }, 500);
+  }
+});
+
+/** Remove an item outright — for a line typed by mistake, not for one done. */
+app.delete('/make-server-0abfa7cf/todos/:id', async (c) => {
+  try {
+    const userId = c.req.query('userId');
+    if (!userId) return c.json({ success: false, error: 'userId is required' }, 400);
+
+    // Selecting the deleted row back, so a request for somebody else's item is
+    // reported as the miss it is rather than answered with a cheerful success
+    // that deleted nothing.
+    const { data, error } = await supabase
+      .from('personal_todos')
+      .delete()
+      .eq('id', c.req.param('id'))
+      .eq('user_id', userId)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return c.json({ success: false, error: 'That item is not on your list' }, 404);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.log('Error deleting a to-do:', error);
+    return c.json({ success: false, error: 'Failed to remove it', details: String(error) }, 500);
+  }
+});
+
+// ============================================
 // CLIENT DISCUSSIONS
 // ============================================
 // A dated record of what was discussed with a client. Append-only by design —

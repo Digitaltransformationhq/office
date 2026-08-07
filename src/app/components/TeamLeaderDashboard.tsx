@@ -11,6 +11,7 @@ import { statusColor, statusLabel, isOpenTask, isAwaitingApproval, isFinishedTas
 import { MarkAsBilledModal } from './MarkAsBilledModal';
 import { SubmitWorkModal } from './SubmitWorkModal';
 import { TaskThreadModal } from './TaskThreadModal';
+import { DailyTodoList } from './DailyTodoList';
 import { type BillingRecord } from '../utils/revenue';
 import { Loader2, X, IndianRupee, MessageSquare, ChevronLeft } from 'lucide-react';
 
@@ -278,6 +279,13 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
             Show the whole dashboard
           </button>
         )}
+
+        {/* ── My to-do list ──
+            A private daily list. Sits above the firm's work rather than below
+            it: this is the one thing on the page that belongs only to the
+            person reading it, and a pad you have to scroll to find is a pad you
+            stop using. */}
+        <DailyTodoList user={user} />
 
         {/* ── Pending for Billing — priority section ── */}
         {focused('billing') && pendingForBilling.length > 0 && (

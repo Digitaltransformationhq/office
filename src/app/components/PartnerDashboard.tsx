@@ -8,6 +8,7 @@ import { TaskApprovalQueue } from './TaskApprovalQueue';
 import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { useTimeAgo } from '../hooks/useTimeAgo';
 import { KPICard } from './KPICard';
+import { DailyTodoList } from './DailyTodoList';
 import { useLiveData } from '../hooks/useLiveData';
 import { statusColor, statusLabel, statusHex, isAwaitingApproval, isOpenTask } from '../utils/taskStatus';
 import {
@@ -294,6 +295,13 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
           />
           <KPICard title="Total Tasks" value={tasks.length} />
         </div>
+
+        {/* ── My to-do list ──
+            A private daily list. Sits above the firm's work rather than below
+            it: this is the one thing on the page that belongs only to the
+            person reading it, and a pad you have to scroll to find is a pad you
+            stop using. */}
+        <DailyTodoList user={user} />
 
         {/* ── Weekly planner ── */}
         <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
