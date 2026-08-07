@@ -77,7 +77,15 @@ const searchCls =
 export function TaskMIS({ user }: TaskMISProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterTab, setFilterTab] = useState<'all' | 'completed' | 'pending' | 'in-progress' | 'pending-acceptance'>('all');
+  /*
+   * Opens on Pending rather than everything.
+   *
+   * The list is opened to find out what still needs doing, and starting on the
+   * full set buries that under work already finished — which only grows as the
+   * year goes on. Clicking the Pending tile again clears back to Total for
+   * anyone who does want the whole book.
+   */
+  const [filterTab, setFilterTab] = useState<'all' | 'completed' | 'pending' | 'in-progress' | 'pending-acceptance'>('pending');
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateTask, setShowCreateTask] = useState(false);
