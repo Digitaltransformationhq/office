@@ -260,13 +260,6 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
           </div>
         </div>
 
-        {/* ── My to-do list ──
-            A private daily list. Sits above the firm's work rather than below
-            it: this is the one thing on the page that belongs only to the
-            person reading it, and a pad you have to scroll to find is a pad you
-            stop using. */}
-        <DailyTodoList user={user} />
-
         {/* ── Control panel overview ── */}
         <div className="space-y-4">
           {/* Quick actions — aligned to the stat-tile columns below */}
@@ -345,6 +338,12 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
               onClick={() => setShowInquiryApprovals(true)}
             />
           </div>
+
+          {/* ── My to-do list ──
+              Under the two approval cards. Those are the queues other people
+              are waiting on, so they come first; this is the admin's own pad,
+              which comes next and still ahead of the reporting below it. */}
+          <DailyTodoList user={user} />
 
           {/* Revenue breakdown — person / category, toggled */}
           <RevenueBreakdownCard
