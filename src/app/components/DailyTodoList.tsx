@@ -70,25 +70,6 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
   /** Ticks every minute: what makes an item climb as its hour comes round. */
   const now = useNow();
 
-  /*
-   * What the composer says about the day being chosen.
-   *
-   * Read straight off the draft rather than stored, so the button, the helper
-   * line and what actually gets saved cannot drift apart — they are three
-   * readings of one pair of fields.
-   */
-  const hasWhen = !!draftDate || !!draftTime;
-  const tomorrowIso = useMemo(() => {
-    const d = new Date(`${todayIso}T00:00:00`);
-    d.setDate(d.getDate() + 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }, [todayIso]);
-  const draftWhenLabel = hasWhen
-    // A time with no day is today, and the label has to say the same thing the
-    // save does — otherwise the button reads "4:00 pm" and files it elsewhere.
-    ? todoDueLabel({ dueOn: draftDate || todayIso, dueTime: draftTime || null }, now)
-    : "";
-
   const inputRef = useRef<HTMLInputElement>(null);
 
   /*
@@ -115,6 +96,25 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
       window.removeEventListener('focus', sync);
     };
   }, []);
+
+  /*
+   * What the composer says about the day being chosen.
+   *
+   * Read straight off the draft rather than stored, so the button, the helper
+   * line and what actually gets saved cannot drift apart — they are three
+   * readings of one pair of fields.
+   */
+  const hasWhen = !!draftDate || !!draftTime;
+  const tomorrowIso = useMemo(() => {
+    const d = new Date(`${todayIso}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, [todayIso]);
+  const draftWhenLabel = hasWhen
+    // A time with no day is today, and the label has to say the same thing the
+    // save does — otherwise the button reads "4:00 pm" and files it elsewhere.
+    ? todoDueLabel({ dueOn: draftDate || todayIso, dueTime: draftTime || null }, now)
+    : "";
 
   useEffect(() => {
     if (!user?.id) { setLoading(false); return; }
