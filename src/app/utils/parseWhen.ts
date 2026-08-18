@@ -182,7 +182,9 @@ function readTime(text: string, now: Date): (Hit & { minutes: number; relative?:
     };
   }
 
-  if ((m = /\b(noon|midday)\b/i.exec(text)))
+  // "12 noon" — the hour adds nothing, but it has to be consumed along with the
+  // word or it is left stranded in the text as a bare "12".
+  if ((m = /\b(?:12\s*)?(noon|midday)\b/i.exec(text)))
     return { start: m.index, end: m.index + m[0].length, minutes: 12 * 60 };
   if ((m = /\bmidnight\b/i.exec(text)))
     return { start: m.index, end: m.index + m[0].length, minutes: 0 };
@@ -196,6 +198,40 @@ function readTime(text: string, now: Date): (Hit & { minutes: number; relative?:
       const pm = /^p/i.test(m[3]);
       if (pm && h < 12) h += 12;
       if (!pm && h === 12) h = 0;
+      return { start: m.index, end: m.index + m[0].length, minutes: h * 60 + min };
+    }
+  }
+
+  /*
+   * "8 night", "9 morning", "4 in the evening", "night 8" — the hour and the
+   * half of the day it belongs to, which is how this is said out loud here.
+   *
+   * It has to be read as one thing. Taken separately, "8 night" gives the six
+   * o'clock that "night" means on its own and quietly drops the 8, and "at 8
+   * night" is worse: the bare-hour rule claims the 8, calls it eight in the
+   * morning, and files an evening meeting twelve hours early.
+   */
+  const PART = String.raw`morning|afternoon|evening|night|noon`;
+  m = new RegExp(
+    String.raw`\b(?:at\s+|by\s+|@\s*)?(\d{1,2})(?:[:.](\d{2}))?\s*(?:o'?\s?clock\s*)?(?:in\s+the\s+)?(${PART})\b`,
+    'i',
+  ).exec(text);
+  if (!m) {
+    m = new RegExp(String.raw`\b(${PART})\s+(?:at\s+)?(\d{1,2})(?:[:.](\d{2}))?\b`, 'i').exec(text);
+    // Same three captures, in the order the other branch produced them.
+    if (m) m = Object.assign([m[0], m[2], m[3], m[1]], { index: m.index }) as unknown as RegExpExecArray;
+  }
+  if (m) {
+    let h = Number(m[1]);
+    const min = m[2] ? Number(m[2]) : 0;
+    const part = m[3].toLowerCase();
+    if (h >= 1 && h <= 12 && min <= 59) {
+      if (part === 'noon') h = 12;
+      else if (part === 'morning') h = h === 12 ? 0 : h;
+      // One in the night is one in the morning, not one in the afternoon. Past
+      // four it is the evening reading that is meant.
+      else if (part === 'night' && h <= 4) h = h;
+      else if (h < 12) h += 12;
       return { start: m.index, end: m.index + m[0].length, minutes: h * 60 + min };
     }
   }
