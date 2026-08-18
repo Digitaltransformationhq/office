@@ -1712,6 +1712,94 @@ app.get('/make-server-0abfa7cf/todos', async (c) => {
   }
 });
 
+/**
+ * The archive: everything this person has ever ticked off, oldest days behind
+ * newest ones.
+ *
+ * The panel on the dashboard is deliberately short — it clears at the end of the
+ * day so the list stays a list and not a ledger. But the rows never go anywhere,
+ * and "what did I get through last Tuesday" is a real question, most often asked
+ * when somebody is writing up their week or being asked what happened to a job.
+ * This is the same table read the long way round.
+ *
+ * Paged by DAY, not by row. A page that ended halfway through a Tuesday would
+ * show four of that day's nine items, and the reader would have no way of
+ * knowing the other five existed — an archive that quietly omits things is worse
+ * than no archive. So a partial day at the bottom of a page is dropped and
+ * re-fetched whole on the next one.
+ */
+app.get('/make-server-0abfa7cf/todos/archive', async (c) => {
+  try {
+    const userId = c.req.query('userId');
+    if (!userId) return c.json({ success: false, error: 'userId is required' }, 400);
+
+    // Exclusive: 'give me the days before this one'. The client hands back what
+    // the previous page reported, so paging never depends on row counts lining up.
+    const before = c.req.query('before');
+    const search = (c.req.query('q') || '').trim();
+    // A reporting window, both ends inclusive, independent of the paging cursor
+    // above — the report asks for a month and then pages within it.
+    const from = c.req.query('from');
+    const to = c.req.query('to');
+
+    // Enough rows for several days at a time. Searching is matched in the
+    // database rather than in the browser, so a hit on something ticked months
+    // ago is found without the reader first having to page down to it.
+    const LIMIT = 200;
+
+    let query = supabase
+      .from('personal_todos')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('done', true);
+
+    if (from) query = query.gte('done_on', from);
+    if (to) query = query.lte('done_on', to);
+    if (before) query = query.lt('done_on', before);
+    if (search) query = query.ilike('body', `%${search}%`);
+
+    const { data, error } = await query
+      .order('done_on', { ascending: false })
+      .order('done_at', { ascending: false })
+      .limit(LIMIT);
+
+    if (error) throw error;
+
+    const rows = data || [];
+    const full = rows.length === LIMIT;
+    const oldestDay = rows.length ? rows[rows.length - 1].done_on : null;
+    const days = new Set(rows.map((r: any) => r.done_on));
+
+    // Only trim when there is another day above it to fall back on. A single day
+    // holding the entire page is returned as-is: cutting it would leave the
+    // reader with nothing and the next page asking for the same thing forever.
+    const trim = full && days.size > 1;
+    const items = trim ? rows.filter((r: any) => r.done_on !== oldestDay) : rows;
+
+    return c.json({
+      success: true,
+      data: items,
+      // Where the next page starts, as an exclusive upper bound. A trimmed day
+      // is asked for again in full — hence the day AFTER it, so that
+      // `done_on < nextBefore` still takes it in.
+      nextBefore: full ? (trim ? dayAfter(oldestDay) : oldestDay) : null,
+      hasMore: full,
+    });
+  } catch (error) {
+    console.log('Error fetching the to-do archive:', error);
+    return c.json({ success: false, error: 'Failed to load your archive', details: String(error) }, 500);
+  }
+});
+
+/** The calendar day after a YYYY-MM-DD. Used as an exclusive bound that still
+ *  includes the given day. */
+function dayAfter(day: string | null) {
+  if (!day) return null;
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Add a line. It goes to the bottom, under whatever is already waiting. */
 app.post('/make-server-0abfa7cf/todos', async (c) => {
   try {
@@ -1739,6 +1827,11 @@ app.post('/make-server-0abfa7cf/todos', async (c) => {
         user_id: owner,
         body: text,
         position: (last?.position ?? 0) + 1,
+        // Both optional, and '' from an untouched input is not a date. A time
+        // without a day is rejected by the CHECK constraint, so it is dropped
+        // here rather than sent to fail — see add-todo-due-time.sql.
+        due_on: body.dueOn || null,
+        due_time: body.dueOn ? (body.dueTime || null) : null,
       }])
       .select()
       .single();
@@ -1770,6 +1863,22 @@ app.put('/make-server-0abfa7cf/todos/:id', async (c) => {
       const text = String(body.body).trim();
       if (!text) return c.json({ success: false, error: 'An item cannot be blank' }, 400);
       patch.body = text;
+    }
+
+    /*
+     * The day and hour a line is for, both clearable.
+     *
+     * Clearing the day clears the hour with it: an hour with no day is not an
+     * appointment, and the database says so. Leaving a stray time behind would
+     * put the row in a state the CHECK constraint refuses, so the next edit of
+     * anything at all would fail for no visible reason.
+     */
+    if (body.dueOn !== undefined) {
+      patch.due_on = body.dueOn || null;
+      if (!body.dueOn) patch.due_time = null;
+    }
+    if (body.dueTime !== undefined && body.dueOn !== '') {
+      patch.due_time = body.dueTime || null;
     }
 
     if (body.done !== undefined) {

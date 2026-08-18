@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { KPICard } from './KPICard';
-import { tasksAPI, clientsAPI, usersAPI, billingAPI } from '../services/api';
+import { tasksAPI, clientsAPI, usersAPI, billingAPI, todosAPI, type Todo } from '../services/api';
 import { useToast } from './Toast';
-import { ClipboardList, Wallet, BarChart3, Download, IndianRupee, Users, TrendingUp, ChevronDown, Receipt, Search, X, Clock } from 'lucide-react';
+import { ClipboardList, Wallet, BarChart3, Download, IndianRupee, Users, TrendingUp, ChevronDown, Receipt, Search, X, Clock, ListChecks, Check } from 'lucide-react';
 import { statusColor, statusLabel, isFinishedTask } from '../utils/taskStatus';
 
 interface ReportsProps {
@@ -16,8 +16,25 @@ const inputCls =
   'rounded-lg border border-[#E7EDF4] bg-white px-3 py-2 text-sm text-foreground outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
 const thCls = 'px-3 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground';
 
+/**
+ * A timestamp as the local calendar date. Not `toISOString().slice(0, 10)`,
+ * which is UTC and reads as yesterday in IST until half past five in the
+ * morning — a note typed at midnight would fall outside a range that plainly
+ * contains it.
+ */
+const localDay = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const dayLabel = (day: string) =>
+  new Date(`${day}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+const clockTime = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '';
+
 export function Reports({ user }: ReportsProps) {
-  const [activeReport, setActiveReport] = useState<'tasks' | 'billing' | 'billing-records' | 'performance'>('tasks');
+  const [activeReport, setActiveReport] = useState<'tasks' | 'billing' | 'billing-records' | 'performance' | 'todos'>('tasks');
   const [tasks, setTasks] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -30,6 +47,16 @@ export function Reports({ user }: ReportsProps) {
   const [bFrom, setBFrom] = useState('');
   const [bTo, setBTo] = useState('');
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
+  // My to-do list. Loaded only when that tab is open — it is one person's own
+  // rows and has nothing to do with the firm-wide figures above.
+  const [todoDone, setTodoDone] = useState<Todo[]>([]);
+  const [todoPending, setTodoPending] = useState<Todo[]>([]);
+  const [todoLoading, setTodoLoading] = useState(false);
+  const [todoCapped, setTodoCapped] = useState(false);
+  /** Why the records could not be read, if they could not. Held rather than
+   *  toasted: a toast is gone in four seconds and the empty table it leaves
+   *  behind still reads as an honest quiet period. */
+  const [todoError, setTodoError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState({
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0],
@@ -59,6 +86,82 @@ export function Reports({ user }: ReportsProps) {
       showError('Failed to load report data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /*
+   * The to-do report, which unlike the rest of this page genuinely honours the
+   * date range — a private list is only ever read as "what did I do between
+   * these two dates".
+   *
+   * Reloaded when the range moves, after a short pause: a date input fires a
+   * change for every part of the date as it is typed, and each of those is a
+   * valid-looking range nobody asked for.
+   */
+  useEffect(() => {
+    if (activeReport !== 'todos' || !user?.id) return;
+    if (!dateRange.from || !dateRange.to) return;
+    const t = setTimeout(loadTodoReport, 250);
+    return () => clearTimeout(t);
+  }, [activeReport, user?.id, dateRange.from, dateRange.to]);
+
+  /* Which date range the rows on screen belong to. Walking the pages of a wide
+     range takes long enough that a narrower one asked for afterwards can finish
+     first, and the slower answer must not land on top of it. */
+  const todoRequestRef = useRef(0);
+
+  const loadTodoReport = async () => {
+    if (!user?.id) return;
+    const ticket = ++todoRequestRef.current;
+    setTodoLoading(true);
+    setTodoError(null);
+    try {
+      // The archive pages by day; a report wants the whole window, so it is
+      // walked to the end. Capped, because a runaway loop against a paging
+      // cursor is the one bug here that would not announce itself.
+      const done: Todo[] = [];
+      const seen = new Set<string>();
+      let before: string | null | undefined = null;
+      let more = true;
+      let page = 0;
+      while (more && page < 25) {
+        const r = await todosAPI.getArchive(user.id, { from: dateRange.from, to: dateRange.to, before });
+        if (ticket !== todoRequestRef.current) return;
+        if (!r.success) throw new Error(r.error || 'archive read failed');
+        for (const item of r.data) {
+          if (seen.has(item.id)) continue;
+          seen.add(item.id);
+          done.push(item);
+        }
+        before = r.nextBefore;
+        more = r.hasMore && !!r.nextBefore;
+        page++;
+      }
+      setTodoDone(done);
+      setTodoCapped(more);
+
+      // Still open, and written inside the window. Worth showing beside what got
+      // done: a list of only the ticked items flatters the week.
+      const mine = await todosAPI.getMine(user.id);
+      if (ticket !== todoRequestRef.current) return;
+      setTodoPending(mine.success
+        ? mine.data.filter(i => {
+            if (i.done || !i.createdAt) return false;
+            const day = localDay(i.createdAt);
+            return day >= dateRange.from && day <= dateRange.to;
+          })
+        : []);
+    } catch (error) {
+      console.error('Error loading to-do records:', error);
+      if (ticket === todoRequestRef.current) {
+        // Blanked along with it. Last period’s rows sitting under a new date
+        // range would be the worst of both.
+        setTodoDone([]);
+        setTodoPending([]);
+        setTodoError('Could not read your to-do records — the archive service did not answer.');
+      }
+    } finally {
+      if (ticket === todoRequestRef.current) setTodoLoading(false);
     }
   };
 
@@ -149,11 +252,51 @@ export function Reports({ user }: ReportsProps) {
     link.click();
   };
 
+  // ── My to-do list ──
+  // Ticked items carry the day they were ticked; open ones are placed on the day
+  // they were written, which is the only date they have.
+  const todoRows = [
+    ...todoDone.map(i => ({ item: i, day: i.doneOn || localDay(i.createdAt), done: true })),
+    ...todoPending.map(i => ({ item: i, day: localDay(i.createdAt), done: false })),
+  ].sort((a, b) =>
+    b.day.localeCompare(a.day) ||
+    (b.item.doneAt || '').localeCompare(a.item.doneAt || ''));
+  const todoActiveDays = new Set(todoDone.map(i => i.doneOn)).size;
+
+  const exportTodos = () => {
+    // Never export a period that failed to load. An empty CSV is indis-
+    // tinguishable from a genuinely empty fortnight, and it is the file that
+    // gets forwarded, long after the error on screen is gone.
+    if (todoError) { showError('Your records could not be loaded, so there is nothing safe to export'); return; }
+    if (todoRows.length === 0) { showError('No to-do records in this period'); return; }
+    const headers = ['Date', 'Status', 'Item', 'Written On', 'Ticked Off At'];
+    const rows = todoRows.map(({ item, day, done }) => [
+      dayLabel(day),
+      done ? 'Done' : 'Pending',
+      item.body,
+      item.createdAt ? dayLabel(localDay(item.createdAt)) : '',
+      done && item.doneAt ? new Date(item.doneAt).toLocaleString('en-IN') : '',
+    ]);
+    // Quotes doubled rather than left as they were typed: a to-do is free text,
+    // and one apostrophe-heavy line would otherwise shift every later column.
+    const csv = [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `my-todo-list-${dateRange.from}-to-${dateRange.to}.csv`;
+    link.click();
+    showSuccess(`Exported ${todoRows.length} to-do record${todoRows.length === 1 ? '' : 's'}`);
+  };
+
   const TABS: { key: typeof activeReport; label: string; icon: React.ReactNode }[] = [
     { key: 'tasks', label: 'Task Completion', icon: <ClipboardList size={15} /> },
     ...(hasBillingAccess ? [{ key: 'billing' as const, label: 'Billing & Revenue', icon: <Wallet size={15} /> }] : []),
     ...(hasBillingAccess ? [{ key: 'billing-records' as const, label: 'Billing Records', icon: <Receipt size={15} /> }] : []),
     { key: 'performance', label: 'Team Performance', icon: <BarChart3 size={15} /> },
+    // Everyone gets this one: it reads nobody's list but their own.
+    ...(user?.id ? [{ key: 'todos' as const, label: 'My To-Do List', icon: <ListChecks size={15} /> }] : []),
   ];
 
   if (loading) {
@@ -458,6 +601,89 @@ export function Reports({ user }: ReportsProps) {
         </>
       )}
 
+      {/* My To-Do List */}
+      {activeReport === 'todos' && (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <KPICard title="Ticked Off" value={todoDone.length} icon={<Check size={22} />} variant="success" />
+            <KPICard title="Still Open" value={todoPending.length} icon={<Clock size={22} />} variant="warning" />
+            <KPICard title="Days With Something Done" value={todoActiveDays} icon={<ListChecks size={22} />} />
+          </div>
+
+          <ReportSection title="My To-Do List" onExport={exportTodos}>
+            <div className="border-b border-[#F1F4F8] bg-[#FAFBFD] px-5 py-2.5">
+              <p className="text-[0.72rem] text-muted-foreground">
+                Your own list only — nobody else's, and nobody else can pull yours.
+                Showing {dayLabel(dateRange.from)} to {dayLabel(dateRange.to)}; change the dates above.
+                {todoCapped && ' Only the most recent part of this period is shown — narrow the dates for the rest.'}
+              </p>
+            </div>
+
+            {todoError && (
+              <div className="border-b border-[#FBD5D5] bg-[#FEF2F2] px-5 py-3">
+                <p className="text-[0.78rem] font-medium text-[#991B1B]">{todoError}</p>
+                <p className="mt-0.5 text-[0.7rem] text-[#991B1B]/80">
+                  Nothing has been lost — this is a read. Try again once it is back.
+                </p>
+              </div>
+            )}
+            {todoLoading ? (
+              <div className="flex items-center justify-center py-14">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#1b365d] border-t-transparent" />
+              </div>
+            ) : (
+              <>
+                {/* Mobile cards */}
+                <div className="space-y-2.5 p-4 md:hidden">
+                  {todoRows.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-muted-foreground">Nothing on your list in this period.</p>
+                  ) : todoRows.map(({ item, day, done }, i) => (
+                    <MobileCard
+                      key={item.id}
+                      title={item.body}
+                      badge={<TodoStatusChip done={done} />}
+                      open={openCards.has(`td-${i}`)}
+                      onToggle={() => toggleCard(`td-${i}`)}
+                    >
+                      <CardRow label="Date">{dayLabel(day)}</CardRow>
+                      <CardRow label="Written On">{item.createdAt ? dayLabel(localDay(item.createdAt)) : '—'}</CardRow>
+                      <CardRow label="Ticked Off">{done && item.doneAt ? clockTime(item.doneAt) : '—'}</CardRow>
+                    </MobileCard>
+                  ))}
+                </div>
+                {/* Desktop table */}
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full min-w-[720px] border-collapse text-[0.8rem]">
+                    <thead>
+                      <tr className="border-b border-[#E7EDF4] bg-[#F9FAFB]">
+                        {['Date', 'Item', 'Status', 'Written On', 'Ticked Off'].map(h => <th key={h} className={thCls}>{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {todoRows.length === 0 ? (
+                        <tr><td colSpan={5} className="py-14 text-center text-sm text-muted-foreground">Nothing on your list in this period.</td></tr>
+                      ) : todoRows.map(({ item, day, done }) => (
+                        <tr key={item.id} className="border-b border-[#EFF3F8] transition-colors hover:bg-[#F9FBFD]">
+                          <td className="whitespace-nowrap px-3 py-3 font-medium" style={{ color: NAVY }}>{dayLabel(day)}</td>
+                          <td className="px-3 py-3 text-foreground/80">{item.body}</td>
+                          <td className="px-3 py-3"><TodoStatusChip done={done} /></td>
+                          <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">
+                            {item.createdAt ? dayLabel(localDay(item.createdAt)) : '—'}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">
+                            {done && item.doneAt ? clockTime(item.doneAt) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </ReportSection>
+        </>
+      )}
+
       {/* Billing record detail */}
       {selectedRecord && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1728]/60 p-4 backdrop-blur-sm">
@@ -534,6 +760,20 @@ function ReportSection({ title, onExport, children }: { title: string; onExport:
       </div>
       {children}
     </section>
+  );
+}
+
+/** Green for done, amber for still open — the same reading as everywhere else
+ *  in the app, so the report needs no key. */
+function TodoStatusChip({ done }: { done: boolean }) {
+  return (
+    <span className={`inline-block whitespace-nowrap rounded-md border px-2 py-0.5 text-[0.68rem] font-medium ${
+      done
+        ? 'border-green-300 bg-green-100 text-green-700'
+        : 'border-amber-300 bg-amber-100 text-amber-700'
+    }`}>
+      {done ? 'Done' : 'Pending'}
+    </span>
   );
 }
 

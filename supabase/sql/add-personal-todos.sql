@@ -65,6 +65,13 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_personal_todos_owner
   ON personal_todos(user_id, done, position);
 
+-- The archive reads the same rows the other way round: one person's ticked
+-- items, newest day first, paged backwards. Partial, because unticked rows are
+-- never in that answer and there is no point carrying them in the index.
+CREATE INDEX IF NOT EXISTS idx_personal_todos_archive
+  ON personal_todos(user_id, done_on DESC, done_at DESC)
+  WHERE done;
+
 -- ============================================
 -- ROW LEVEL SECURITY
 -- ============================================

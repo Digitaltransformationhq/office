@@ -575,6 +575,10 @@ export interface Todo {
   /** The day it was ticked, in the OWNER's local reckoning — not the server's. */
   doneOn: string | null;
   doneAt: string | null;
+  /** The day this line is for, if any — 'YYYY-MM-DD'. Null is the normal case. */
+  dueOn: string | null;
+  /** An hour on that day, if one was set — 'HH:MM'. */
+  dueTime: string | null;
   position: number;
   createdAt: string;
 }
@@ -587,6 +591,9 @@ function transformTodo(row: any): Todo {
     done: !!row.done,
     doneOn: row.done_on,
     doneAt: row.done_at,
+    dueOn: row.due_on ?? null,
+    // Postgres hands back 'HH:MM:SS'; an <input type="time"> wants 'HH:MM'.
+    dueTime: row.due_time ? String(row.due_time).slice(0, 5) : null,
     position: row.position ?? 0,
     createdAt: row.created_at,
   };
@@ -604,16 +611,45 @@ export const todosAPI = {
     return { ...result, data: (result.data || []).map(transformTodo) as Todo[] };
   },
 
-  add: async (userId: string, body: string) => {
+  /**
+   * Everything ticked off, newest day first — the dashboard panel read the long
+   * way round. Paged by day: hand `before` the previous page's `nextBefore` and
+   * no day is ever split across two pages. `q` is matched by the server, so a
+   * search reaches items that have not been paged in yet. `from`/`to` bound the
+   * window for a report and are independent of the paging cursor.
+   */
+  getArchive: async (
+    userId: string,
+    opts: { before?: string | null; q?: string; from?: string; to?: string } = {},
+  ) => {
+    const params = new URLSearchParams({ userId });
+    if (opts.before) params.set('before', opts.before);
+    if (opts.q?.trim()) params.set('q', opts.q.trim());
+    if (opts.from) params.set('from', opts.from);
+    if (opts.to) params.set('to', opts.to);
+    const result = await fetchAPI(`/todos/archive?${params.toString()}`);
+    return {
+      ...result,
+      data: (result.data || []).map(transformTodo) as Todo[],
+      nextBefore: (result.nextBefore ?? null) as string | null,
+      hasMore: !!result.hasMore,
+    };
+  },
+
+  /** `due` is optional throughout: most lines never carry a date. */
+  add: async (userId: string, body: string, due: { dueOn?: string; dueTime?: string } = {}) => {
     const result = await fetchAPI('/todos', {
       method: 'POST',
-      body: JSON.stringify({ userId, body }),
+      body: JSON.stringify({ userId, body, ...due }),
     });
     return { ...result, data: result.data ? transformTodo(result.data) : null };
   },
 
-  /** `doneOn` must be the browser's local date — see the Todo interface. */
-  update: async (id: string, userId: string, patch: { body?: string; done?: boolean; doneOn?: string }) => {
+  /** `doneOn` must be the browser's local date — see the Todo interface.
+   *  Passing `dueOn: ''` clears the date, and the time with it. */
+  update: async (id: string, userId: string, patch: {
+    body?: string; done?: boolean; doneOn?: string; dueOn?: string; dueTime?: string;
+  }) => {
     const result = await fetchAPI(`/todos/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify({ userId, ...patch }),

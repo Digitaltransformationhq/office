@@ -1,13 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X, ListChecks, Check } from 'lucide-react';
+import { Plus, X, ListChecks, Check, History, Clock, CalendarPlus } from 'lucide-react';
 import { useToast } from './Toast';
+import { TodoArchiveModal } from './TodoArchiveModal';
 import { todosAPI, type Todo } from '../services/api';
 import { today } from '../utils/gst';
+import { useNow } from '../hooks/useNow';
+import {
+  sortTodosByDue, todoDueLabel, todoUrgency, todoDueAt, TODO_URGENCY_CLASS,
+} from '../utils/todoUrgency';
 
 const NAVY = '#1b365d';
 
 const shortDate = (d: string) =>
   new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+const whenInputCls =
+  'rounded-md border border-[#E7EDF4] bg-white px-2 py-1 text-[0.75rem] text-foreground/80 outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
 
 interface DailyTodoListProps {
   user?: { id: string; name?: string } | null;
@@ -28,10 +36,19 @@ interface DailyTodoListProps {
  *
  * Ticked items stay struck through until the end of the day. Clearing them the
  * instant they are done would be tidier and worse: seeing the four things you
- * got through is most of the reason to keep a list at all.
+ * got through is most of the reason to keep a list at all. Come tomorrow they
+ * are gone from here but not gone — the archive behind the clock icon keeps
+ * every one of them, by day, for when somebody has to account for a week.
  *
  * And every tick is applied on screen before the server is asked. A list that
  * pauses on each tick is a list people stop ticking.
+ *
+ * A line can also carry a day and an hour, and most never will. The clock button
+ * beside the input is shut until you press it, because the whole speed of this
+ * thing is that a line costs one sentence and the Enter key. Given a time, an
+ * item counts down and — once its day arrives — climbs to the top of the list on
+ * its own, so four o'clock is at the top by four o'clock without anyone
+ * reordering anything.
  */
 export function DailyTodoList({ user }: DailyTodoListProps) {
   const { showError } = useToast();
@@ -41,6 +58,36 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
   const [draft, setDraft] = useState('');
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+
+  /** The optional when, for the line being typed. Shut until asked for. */
+  const [showWhen, setShowWhen] = useState(false);
+  const [draftDate, setDraftDate] = useState('');
+  const [draftTime, setDraftTime] = useState('');
+  /** The item whose date is being changed, if any. */
+  const [scheduling, setScheduling] = useState<{ id: string; date: string; time: string } | null>(null);
+
+  /** Ticks every minute: what makes an item climb as its hour comes round. */
+  const now = useNow();
+
+  /*
+   * What the composer says about the day being chosen.
+   *
+   * Read straight off the draft rather than stored, so the button, the helper
+   * line and what actually gets saved cannot drift apart — they are three
+   * readings of one pair of fields.
+   */
+  const hasWhen = !!draftDate || !!draftTime;
+  const tomorrowIso = useMemo(() => {
+    const d = new Date(`${todayIso}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, [todayIso]);
+  const draftWhenLabel = hasWhen
+    // A time with no day is today, and the label has to say the same thing the
+    // save does — otherwise the button reads "4:00 pm" and files it elsewhere.
+    ? todoDueLabel({ dueOn: draftDate || todayIso, dueTime: draftTime || null }, now)
+    : "";
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -87,28 +134,70 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
   }, [user?.id]);
 
   const { open, doneToday } = useMemo(() => ({
-    open: items.filter(i => !i.done),
+    // Anything due today or already past floats to the top, soonest first;
+    // everything else keeps the order it was written in. See utils/todoUrgency.
+    open: sortTodosByDue(items.filter(i => !i.done), now),
     // Filtered here rather than on the server: only the browser knows what
     // "today" means where the person is sitting.
     doneToday: items.filter(i => i.done && i.doneOn === todayIso)
       .sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || '')),
-  }), [items, todayIso]);
+  }), [items, todayIso, now]);
 
   const add = async () => {
     const text = draft.trim();
     if (!text || !user?.id || adding) return;
+    // A time with no day means today — that is what somebody typing "4:00 pm"
+    // into a daily list means, and making them also pick today's date to say it
+    // would be the one bit of ceremony this list cannot afford.
+    const dueOn = draftDate || (draftTime ? today() : '');
+    const due = dueOn ? { dueOn, dueTime: draftTime } : {};
+
     setAdding(true);
     setDraft('');
     try {
-      const r = await todosAPI.add(user.id, text);
-      if (r.success && r.data) setItems(prev => [...prev, r.data as Todo]);
-      else { showError(r.error || 'Could not add that'); setDraft(text); }
+      const r = await todosAPI.add(user.id, text, due);
+      if (r.success && r.data) {
+        setItems(prev => [...prev, r.data as Todo]);
+        setDraftDate('');
+        setDraftTime('');
+        setShowWhen(false);
+      } else { showError(r.error || 'Could not add that'); setDraft(text); }
     } catch {
       showError('Could not add that. Please try again.');
       setDraft(text);
     } finally {
       setAdding(false);
       inputRef.current?.focus();
+    }
+  };
+
+  /**
+   * Change or clear the day and hour on an item already on the list.
+   *
+   * Applied on screen first, like every other write here, and rolled back whole
+   * if the server refuses — a half-applied date would leave the row sorted as
+   * though it had one.
+   */
+  const saveSchedule = async () => {
+    if (!scheduling || !user?.id) return;
+    const original = items.find(i => i.id === scheduling.id);
+    const { id, date, time } = scheduling;
+    setScheduling(null);
+    if (!original) return;
+
+    const dueOn = date || (time ? today() : '');
+    const dueTime = dueOn ? time : '';
+    if ((original.dueOn || '') === dueOn && (original.dueTime || '') === dueTime) return;
+
+    setItems(prev => prev.map(i => (i.id === id
+      ? { ...i, dueOn: dueOn || null, dueTime: dueTime || null }
+      : i)));
+    try {
+      const r = await todosAPI.update(id, user.id, { dueOn, dueTime });
+      if (!r.success) throw new Error(r.error);
+    } catch {
+      setItems(prev => prev.map(i => (i.id === id ? original : i)));
+      showError('Could not save that. Please try again.');
     }
   };
 
@@ -185,21 +274,122 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
         <span className="ml-auto text-[0.68rem] text-muted-foreground">
           {open.length === 0 ? 'all clear' : `${open.length} to do`}
         </span>
+        {/* Small and out of the way. Looking back is an occasional thing; the
+            panel is for today, and the archive should not compete with it. */}
+        <button
+          onClick={() => setArchiveOpen(true)}
+          title="See everything you have ticked off"
+          aria-label="Open your to-do archive"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-[#EEF4FC] hover:text-[#1b365d]"
+        >
+          <History size={14} />
+        </button>
       </div>
 
+      {/*
+        The composer.
+      
+        One framed field, the way a message box is framed, so it reads as
+        somewhere to type rather than a line of text sitting on a panel. The Add
+        button appears only once there is something to add — an always-there
+        button on an empty box is a dead control, and Enter still works for
+        anyone who never reaches for it.
+      */}
       <div className="border-b border-[#F1F4F8] px-5 py-3">
-        <div className="flex items-center gap-2">
-          <Plus size={15} className="shrink-0 text-muted-foreground" />
+        <div className="flex items-center gap-2 rounded-xl border border-[#E7EDF4] bg-white px-3 py-2 transition focus-within:border-[#1b365d] focus-within:ring-2 focus-within:ring-[#1b365d]/10">
+          <Plus size={16} className="shrink-0 text-muted-foreground/70" />
           <input
             ref={inputRef}
             value={draft}
             onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-            placeholder="Add something to do, then press Enter"
-            className="w-full bg-transparent text-[0.86rem] outline-none placeholder:text-muted-foreground/60"
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); add(); }
+              if (e.key === 'Escape' && showWhen) { e.preventDefault(); setShowWhen(false); }
+            }}
+            placeholder="Add something to do…"
+            className="min-w-0 flex-1 bg-transparent text-[0.88rem] outline-none placeholder:text-muted-foreground/50"
             aria-label="Add to your list"
           />
+
+          {/* Folded away by default. A pad you can type one line into is the
+              point; a form with three fields is a different, worse thing. */}
+          <button
+            type="button"
+            onClick={() => setShowWhen(v => !v)}
+            title={hasWhen ? 'Change when this is for' : 'Add a day and time'}
+            aria-label="Add a day and time"
+            aria-pressed={showWhen}
+            className={`flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-[0.72rem] font-medium transition-colors ${
+              hasWhen || showWhen
+                ? 'bg-[#EEF4FC] text-[#1b365d]'
+                : 'text-muted-foreground/70 hover:bg-[#F4F6F9] hover:text-[#1b365d]'
+            }`}
+          >
+            <Clock size={13} />
+            {/* The chosen moment, in words, right on the button — so it is
+                visible without opening the panel back up. */}
+            {hasWhen && <span>{draftWhenLabel}</span>}
+          </button>
+
+          <button
+            type="button"
+            onClick={add}
+            disabled={!draft.trim() || adding}
+            className={`h-7 shrink-0 rounded-lg px-3 text-[0.75rem] font-semibold transition-all ${
+              draft.trim()
+                ? 'bg-[#1b365d] text-white hover:bg-[#142a4a]'
+                : 'pointer-events-none scale-95 opacity-0'
+            }`}
+          >
+            {adding ? 'Adding…' : 'Add'}
+          </button>
         </div>
+
+        {showWhen && (
+          <div className="mt-2 rounded-xl border border-[#EEF2F7] bg-[#FAFBFD] px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Nearly every dated line is for today or tomorrow. Those are one
+                  tap; the date box is there for the rest rather than being the
+                  only way in — an empty 'dd/mm/yyyy' as the first thing you meet
+                  is a form, and this is a list. */}
+              <WhenChip label="Today" active={draftDate === todayIso} onClick={() => setDraftDate(todayIso)} />
+              <WhenChip label="Tomorrow" active={draftDate === tomorrowIso} onClick={() => setDraftDate(tomorrowIso)} />
+              <input
+                type="date"
+                value={draftDate}
+                onChange={e => setDraftDate(e.target.value)}
+                aria-label="Another day"
+                className={`${whenInputCls} ${draftDate && draftDate !== todayIso && draftDate !== tomorrowIso ? 'border-[#1b365d] text-[#1b365d]' : ''}`}
+              />
+
+              <span className="mx-0.5 h-4 w-px bg-[#E7EDF4]" />
+
+              <input
+                type="time"
+                value={draftTime}
+                onChange={e => setDraftTime(e.target.value)}
+                aria-label="Time"
+                className={`${whenInputCls} ${draftTime ? 'border-[#1b365d] text-[#1b365d]' : ''}`}
+              />
+
+              {hasWhen && (
+                <button
+                  type="button"
+                  onClick={() => { setDraftDate(''); setDraftTime(''); }}
+                  className="ml-auto rounded-md px-1.5 py-1 text-[0.7rem] text-muted-foreground transition-colors hover:bg-white hover:text-[#991B1B]"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <p className="mt-2 text-[0.68rem] text-muted-foreground/80">
+              {hasWhen
+                ? `Due ${draftWhenLabel} — it will climb the list as it nears.`
+                : 'Pick a day, a time, or both. A time on its own means today.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -221,6 +411,7 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
                 key={item.id}
                 item={item}
                 todayIso={todayIso}
+                now={now}
                 editing={editing?.id === item.id ? editing.text : null}
                 onEditChange={text => setEditing({ id: item.id, text })}
                 onEditStart={() => setEditing({ id: item.id, text: item.body })}
@@ -228,6 +419,13 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
                 onEditCancel={() => setEditing(null)}
                 onToggle={() => toggle(item)}
                 onRemove={() => remove(item)}
+                scheduling={scheduling?.id === item.id ? scheduling : null}
+                onScheduleOpen={() => setScheduling({
+                  id: item.id, date: item.dueOn || '', time: item.dueTime || '',
+                })}
+                onScheduleChange={next => setScheduling({ id: item.id, ...next })}
+                onScheduleSave={saveSchedule}
+                onScheduleCancel={() => setScheduling(null)}
               />
             ))}
           </ul>
@@ -243,6 +441,7 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
                     key={item.id}
                     item={item}
                     todayIso={todayIso}
+                    now={now}
                     editing={null}
                     onEditChange={() => {}}
                     onEditStart={() => {}}
@@ -257,13 +456,39 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
           )}
         </div>
       )}
+
+      {archiveOpen && (
+        <TodoArchiveModal userId={user.id} onClose={() => setArchiveOpen(false)} />
+      )}
     </section>
   );
 }
 
-function Row({ item, todayIso, editing, onEditChange, onEditStart, onEditEnd, onEditCancel, onToggle, onRemove }: {
+/** A one-tap day. Filled when it is the day currently chosen. */
+function WhenChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-md border px-2 py-1 text-[0.72rem] font-medium transition-colors ${
+        active
+          ? "border-[#1b365d] bg-[#1b365d] text-white"
+          : "border-[#E7EDF4] bg-white text-foreground/75 hover:border-[#C7D7EC] hover:bg-[#F7FAFF]"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function Row({
+  item, todayIso, now, editing, onEditChange, onEditStart, onEditEnd, onEditCancel, onToggle, onRemove,
+  scheduling, onScheduleOpen, onScheduleChange, onScheduleSave, onScheduleCancel,
+}: {
   item: Todo;
   todayIso: string;
+  now: number;
   editing: string | null;
   onEditChange: (text: string) => void;
   onEditStart: () => void;
@@ -271,10 +496,17 @@ function Row({ item, todayIso, editing, onEditChange, onEditStart, onEditEnd, on
   onEditCancel: () => void;
   onToggle: () => void;
   onRemove: () => void;
+  scheduling?: { date: string; time: string } | null;
+  onScheduleOpen?: () => void;
+  onScheduleChange?: (next: { date: string; time: string }) => void;
+  onScheduleSave?: () => void;
+  onScheduleCancel?: () => void;
 }) {
   // Written on an earlier day and still not done. Said plainly rather than
   // colour-coded — it is a reminder, not a telling-off.
   const carried = !item.done && item.createdAt?.slice(0, 10) < todayIso;
+  const due = todoDueAt(item);
+  const level = todoUrgency(item, now);
 
   return (
     <li className="group flex items-start gap-2.5 px-5 py-2.5 transition-colors hover:bg-[#F7FAFF]">
@@ -316,12 +548,82 @@ function Row({ item, todayIso, editing, onEditChange, onEditStart, onEditEnd, on
             {item.body}
           </button>
         )}
-        {carried && editing === null && (
-          <p className="mt-0.5 text-[0.65rem] text-muted-foreground/70">
-            carried over from {shortDate(item.createdAt)}
-          </p>
+        {/* The date, and the way to change it, in the same place. Editing it is
+            two small inputs under the line rather than a dialog — a to-do is not
+            worth a dialog. */}
+        {scheduling ? (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <input
+              type="date"
+              autoFocus
+              value={scheduling.date}
+              onChange={e => onScheduleChange?.({ ...scheduling, date: e.target.value })}
+              aria-label="Day"
+              className={whenInputCls}
+            />
+            <input
+              type="time"
+              value={scheduling.time}
+              onChange={e => onScheduleChange?.({ ...scheduling, time: e.target.value })}
+              aria-label="Time"
+              className={whenInputCls}
+            />
+            <button
+              onClick={onScheduleSave}
+              className="rounded-md bg-[#1b365d] px-2 py-1 text-[0.7rem] font-medium text-white transition-colors hover:bg-[#142a4a]"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => onScheduleChange?.({ date: '', time: '' })}
+              className="text-[0.7rem] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              clear
+            </button>
+            <button
+              onClick={onScheduleCancel}
+              className="text-[0.7rem] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              cancel
+            </button>
+          </div>
+        ) : (
+          (due || carried) && editing === null && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              {due && (
+                <button
+                  onClick={item.done ? undefined : onScheduleOpen}
+                  title={item.done ? undefined : 'Change when this is for'}
+                  className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.65rem] font-medium ${
+                    item.done ? 'border-[#E7EDF4] bg-[#F4F6F9] text-muted-foreground' : TODO_URGENCY_CLASS[level]
+                  } ${item.done ? 'cursor-default' : ''}`}
+                >
+                  <Clock size={9} />
+                  {todoDueLabel(item, now)}
+                </button>
+              )}
+              {carried && (
+                <span className="text-[0.65rem] text-muted-foreground/70">
+                  carried over from {shortDate(item.createdAt)}
+                </span>
+              )}
+            </div>
+          )
         )}
       </div>
+
+      {/* Give an undated line a day, without having to retype it. Appears on
+          hover, like the delete button, so a resting list stays quiet. */}
+      {!item.done && !due && !scheduling && (
+        <button
+          onClick={onScheduleOpen}
+          aria-label={`Set a day and time for "${item.body}"`}
+          title="Set a day and time"
+          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground/0 transition-colors hover:bg-[#EEF4FC] hover:text-[#1b365d] group-hover:text-muted-foreground/60 focus:text-muted-foreground/60"
+        >
+          <CalendarPlus size={13} />
+        </button>
+      )}
 
       {/* Deleting is for a line typed by mistake. Ticking is how something
           finished leaves the list. */}
