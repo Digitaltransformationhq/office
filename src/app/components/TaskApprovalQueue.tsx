@@ -3,7 +3,7 @@ import { ReviewTaskModal } from './ReviewTaskModal';
 import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
 import { TASK_STATUS, canApproveTask } from '../utils/taskStatus';
-import { ArrowRight, CheckCircle2, Clock, RotateCcw, Search } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock, PlayCircle, RotateCcw, Search } from 'lucide-react';
 
 interface TaskApprovalQueueProps {
   /**
@@ -17,6 +17,15 @@ interface TaskApprovalQueueProps {
 }
 
 const NAVY = '#1b365d';
+const GREEN = '#4ea72e';
+
+/**
+ * Finished work waiting to be signed off, as opposed to a new task waiting for
+ * the go-ahead. Both gates share this queue, but they ask opposite things of the
+ * approver — one releases work to start, the other releases it to billing — so
+ * the card is painted green for the finished half and left plain for the other.
+ */
+const isCompletionGate = (task: any) => task.status === TASK_STATUS.pendingCompletionApproval;
 
 function priorityClass(p: string) {
   if (p === 'Urgent' || p === 'High') return 'border border-[#f3c9c4] bg-[#FDECEC] text-[#c0392b]';
@@ -90,11 +99,25 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
         />
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        {q
-          ? `${visibleTasks.length} of ${pendingTasks.length} task${pendingTasks.length > 1 ? 's' : ''} matching`
-          : `${pendingTasks.length} task${pendingTasks.length > 1 ? 's' : ''} awaiting your approval`}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <p className="text-xs text-muted-foreground">
+          {q
+            ? `${visibleTasks.length} of ${pendingTasks.length} task${pendingTasks.length > 1 ? 's' : ''} matching`
+            : `${pendingTasks.length} task${pendingTasks.length > 1 ? 's' : ''} awaiting your approval`}
+        </p>
+        {/* A legend, because the colour is the only thing telling the two gates
+            apart at a glance and it has to be learnable without opening a card. */}
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-slate-300" />
+            To start
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: GREEN }} />
+            Work done
+          </span>
+        </div>
+      </div>
 
       {visibleTasks.length === 0 && (
         <p className="py-6 text-center text-sm text-muted-foreground">
@@ -104,19 +127,43 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
 
       {[...visibleTasks]
         // Tasks this user can act on float to the top so the "Review" buttons
-        // are never buried below rows they can only watch.
+        // are never buried below rows they can only watch. Within those, the two
+        // gates cluster rather than interleave, so the green block reads as one
+        // pile of finished work instead of a colour scattered down the list.
         .sort((a, b) =>
           Number(canApproveTask(b, { id: userId, role: userRole })) -
-          Number(canApproveTask(a, { id: userId, role: userRole })))
+          Number(canApproveTask(a, { id: userId, role: userRole })) ||
+          Number(isCompletionGate(b)) - Number(isCompletionGate(a)))
         .map((task) => {
         const mine = canApproveTask(task, { id: userId, role: userRole });
+        const done = isCompletionGate(task);
         return (
-        <div key={task.id} className="rounded-xl border border-[#E7EDF4] p-4 transition-all hover:border-[#d5dfea] hover:shadow-[0_10px_30px_-20px_rgba(10,23,40,0.5)]">
+        <div
+          key={task.id}
+          className={`rounded-xl border p-4 transition-all ${
+            done
+              ? 'border-[#c7e3b8] bg-[#F5FBF2] hover:border-[#a9d492] hover:shadow-[0_10px_30px_-20px_rgba(78,167,46,0.6)]'
+              : 'border-[#E7EDF4] hover:border-[#d5dfea] hover:shadow-[0_10px_30px_-20px_rgba(10,23,40,0.5)]'
+          }`}
+        >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold" style={{ color: NAVY }}>{task.task}</p>
+              <p className="truncate text-sm font-semibold" style={{ color: done ? '#2f6b1c' : NAVY }}>{task.task}</p>
 
               <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
+                {/* Leads the row: what the approver is being asked to do decides
+                    whether the rest of the card is even worth reading. */}
+                {done ? (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-[#bfe0ad] bg-[#E8F6E0] px-2 py-0.5 font-semibold text-[#2f6b1c]">
+                    <CheckCircle2 size={11} />
+                    Work done
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
+                    <PlayCircle size={11} />
+                    Approve to start
+                  </span>
+                )}
                 <span
                   className="max-w-[150px] truncate rounded-md px-2 py-0.5 font-medium"
                   style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}
@@ -151,7 +198,11 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
             {mine ? (
               <button
                 onClick={() => setSelectedTask(task)}
-                className="shrink-0 rounded-full bg-[#1b365d] px-4 py-1.5 text-xs font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a] hover:shadow-[0_12px_26px_-10px_rgba(27,54,93,0.7)]"
+                className={`shrink-0 rounded-full px-4 py-1.5 text-xs font-medium text-white transition-all ${
+                  done
+                    ? 'bg-[#4ea72e] shadow-[0_8px_20px_-10px_rgba(78,167,46,0.7)] hover:bg-[#43911f] hover:shadow-[0_12px_26px_-10px_rgba(78,167,46,0.8)]'
+                    : 'bg-[#1b365d] shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] hover:bg-[#142a4a] hover:shadow-[0_12px_26px_-10px_rgba(27,54,93,0.7)]'
+                }`}
               >
                 Review
               </button>
@@ -166,7 +217,7 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
           </div>
 
           {task.createdBy && (
-            <p className="mt-2.5 border-t border-[#F1F4F8] pt-2 text-[11px] text-muted-foreground">
+            <p className={`mt-2.5 border-t pt-2 text-[11px] text-muted-foreground ${done ? 'border-[#DCEFD1]' : 'border-[#F1F4F8]'}`}>
               Created by {task.createdBy}
             </p>
           )}
