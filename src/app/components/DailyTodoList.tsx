@@ -8,6 +8,8 @@ import { useNow } from '../hooks/useNow';
 import {
   sortTodosByDue, todoDueLabel, todoUrgency, todoDueAt, TODO_URGENCY_CLASS,
 } from '../utils/todoUrgency';
+import { parseWhen, stripWhen } from '../utils/parseWhen';
+import { phraseTodo } from '../utils/phraseTodo';
 
 const NAVY = '#1b365d';
 
@@ -64,6 +66,11 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
   const [showWhen, setShowWhen] = useState(false);
   const [draftDate, setDraftDate] = useState('');
   const [draftTime, setDraftTime] = useState('');
+  /* Typed dates are read out of the line, but never over the top of somebody.
+     Touching a field by hand, or dismissing the reading, stops it for this
+     draft — otherwise the next keystroke would quietly undo their correction. */
+  const [whenByHand, setWhenByHand] = useState(false);
+  const [whenDismissed, setWhenDismissed] = useState(false);
   /** The item whose date is being changed, if any. */
   const [scheduling, setScheduling] = useState<{ id: string; date: string; time: string } | null>(null);
 
@@ -98,13 +105,21 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
   }, []);
 
   /*
-   * What the composer says about the day being chosen.
+   * What the line itself says about when.
    *
-   * Read straight off the draft rather than stored, so the button, the helper
-   * line and what actually gets saved cannot drift apart — they are three
-   * readings of one pair of fields.
+   * Re-read on every keystroke, which is cheap, and thrown away the moment a
+   * field is touched by hand. `now` is a dependency because "at 9am" means
+   * today before nine and tomorrow after it.
    */
-  const hasWhen = !!draftDate || !!draftTime;
+  const readWhen = useMemo(
+    () => (whenByHand || whenDismissed ? null : parseWhen(draft, new Date(now))),
+    [draft, whenByHand, whenDismissed, now],
+  );
+
+  /** What will actually be saved: the hand-set fields, or the reading. */
+  const whenDate = whenByHand ? draftDate : (readWhen?.dueOn ?? draftDate);
+  const whenTime = whenByHand ? draftTime : (readWhen?.dueTime ?? draftTime);
+  const hasWhen = !!whenDate || !!whenTime;
   const tomorrowIso = useMemo(() => {
     const d = new Date(`${todayIso}T00:00:00`);
     d.setDate(d.getDate() + 1);
@@ -113,7 +128,7 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
   const draftWhenLabel = hasWhen
     // A time with no day is today, and the label has to say the same thing the
     // save does — otherwise the button reads "4:00 pm" and files it elsewhere.
-    ? todoDueLabel({ dueOn: draftDate || todayIso, dueTime: draftTime || null }, now)
+    ? todoDueLabel({ dueOn: whenDate || todayIso, dueTime: whenTime || null }, now)
     : "";
 
   useEffect(() => {
@@ -149,18 +164,26 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
     // A time with no day means today — that is what somebody typing "4:00 pm"
     // into a daily list means, and making them also pick today's date to say it
     // would be the one bit of ceremony this list cannot afford.
-    const dueOn = draftDate || (draftTime ? today() : '');
-    const due = dueOn ? { dueOn, dueTime: draftTime } : {};
+    const dueOn = whenDate || (whenTime ? today() : '');
+    const due = dueOn ? { dueOn, dueTime: whenTime } : {};
+    // "Meeting with Shah tomorrow at 4pm" becomes "Meeting with Shah" — the
+    // date is now a property of the item, and repeating it in the text would
+    // be a second copy free to disagree with the first.
+    // Then read back as a line rather than as the shorthand it was typed as:
+    // "jay meeting" is obvious while typing it and much less so on Thursday.
+    const body = phraseTodo(readWhen ? stripWhen(text, readWhen.matched) : text);
 
     setAdding(true);
     setDraft('');
     try {
-      const r = await todosAPI.add(user.id, text, due);
+      const r = await todosAPI.add(user.id, body, due);
       if (r.success && r.data) {
         setItems(prev => [...prev, r.data as Todo]);
         setDraftDate('');
         setDraftTime('');
         setShowWhen(false);
+        setWhenByHand(false);
+        setWhenDismissed(false);
       } else { showError(r.error || 'Could not add that'); setDraft(text); }
     } catch {
       showError('Could not add that. Please try again.');
@@ -301,7 +324,24 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
           <input
             ref={inputRef}
             value={draft}
-            onChange={e => setDraft(e.target.value)}
+            /*
+             * Emptying the box ends that line, and its date with it.
+             *
+             * Without this, a day set by hand outlasts the words it was set for
+             * and attaches itself to whatever gets typed next — so a line with
+             * no date in it is saved for four o'clock tomorrow, having inherited
+             * it from a line that did.
+             */
+            onChange={e => {
+              const next = e.target.value;
+              setDraft(next);
+              if (!next.trim()) {
+                setWhenByHand(false);
+                setWhenDismissed(false);
+                setDraftDate('');
+                setDraftTime('');
+              }
+            }}
             onKeyDown={e => {
               if (e.key === 'Enter') { e.preventDefault(); add(); }
               if (e.key === 'Escape' && showWhen) { e.preventDefault(); setShowWhen(false); }
@@ -345,6 +385,28 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
           </button>
         </div>
 
+        {/* Said out loud rather than applied in silence. A date that appears
+            from nowhere is unnerving even when it is right, and the only thing
+            worse is one that is wrong and never announced itself. */}
+        {readWhen && !showWhen && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 pl-1 text-[0.7rem]">
+            <span className="inline-flex items-center gap-1 rounded-md border border-[#C7E0F5] bg-[#EEF6FD] px-1.5 py-0.5 font-medium text-[#1b365d]">
+              <Clock size={10} />
+              {draftWhenLabel}
+            </span>
+            <span className="text-muted-foreground/80">
+              read from &ldquo;{readWhen.matched}&rdquo;
+            </span>
+            <button
+              type="button"
+              onClick={() => setWhenDismissed(true)}
+              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              no date
+            </button>
+          </div>
+        )}
+
         {showWhen && (
           <div className="mt-2 rounded-xl border border-[#EEF2F7] bg-[#FAFBFD] px-3 py-2.5">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -352,30 +414,30 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
                   tap; the date box is there for the rest rather than being the
                   only way in — an empty 'dd/mm/yyyy' as the first thing you meet
                   is a form, and this is a list. */}
-              <WhenChip label="Today" active={draftDate === todayIso} onClick={() => setDraftDate(todayIso)} />
-              <WhenChip label="Tomorrow" active={draftDate === tomorrowIso} onClick={() => setDraftDate(tomorrowIso)} />
+              <WhenChip label="Today" active={whenDate === todayIso} onClick={() => { setWhenByHand(true); setDraftTime(whenTime); setDraftDate(todayIso); }} />
+              <WhenChip label="Tomorrow" active={whenDate === tomorrowIso} onClick={() => { setWhenByHand(true); setDraftTime(whenTime); setDraftDate(tomorrowIso); }} />
               <input
                 type="date"
-                value={draftDate}
-                onChange={e => setDraftDate(e.target.value)}
+                value={whenDate}
+                onChange={e => { setWhenByHand(true); setDraftTime(whenTime); setDraftDate(e.target.value); }}
                 aria-label="Another day"
-                className={`${whenInputCls} ${draftDate && draftDate !== todayIso && draftDate !== tomorrowIso ? 'border-[#1b365d] text-[#1b365d]' : ''}`}
+                className={`${whenInputCls} ${whenDate && whenDate !== todayIso && whenDate !== tomorrowIso ? 'border-[#1b365d] text-[#1b365d]' : ''}`}
               />
 
               <span className="mx-0.5 h-4 w-px bg-[#E7EDF4]" />
 
               <input
                 type="time"
-                value={draftTime}
-                onChange={e => setDraftTime(e.target.value)}
+                value={whenTime}
+                onChange={e => { setWhenByHand(true); setDraftDate(whenDate); setDraftTime(e.target.value); }}
                 aria-label="Time"
-                className={`${whenInputCls} ${draftTime ? 'border-[#1b365d] text-[#1b365d]' : ''}`}
+                className={`${whenInputCls} ${whenTime ? 'border-[#1b365d] text-[#1b365d]' : ''}`}
               />
 
               {hasWhen && (
                 <button
                   type="button"
-                  onClick={() => { setDraftDate(''); setDraftTime(''); }}
+                  onClick={() => { setWhenByHand(true); setWhenDismissed(true); setDraftDate(''); setDraftTime(''); }}
                   className="ml-auto rounded-md px-1.5 py-1 text-[0.7rem] text-muted-foreground transition-colors hover:bg-white hover:text-[#991B1B]"
                 >
                   Clear
