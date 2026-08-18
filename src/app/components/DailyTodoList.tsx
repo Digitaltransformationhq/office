@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X, ListChecks, Check, History, Clock, CalendarPlus } from 'lucide-react';
+import { Plus, X, ListChecks, Check, Clock, CalendarPlus } from 'lucide-react';
 import { useToast } from './Toast';
-import { TodoArchiveModal } from './TodoArchiveModal';
 import { todosAPI, type Todo } from '../services/api';
 import { today } from '../utils/gst';
 import { useNow } from '../hooks/useNow';
@@ -39,8 +38,10 @@ interface DailyTodoListProps {
  * Ticked items stay struck through until the end of the day. Clearing them the
  * instant they are done would be tidier and worse: seeing the four things you
  * got through is most of the reason to keep a list at all. Come tomorrow they
- * are gone from here but not gone — the archive behind the clock icon keeps
- * every one of them, by day, for when somebody has to account for a week.
+ * are gone from here but not gone: every ticked line is kept, and Reports has a
+ * "My To-Do List" tab that reads them back by day and exports them. This panel
+ * carries no way in to that on purpose — it is the pad for today, and a second
+ * door to the same history would only compete with it.
  *
  * And every tick is applied on screen before the server is asked. A list that
  * pauses on each tick is a list people stop ticking.
@@ -60,7 +61,6 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
   const [draft, setDraft] = useState('');
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
-  const [archiveOpen, setArchiveOpen] = useState(false);
 
   /** The optional when, for the line being typed. Shut until asked for. */
   const [showWhen, setShowWhen] = useState(false);
@@ -297,16 +297,6 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
         <span className="ml-auto text-[0.68rem] text-muted-foreground">
           {open.length === 0 ? 'all clear' : `${open.length} to do`}
         </span>
-        {/* Small and out of the way. Looking back is an occasional thing; the
-            panel is for today, and the archive should not compete with it. */}
-        <button
-          onClick={() => setArchiveOpen(true)}
-          title="See everything you have ticked off"
-          aria-label="Open your to-do archive"
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-[#EEF4FC] hover:text-[#1b365d]"
-        >
-          <History size={14} />
-        </button>
       </div>
 
       {/*
@@ -517,10 +507,6 @@ export function DailyTodoList({ user }: DailyTodoListProps) {
             </>
           )}
         </div>
-      )}
-
-      {archiveOpen && (
-        <TodoArchiveModal userId={user.id} onClose={() => setArchiveOpen(false)} />
       )}
     </section>
   );
