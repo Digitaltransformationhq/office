@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { usersAPI, tasksAPI } from '../services/api';
 import { X, ChevronDown, Repeat2 } from 'lucide-react';
+import { isApproverRole } from '../utils/roles';
 
 interface ReassignTaskModalProps {
   task: any;
@@ -129,7 +130,7 @@ export function ReassignTaskModal({ task, currentUser, onClose, onSuccess }: Rea
 
   /** Group the roster so a long list is scannable rather than one flat block. */
   const roleGroups: [string, (u: any) => boolean][] = [
-    ['Partners', (u) => ['partner', 'Partner', 'admin', 'Admin'].includes(u.role)],
+    ['Partners', (u) => isApproverRole(u.role)],
     ['Accounts', (u) => ['team-leader', 'Accounts', 'Team Leader'].includes(u.role)],
     ['Staff', (u) => ['team-member', 'Staff', 'Team Member'].includes(u.role)],
   ];

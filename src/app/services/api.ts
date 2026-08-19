@@ -25,6 +25,9 @@ function transformTask(task: any) {
     billingFees: task.billing_fees,
     taxableAmount: task.taxable_amount,
     billingDescription: task.billing_description,
+    /** The approver's intended division of this task's bill, for Accounts to
+     *  raise the invoice on. A draft — the binding record is on the bill. */
+    billingShares: task.billing_shares || null,
     originallyAssignedById: task.originally_assigned_by_id,
     originallyAssignedByName: task.originally_assigned_by_name,
     reassignedFromId: task.reassigned_from_id,
@@ -259,6 +262,37 @@ export const tasksAPI = {
 };
 
 // Users API
+/**
+ * Who is making this request, for the calls the server checks authority on.
+ *
+ * Read here rather than passed down from a dozen components: every one of them
+ * would have to be given the current user and remember to forward it, and the
+ * one that forgot would fail with a 403 nobody could explain. The server does
+ * not trust this value — it looks the id up and reads the real role — so the
+ * worst a tampered one does is name somebody who cannot do the thing either.
+ */
+/**
+ * The acting user as a query-string fragment, ready to append.
+ *
+ * A query parameter and not a body field, because the actor is not a column.
+ * Sent in the body it was written to the row like any other property, and the
+ * database rejected the whole update — so adding an authority check broke every
+ * user edit until the server that knew to strip it was deployed. In the query
+ * string an older server simply never looks, and a newer one reads it.
+ */
+function actorParam(): string {
+  const id = actingUserId();
+  return id ? `?actedById=${encodeURIComponent(id)}` : '';
+}
+
+function actingUserId(): string | undefined {
+  try {
+    return JSON.parse(localStorage.getItem('kaps_user') || '{}')?.id || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export const usersAPI = {
   getAll: async () => {
     const result = await fetchAPI('/users');
@@ -278,7 +312,7 @@ export const usersAPI = {
 
   create: async (user: any) => {
     console.log('usersAPI.create called with:', user);
-    const result = await fetchAPI('/users', {
+    const result = await fetchAPI(`/users${actorParam()}`, {
       method: 'POST',
       body: JSON.stringify(user),
     });
@@ -296,8 +330,9 @@ export const usersAPI = {
     };
   },
 
+  /** Carries the actor because the server refuses a role change without one. */
   update: async (userId: string, updates: any) => {
-    const result = await fetchAPI(`/users/${userId}`, {
+    const result = await fetchAPI(`/users/${userId}${actorParam()}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
@@ -1213,9 +1248,23 @@ export const announcementsAPI = {
 };
 
 // Billing Records API
+/** One person's slice of one bill. */
+export interface BillShare {
+  userId: string;
+  name: string;
+  percent: number;
+  amount: number;
+}
+
 export const billingAPI = {
+  /**
+   * Carries the actor, because the server decides how much of each bill's
+   * division to send back: everything for an admin, only their own line for a
+   * partner or director. Without it a bill arrives with no division at all,
+   * which is the safe way round.
+   */
   getAll: async () => {
-    return fetchAPI('/billing-records');
+    return fetchAPI(`/billing-records${actorParam()}`);
   },
 
   getById: async (recordId: string) => {
@@ -1234,6 +1283,8 @@ export const billingAPI = {
     taxableAmount: number;
     remarks?: string;
     billedBy: string;
+    /** How this bill divides between partners and directors. Must total 100. */
+    shares?: BillShare[];
     billedById: string;
   }) => {
     return fetchAPI('/billing-records', {

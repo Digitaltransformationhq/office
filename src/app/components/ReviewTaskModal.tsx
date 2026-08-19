@@ -4,6 +4,7 @@ import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
 import { TaskCommentThread } from './TaskCommentThread';
 import { TASK_STATUS } from '../utils/taskStatus';
+import { BillDivision, divisionTotal } from './BillDivision';
 import { X, ClipboardCheck, Pencil, Check, ChevronDown, RotateCcw } from 'lucide-react';
 
 interface ReviewTaskModalProps {
@@ -42,6 +43,20 @@ export function ReviewTaskModal({
    * Captured when approving finished work: the approver sets the fee at the
    * moment they release it to Accounts, so billing never has to guess.
    */
+  /*
+   * How this bill should divide, decided here rather than left to Accounts.
+   *
+   * Accounts raises the invoice but has no way of knowing whether a job was
+   * shared — only the partner approving it does. Stated at the same moment as
+   * the amount, by the same person, and carried to the billing dialog already
+   * filled in.
+   */
+  const [shares, setShares] = useState<Record<string, string>>(() => {
+    const existing = (task as any).billingShares;
+    if (!Array.isArray(existing)) return {};
+    return Object.fromEntries(existing.map((sh: any) => [sh.userId, String(sh.percent)]));
+  });
+
   const [billingAmount, setBillingAmount] = useState(
     task.taxableAmount != null ? String(task.taxableAmount) : ''
   );
@@ -91,6 +106,13 @@ export function ReviewTaskModal({
         showError('Enter the billing amount before approving');
         return;
       }
+      const total = divisionTotal(shares);
+      if (total !== 100) {
+        showError(total === 0
+          ? 'Set how this bill divides between the partners and directors'
+          : `The division comes to ${total}%, not 100%`);
+        return;
+      }
     }
     setLoading(true);
     try {
@@ -102,6 +124,9 @@ export function ReviewTaskModal({
         // Claim an unrouted task, so every later step has someone to go back to.
         ...(task.approverId ? {} : { approverId, approverName }),
         ...(isCompletionReview ? {
+          billingShares: Object.entries(shares)
+            .map(([userId, percent]) => ({ userId, percent: parseFloat(percent) || 0 }))
+            .filter(sh => sh.percent > 0),
           taxableAmount: amount,
           billingFees: amount,
           billingDescription: billingNote.trim(),
@@ -282,6 +307,18 @@ export function ReviewTaskModal({
                       Sent to Accounts with the task when you approve.
                     </p>
                   </div>
+                  <BillDivision
+
+                    amount={parseFloat(billingAmount) || 0}
+
+                    defaultHolderId={task.approverId || approverId}
+
+                    value={shares}
+
+                    onChange={setShares}
+
+                  />
+
                   <div>
                     <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>
                       Billing note <span className="font-normal text-muted-foreground">(optional)</span>

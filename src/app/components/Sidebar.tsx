@@ -7,7 +7,7 @@ import {
   X, type LucideIcon,
 } from 'lucide-react';
 import {
-  normalizeRole, roleLabel,
+  normalizeRole, roleLabel, isApproverRole,
   canAccessClients, canAccessGstCompliance, canAccessIncomeTax,
 } from '../utils/roles';
 
@@ -95,7 +95,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
 
   // Spliced into each role's menu rather than listed per role, so the rules live
   // in one place and cannot disagree between partner, admin and staff.
-  const isPartnerOrAdmin = user.role === 'admin' || user.role === 'partner';
+  const isPartnerOrAdmin = isApproverRole(user.role);
 
   const deskItems: MenuItem[] = [
     ...(canAccessClients(user) ? [{ label: 'Clients', id: 'clients' }] : []),
@@ -165,9 +165,42 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
     ],
   };
 
+  /*
+   * Spliced in rather than listed per role, for the same reason the desk items
+   * are: partner, director and admin must not be able to disagree about who
+   * sees the billing division.
+   *
+   * Placed directly after Clients, which is where the desk items end — near the
+   * top, because it answers a question people ask often and in passing, and at
+   * the bottom it would be found once and then forgotten. It sits above Billing
+   * rather than beside it on purpose: Billing is the firm's invoicing, this is
+   * one person's share of it, and the two get confused if they are neighbours.
+   */
+  for (const key of ['partner', 'admin'] as const) {
+    if (menuItems[key].some(i => i.id === 'revenue-share')) continue;
+    const items = [...menuItems[key]];
+    const afterClients = items.findIndex(i => i.id === 'clients');
+    // No Clients item for this person, so fall in behind Team instead — the
+    // alternative is index -1 and an item silently landing at the very top.
+    const at = afterClients >= 0 ? afterClients + 1 : Math.max(0, items.findIndex(i => i.id === 'team') + 1);
+    items.splice(at, 0, { label: 'Billing Division', id: 'revenue-share' });
+    menuItems[key] = items;
+  }
+
+  /*
+   * A director's menu IS the partner's — the same array, not a copy of it.
+   *
+   * Copied it would be one more place to remember when an item is added, and
+   * the two would quietly diverge the first time somebody forgot. Assigned
+   * before the lookup below, or a director resolves against a key that does not
+   * exist yet and silently drops to the staff menu.
+   */
+  menuItems.director = menuItems.partner;
+
   // Fail closed: an unrecognized role gets the least-privileged menu, never the
   // partner menu it used to fall back to.
   const currentMenu = menuItems[normalizeRole(user.role) ?? ''] || menuItems['team-member'];
+
   const filteredMenu = currentMenu.filter((item) => {
     if (item.id === 'billing' || item.id === 'billing-reports') return hasBillingAccess;
     if (item.id === 'salary') return isPartnerOrAdmin;

@@ -11,14 +11,15 @@
  * can compare against Role without defensive multi-string checks.
  */
 
-export type Role = 'admin' | 'partner' | 'team-leader' | 'team-member' | 'client';
+export type Role = 'admin' | 'partner' | 'director' | 'team-leader' | 'team-member' | 'client';
 
-export const ROLES: Role[] = ['admin', 'partner', 'team-leader', 'team-member', 'client'];
+export const ROLES: Role[] = ['admin', 'partner', 'director', 'team-leader', 'team-member', 'client'];
 
 /** Legacy/display spellings → canonical. Keys are compared lowercased. */
 const ALIASES: Record<string, Role> = {
   'admin': 'admin',
   'partner': 'partner',
+  'director': 'director',
   'team-leader': 'team-leader',
   'team leader': 'team-leader',
   'accounts': 'team-leader',
@@ -42,6 +43,7 @@ export function normalizeRole(role: string | null | undefined): Role | null {
 const LABELS: Record<Role, string> = {
   'admin': 'Admin',
   'partner': 'Partner',
+  'director': 'Director',
   'team-leader': 'Accounts',
   'team-member': 'Staff',
   'client': 'Client',
@@ -79,9 +81,31 @@ function emailOf(user: AccessUser | null | undefined): string {
   return (user?.email || '').trim().toLowerCase();
 }
 
+/**
+ * The roles that run the firm: admin, partner, director.
+ *
+ * A director is a partner in everything this system decides — approvals,
+ * access, what the sidebar offers. The role exists because the firm
+ * distinguishes the two and because the billing is divided between them, not
+ * because either can do something the other cannot.
+ */
+export const PARTNER_LEVEL: Role[] = ['admin', 'partner', 'director'];
+
+/**
+ * Can this person sign work off?
+ *
+ * Takes a raw role string and normalises it, so the six copies of
+ * ['partner','admin','Partner','Admin'] scattered through the task screens have
+ * one definition between them. Those copies were the reason adding a role meant
+ * editing six files — and finding the sixth by accident.
+ */
+export function isApproverRole(role: string | null | undefined): boolean {
+  const r = normalizeRole(role);
+  return r !== null && PARTNER_LEVEL.includes(r);
+}
+
 function isPartnerOrAdmin(user: AccessUser | null | undefined): boolean {
-  const role = normalizeRole(user?.role);
-  return role === 'admin' || role === 'partner';
+  return isApproverRole(user?.role);
 }
 
 /** The client master. Both desks need it — each keeps its own list current. */

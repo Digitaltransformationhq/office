@@ -4,6 +4,7 @@ import { tasksAPI, usersAPI, clientsAPI } from '../services/api';
 import { CreateClientModal } from './CreateClientModal';
 import { TASK_STATUS } from '../utils/taskStatus';
 import { X, ClipboardList, ChevronDown, Plus, Info, Search } from 'lucide-react';
+import { isApproverRole, roleLabel } from '../utils/roles';
 
 interface CreateTaskModalProps {
   onClose: () => void;
@@ -26,7 +27,7 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
   const [users, setUsers] = useState<any[]>([]);
   const [approvers, setApprovers] = useState<any[]>([]);
   /** Partners and admins sign tasks off, so their own need no approval gate. */
-  const isApproverRole = ['partner', 'admin', 'Partner', 'Admin'].includes(currentUserRole || '');
+  const isApprover = isApproverRole(currentUserRole);
   const [clients, setClients] = useState<any[]>([]);
   const [showCreateClient, setShowCreateClient] = useState(false);
 
@@ -73,12 +74,12 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
       const [usersRes, clientsRes] = await Promise.all([usersAPI.getAll(), clientsAPI.getAll()]);
       setUsers(usersRes.data.filter((u: any) =>
         u.role === 'team-member' || u.role === 'Staff' || u.role === 'Team Member' ||
-        u.role === 'partner' || u.role === 'Partner' ||
+        isApproverRole(u.role) ||
         u.role === 'team-leader' || u.role === 'Accounts' || u.role === 'Team Leader'
       ));
       // Partners and admins are the people who can sign a task off.
       setApprovers(usersRes.data.filter((u: any) =>
-        ['partner', 'admin', 'Partner', 'Admin'].includes(u.role)
+        isApproverRole(u.role)
       ));
       setClients(clientsRes.data);
     } catch (error) {
@@ -105,7 +106,6 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
        * work, so it starts at the approval gate; they may nominate an approver,
        * and if they leave it blank whoever approves claims it.
        */
-      const isApprover = isApproverRole;
       const chosenApprover = approvers.find(u => u.id === formData.approverId);
       const approverId = isApprover ? (currentUser?.id || '') : formData.approverId;
       const approverName = isApprover ? (currentUser?.name || '') : (chosenApprover?.name || '');
@@ -183,7 +183,7 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
   );
 
   const isStaffUser = currentUserRole === 'team-member' || currentUserRole === 'Staff' || currentUserRole === 'Team Member';
-  const partners = filteredUsers.filter(u => u.role === 'partner' || u.role === 'Partner');
+  const partners = filteredUsers.filter(u => isApproverRole(u.role));
   const accountants = filteredUsers.filter(u => u.role === 'team-leader' || u.role === 'Accounts' || u.role === 'Team Leader');
   const staff = filteredUsers.filter(u => u.role === 'team-member' || u.role === 'Staff' || u.role === 'Team Member');
 
@@ -321,7 +321,7 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
             {/* Only shown to those whose tasks need signing off. A partner or
                 admin approves their own tasks by definition, so asking them
                 would be noise. */}
-            {!isApproverRole && (
+            {!isApprover && (
               <Field
                 label="Send for approval to"
                 hint="Optional — leave blank and any partner can approve it"
@@ -333,7 +333,7 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
                   <option value="">Any partner or admin</option>
                   {approvers.map(a => (
                     <option key={a.id} value={a.id}>
-                      {a.name} · {a.role === 'admin' || a.role === 'Admin' ? 'Admin' : 'Partner'}
+                      {a.name} · {roleLabel(a.role)}
                     </option>
                   ))}
                 </SelectField>

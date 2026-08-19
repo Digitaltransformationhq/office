@@ -94,6 +94,7 @@ export function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) 
                 <option value="team-leader">Accounts</option>
                 <option value="admin">Admin</option>
                 <option value="partner">Partner</option>
+                <option value="director">Director</option>
               </SelectField>
             </Field>
 

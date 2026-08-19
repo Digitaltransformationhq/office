@@ -30,6 +30,8 @@ import { ITRRegister } from './components/ITRRegister';
 import { enablePush, pushPermission } from './services/push';
 import { viewForType, typeFromUrl, NOTIF_PARAM } from './utils/notifications';
 import { canAccessClients, canAccessGstCompliance, canAccessIncomeTax } from './utils/roles';
+import { isApproverRole } from './utils/roles';
+import { RevenueShare } from './components/RevenueShare';
 
 interface User {
   id: string;
@@ -105,7 +107,7 @@ export default function App() {
   const handleViewChange = (view: string) => {
     // Prevent users from switching to other roles
     // Only allow navigation to feature views or their own role dashboard
-    const roleViews = ['partner', 'admin', 'team-leader', 'team-member', 'client',];
+    const roleViews = ['partner', 'admin', 'director', 'team-leader', 'team-member', 'client',];
 
     if (roleViews.includes(view)) {
       // If trying to switch to a role view, only allow if it's their own role
@@ -173,9 +175,15 @@ export default function App() {
 
   const renderDashboard = () => {
     switch (activeView) {
+      // A director runs the firm exactly as a partner does, so the two share a
+
+      // dashboard rather than having a copy made that drifts out of step.
+
+      case 'director':
+
       case 'partner':
         // Only show partner dashboard if user is actually a partner
-        if (user?.role === 'partner') {
+        if (user?.role === 'partner' || user?.role === 'director') {
           return <PartnerDashboard user={user || undefined} />;
         }
         return renderDefaultDashboard();
@@ -292,9 +300,17 @@ export default function App() {
           return <AnnouncementsView user={user} />;
         }
         return null;
+      // Partner level only. RevenueShare refuses anyone else on its own too —
+      // a route is a menu decision, not a security boundary.
+      case 'revenue-share':
+        if (user && isApproverRole(user.role)) {
+          return <RevenueShare user={user} />;
+        }
+        return null;
+
       case 'reports':
         // Only allow admin and partner to access reports
-        if (user && (user.role === 'admin' || user.role === 'partner')) {
+        if (user && isApproverRole(user.role)) {
           return <Reports user={user} />;
         }
         // Redirect other roles back to their dashboard
@@ -303,8 +319,8 @@ export default function App() {
         }
         return null;
       case 'inquiries':
-        // Partners see the full Inquiry Management interface, others see My Inquiries
-        if (user?.role === 'partner') {
+        // Partner level sees the full Inquiry Management interface, others see My Inquiries
+        if (isApproverRole(user?.role) && user?.role !== "admin") {
           return user ? <InquiryManagement userId={extractNumericId(user.id)} userName={user.name} /> : null;
         }
         return user ? <MyInquiries userId={extractNumericId(user.id)} userName={user.name} /> : null;
@@ -322,6 +338,7 @@ export default function App() {
 
   const renderDefaultDashboard = () => {
     switch (user?.role) {
+      case 'director':
       case 'partner':
         return <PartnerDashboard user={user || undefined} />;
       case 'admin':

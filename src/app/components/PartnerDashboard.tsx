@@ -10,7 +10,7 @@ import { useTimeAgo } from '../hooks/useTimeAgo';
 import { KPICard } from './KPICard';
 import { DailyTodoList } from './DailyTodoList';
 import { useLiveData } from '../hooks/useLiveData';
-import { statusColor, statusLabel, statusHex, isAwaitingApproval, isOpenTask } from '../utils/taskStatus';
+import { statusColor, statusLabel, statusHex, isAwaitingApproval, isOpenTask, canApproveTask } from '../utils/taskStatus';
 import {
   filterByRange, financialYearLabel, formatINRCompact, monthOverMonth,
   pendingBilling, totals, type BillingRecord,
@@ -118,6 +118,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
   useEffect(() => { setPage(1); }, [search, fCategory, fPriority, fStatus]);
 
   const currentUser = user || JSON.parse(localStorage.getItem('kaps_user') || '{}');
+  const isAdmin = currentUser?.role === 'admin';
 
   const extractNumericId = (userId: string): number => {
     if (!userId) return 0;
@@ -202,7 +203,17 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
     tasks.filter(t =>
       t.targetDate && toKey(new Date(t.targetDate)) === toKey(date) && isOpenTask(t.status));
 
-  const taskApprovalCount = tasks.filter(t => isAwaitingApproval(t.status)).length;
+  /*
+   * Only what this partner can actually sign off — their own routed work plus
+   * anything unrouted.
+   *
+   * Counted the same way the queue filters, or the tile would announce nine
+   * approvals and open onto two, and the seven missing ones would look like a
+   * fault rather than somebody else's post.
+   */
+  const taskApprovalCount = tasks.filter(t =>
+    isAwaitingApproval(t.status) &&
+    canApproveTask(t, { id: currentUser?.id || '', role: currentUser?.role || '' })).length;
 
   // Revenue roll-ups. Derived exactly as AdminDashboard derives them, from the
   // same helpers, so the two screens cannot disagree about the firm's numbers.
@@ -210,6 +221,21 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
   const mom = monthOverMonth(billingRecords);
   const pendingBill = pendingBilling(tasks);
   const fyLabel = financialYearLabel();
+
+  /*
+   * This person's own share of the year's billing, at a glance.
+   *
+   * Summed from the divisions on the bills, and only from what the server chose
+   * to send — a partner is given their own share lines and nobody else's, so
+   * this adds up to their figure without the browser ever holding anyone
+   * else's. An admin is sent every line, so for them it is the firm's whole
+   * divided total rather than a personal one, which is why the tile says so.
+   */
+  const myShare = filterByRange(billingRecords, 'fy').reduce((sum, r: any) => {
+    const mine = (r.shares || []).filter((sh: any) =>
+      isAdmin || sh.userId === currentUser?.id);
+    return sum + mine.reduce((a: number, sh: any) => a + (Number(sh.amount) || 0), 0);
+  }, 0);
 
   // Week label
   const weekStart = weekDates[0];
@@ -271,7 +297,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
         </div>
 
         {/* ── KPI tiles ── */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <KPICard
             title={`Total revenue · ${fyLabel}`}
             value={formatINRCompact(fyTotals.revenue)}
@@ -292,6 +318,13 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
             value={formatINRCompact(pendingBill.amount)}
             variant="warning"
             note={`${pendingBill.count} task${pendingBill.count === 1 ? '' : 's'} awaiting invoice`}
+          />
+          {/* Their own share, beside the firm's figures rather than instead of
+              them: a partner wants both, and only one of them is about them. */}
+          <KPICard
+            title={isAdmin ? `Divided · ${fyLabel}` : `Your share · ${fyLabel}`}
+            value={formatINRCompact(myShare)}
+            note="Billed, not received"
           />
           <KPICard title="Total Tasks" value={tasks.length} />
         </div>

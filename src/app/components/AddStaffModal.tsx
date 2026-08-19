@@ -210,6 +210,7 @@ export function AddStaffModal({ onClose, onSuccess }: AddStaffModalProps) {
                   <option value="team-member">Team Member (Staff)</option>
                   <option value="team-leader">Accounts</option>
                   <option value="partner">Partner</option>
+                <option value="director">Director</option>
                   <option value="admin">Admin</option>
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

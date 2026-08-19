@@ -4,6 +4,7 @@ import { tasksAPI, usersAPI, clientsAPI } from '../services/api';
 import { TaskCommentThread } from './TaskCommentThread';
 import { TASK_STATUS, statusLabel } from '../utils/taskStatus';
 import { X, ChevronDown } from 'lucide-react';
+import { isApproverRole } from '../utils/roles';
 
 interface Task {
   id: string;
@@ -144,7 +145,7 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
       // assignee and aborted.
       setUsers(usersRes.data.filter((u: any) =>
         u.role === 'team-member' || u.role === 'Staff' || u.role === 'Team Member' ||
-        u.role === 'partner' || u.role === 'Partner' ||
+        isApproverRole(u.role) ||
         u.role === 'admin' || u.role === 'Admin' ||
         u.role === 'team-leader' || u.role === 'Accounts' || u.role === 'Team Leader'
       ));
@@ -281,7 +282,7 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
   );
 
   const roleGroups: [string, (u: any) => boolean][] = [
-    ['Partners', (u) => ['partner', 'Partner', 'admin', 'Admin'].includes(u.role)],
+    ['Partners', (u) => isApproverRole(u.role)],
     ['Accounts', (u) => ['team-leader', 'Accounts', 'Team Leader'].includes(u.role)],
     ['Staff', (u) => ['team-member', 'Staff', 'Team Member'].includes(u.role)],
   ];

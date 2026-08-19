@@ -3,6 +3,7 @@ import { ReviewTaskModal } from './ReviewTaskModal';
 import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
 import { TASK_STATUS, canApproveTask } from '../utils/taskStatus';
+import { normalizeRole } from '../utils/roles';
 import { ArrowRight, CheckCircle2, Clock, PlayCircle, RotateCcw, Search } from 'lucide-react';
 
 interface TaskApprovalQueueProps {
@@ -49,9 +50,30 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
       // Both gates queue here: a brand-new task awaiting sign-off before work
       // starts, and a finished task awaiting sign-off before it can be billed.
       // ReviewTaskModal branches on which one it is.
-      setPendingTasks((response.data || []).filter((t: any) =>
+      const awaiting = (response.data || []).filter((t: any) =>
         t.status === TASK_STATUS.pendingNewTaskApproval ||
-        t.status === TASK_STATUS.pendingCompletionApproval));
+        t.status === TASK_STATUS.pendingCompletionApproval);
+
+      /*
+       * A partner or director sees their own queue, not the firm's.
+       *
+       * This list used to show every pending approval to everyone, on the
+       * reasoning that nothing should look lost while a named approver is away.
+       * That was the wrong trade: it turned each partner's queue into a running
+       * account of what the others were being asked to sign off, and buried the
+       * two things somebody actually had to do under a dozen they could only
+       * watch.
+       *
+       * Unrouted work still shows to all of them, because nobody owns it and
+       * whoever approves it claims it — hiding that would leave it genuinely
+       * lost. An admin keeps the whole view, as everywhere else: somebody has to
+       * be able to see the firm entire.
+       */
+      const mine = normalizeRole(userRole) === 'admin'
+        ? awaiting
+        : awaiting.filter((t: any) => canApproveTask(t, { id: userId, role: userRole }));
+
+      setPendingTasks(mine);
     } catch {
       showError('Failed to load pending task approvals');
     } finally {

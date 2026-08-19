@@ -107,6 +107,7 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
                 <option value="team-leader">Accounts</option>
                 <option value="admin">Admin</option>
                 <option value="partner">Partner</option>
+                <option value="director">Director</option>
               </SelectField>
             </Field>
 

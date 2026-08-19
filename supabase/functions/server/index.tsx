@@ -624,6 +624,8 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
     if (body.priority !== undefined) updates.priority = body.priority;
     if (body.startDate !== undefined) updates.start_date = body.startDate;
     if (body.targetDate !== undefined) updates.target_date = body.targetDate;
+    // The approver's intended division, carried to Accounts. Null clears it.
+    if (body.billingShares !== undefined) updates.billing_shares = body.billingShares || null;
     if (body.completionDate !== undefined) updates.completion_date = body.completionDate;
     if (body.hoursLogged !== undefined) updates.hours_logged = body.hoursLogged;
     if (body.comments !== undefined) updates.comments = body.comments;
@@ -1094,6 +1096,22 @@ app.post('/make-server-0abfa7cf/users', async (c) => {
       }, 400);
     }
 
+    /*
+     * A partner may take on staff; only an admin may make another admin,
+     * partner or director.
+     *
+     * The narrower rule rather than "admin creates everyone", because partners
+     * do hire and there is no reason to route that through the office. What
+     * they must not be able to do is mint authority — including their own, by
+     * creating a second privileged account and signing in as it.
+     */
+    if (isPrivileged(body.role) && !isAdminRole(await actorRole(c.req.query('actedById')))) {
+      return c.json({
+        success: false,
+        error: 'Only an admin can create an admin, partner or director',
+      }, 403);
+    }
+
     const userId = `user:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const user = {
@@ -1198,12 +1216,60 @@ app.post('/make-server-0abfa7cf/users', async (c) => {
   }
 });
 
+/**
+ * Who a person is, straight from the database.
+ *
+ * The browser holds the anon key and can claim to be anybody, so a role sent
+ * from it is a request, never a fact. Anything that turns on the caller's
+ * authority has to look them up here first.
+ */
+async function actorRole(actorId: unknown): Promise<string | null> {
+  if (!actorId || typeof actorId !== 'string') return null;
+  const { data } = await supabase.from('users').select('role').eq('id', actorId).maybeSingle();
+  return data?.role ?? null;
+}
+
+/** Kebab-case and TitleCase both live in this column. Compare on one. */
+const isAdminRole = (role: string | null) => (role || '').trim().toLowerCase() === 'admin';
+
+/** The roles that carry authority over the firm and its money. */
+const PRIVILEGED = ['admin', 'partner', 'director'];
+const isPrivileged = (role: unknown) =>
+  PRIVILEGED.includes(String(role || '').trim().toLowerCase());
+
 app.put('/make-server-0abfa7cf/users/:userId', async (c) => {
   try {
     const userId = c.req.param('userId');
     const body = await c.req.json();
 
     console.log('Updating user:', userId, 'with data:', JSON.stringify(body));
+
+    /*
+     * Changing a role is an admin's decision, and until now it was nobody's.
+     *
+     * This handler took the request body and wrote it to the row as it stood —
+     * so anything able to reach the API could send {role:'admin'} for its own id
+     * and become one. The role is the only thing standing between a staff login
+     * and the firm's billing, so it is the one field that has to prove who is
+     * asking before it moves.
+     *
+     * `actedById` is looked up rather than trusted: a role that arrives in the
+     * request is a claim, and claims are free.
+     */
+    if (body.role !== undefined) {
+      const { data: target } = await supabase
+        .from('users').select('role').eq('id', userId).maybeSingle();
+
+      if (String(target?.role || '') !== String(body.role)) {
+        if (!isAdminRole(await actorRole(c.req.query('actedById')))) {
+          return c.json({
+            success: false,
+            error: 'Only an admin can change a role',
+          }, 403);
+        }
+      }
+    }
+
 
     const { data, error } = await supabase
       .from('users')
@@ -3883,8 +3949,34 @@ app.get('/make-server-0abfa7cf/billing-records', async (c) => {
       .sort((a, b) => new Date(b.billedAt).getTime() - new Date(a.billedAt).getTime());
 
     console.log('Parsed records count:', parsedRecords.length);
-    
-    return c.json({ success: true, data: parsedRecords });
+
+    /*
+     * The division is trimmed to what the reader is entitled to, here, before it
+     * leaves the server.
+     *
+     * Hiding other people's shares in the browser would not hide them: the
+     * response is one keypress away in any network tab, and "a partner sees only
+     * their own" would be a statement about the interface rather than about who
+     * can find out. What a partner is not allowed to see is not sent.
+     *
+     * Anyone who is neither admin nor a share-holder gets no division at all —
+     * the bills themselves are unchanged, since the billing screens are already
+     * open to the people who use them.
+     */
+    const viewerRole = await actorRole(c.req.query('actedById'));
+    const viewerId = c.req.query('actedById') || '';
+    const seesEverything = isAdminRole(viewerRole);
+
+    const visible = parsedRecords.map((r: any) => {
+      const shares = Array.isArray(r.shares) ? r.shares : [];
+      if (seesEverything || shares.length === 0) return r;
+      const mine = shares.filter((s: any) => s.userId === viewerId);
+      // `sharesWithheld` so the screen can say "divided, but not with you"
+      // rather than showing a bill that looks as though nobody was credited.
+      return { ...r, shares: mine, sharesWithheld: shares.length - mine.length };
+    });
+
+    return c.json({ success: true, data: visible });
   } catch (error) {
     console.log('Error fetching billing records:', error);
     return c.json({ success: false, error: 'Failed to fetch billing records' }, 500);
@@ -3896,6 +3988,70 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
   try {
     const body = await c.req.json();
     const { taskId, billNumber, billDate, taxableAmount, remarks, billedBy, billedById } = body;
+
+    /*
+     * The division of this bill, checked here rather than trusted.
+     *
+     * The browser validates the same things and is not evidence of anything —
+     * it is the side an ambitious request can simply skip. A division that does
+     * not total 100, or that credits somebody who is not a partner or director,
+     * would sit in the record looking authoritative and quietly misstate what
+     * everyone earned.
+     *
+     * Rounded to two decimals before comparing: three equal ways is
+     * 33.33 + 33.33 + 33.34, and floating point makes even that land a hair off
+     * 100 often enough to matter.
+     */
+    const rawShares = Array.isArray(body.shares) ? body.shares : [];
+    let shares: Array<{ userId: string; name: string; percent: number; amount: number }> = [];
+
+    if (rawShares.length > 0) {
+      const holders = await supabase
+        .from('users')
+        .select('id, name, role')
+        .in('id', rawShares.map((s: any) => String(s.userId || '')));
+
+      const byId = new Map((holders.data || []).map((u: any) => [u.id, u]));
+      const total = Math.round(
+        rawShares.reduce((sum: number, s: any) => sum + (Number(s.percent) || 0), 0) * 100,
+      ) / 100;
+
+      if (total !== 100) {
+        return c.json({
+          success: false,
+          error: `The division must come to 100%. It currently comes to ${total}%.`,
+        }, 400);
+      }
+
+      for (const s of rawShares) {
+        const holder = byId.get(String(s.userId || ''));
+        const percent = Number(s.percent) || 0;
+        if (!holder) {
+          return c.json({ success: false, error: 'A share names somebody who is not on the staff list' }, 400);
+        }
+        if (!isPrivileged(holder.role)) {
+          return c.json({
+            success: false,
+            error: `${holder.name} is not a partner or director, so cannot hold a share`,
+          }, 400);
+        }
+        if (percent <= 0 || percent > 100) {
+          return c.json({ success: false, error: `${holder.name}'s share must be above 0 and at most 100` }, 400);
+        }
+        shares.push({
+          userId: holder.id,
+          name: holder.name,
+          percent,
+          // Rupees to the paisa. Stored, not derived: a correction to the
+          // taxable amount later must not silently restate what was divided.
+          amount: Math.round((Number(taxableAmount) || 0) * percent) / 100,
+        });
+      }
+
+      if (new Set(shares.map(s => s.userId)).size !== shares.length) {
+        return c.json({ success: false, error: 'The same person appears twice in the division' }, 400);
+      }
+    }
 
     console.log('=== CREATE BILLING RECORD ===');
     console.log('Task ID:', taskId);
@@ -4015,6 +4171,22 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
       paidAmount: 0,
       paidBy: null,
       paidById: null,
+      /*
+       * How this bill is divided between the partners and directors.
+       *
+       * Kept on the bill rather than in a table of its own, because a bill here
+       * is a document and not a row — there is nothing to point a foreign key
+       * at. It earns its place anyway: the division and the amount it divides
+       * are written in one operation and cannot drift, and the split a bill was
+       * raised under stays with it however the firm's arrangements change
+       * later.
+       *
+       * Each entry carries the name and the rupee amount as well as the
+       * percentage. Denormalised on purpose — a bill is a historical record, and
+       * it should still read correctly when somebody has since left or the
+       * taxable amount has been corrected.
+       */
+      shares,
     };
 
     console.log('Storing billing record in KV store...');

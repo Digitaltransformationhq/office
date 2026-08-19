@@ -7,6 +7,7 @@ import { SubmitWorkModal } from './SubmitWorkModal';
 import { TaskThreadModal } from './TaskThreadModal';
 import { statusColor, statusLabel, isOpenTask, isFinishedTask, TASK_STATUS } from '../utils/taskStatus';
 import { useLiveData } from '../hooks/useLiveData';
+import { isApproverRole } from '../utils/roles';
 import {
   Search, SlidersHorizontal, Check, X, Repeat2,
   RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp, Plus,
@@ -119,7 +120,7 @@ export function TaskMIS({ user }: TaskMISProps) {
     return n;
   });
 
-  const isPartnerOrAdmin = ['partner', 'admin', 'Partner', 'Admin'].includes(user.role);
+  const isPartnerOrAdmin = isApproverRole(user.role);
 
   useEffect(() => { loadTasks(); }, [user]);
 

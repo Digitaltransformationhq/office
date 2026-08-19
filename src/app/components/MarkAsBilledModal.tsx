@@ -5,6 +5,7 @@ import { useToast } from './Toast';
 import { DatabaseSetupModal } from './DatabaseSetupModal';
 import { TaskCommentThread } from './TaskCommentThread';
 import { X } from 'lucide-react';
+import { BillDivision, divisionTotal } from './BillDivision';
 
 interface MarkAsBilledModalProps {
   task: {
@@ -18,6 +19,11 @@ interface MarkAsBilledModalProps {
     billingFees?: number | string;
     /** The note the approver (partner) left when releasing the task to Accounts. */
     billingDescription?: string;
+    /** Whoever signed the work off — the default holder of this bill's share. */
+    approverId?: string | null;
+    approverName?: string | null;
+    /** The division the approver set when releasing the work. */
+    billingShares?: Array<{ userId: string; name?: string; percent: number }> | null;
   };
   user: {
     id: string;
@@ -39,6 +45,23 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
       : '',
   );
   const [remarks, setRemarks] = useState('');
+  /** Percentages by user id, as typed. Strings while editing: a number field
+   *  that reformats mid-keystroke is unusable. */
+  /*
+   * Prefilled from the division the approving partner set.
+   *
+   * Accounts raises the invoice but the division is not theirs to decide — only
+   * the partner who owns the work knows whether it was shared. Where they said
+   * so, it arrives filled in and Accounts confirms it. Where they did not, this
+   * is empty and the panel falls back to its own default, which is the honest
+   * state: somebody has to choose, and it should be visible that nobody has.
+   */
+  const [shares, setShares] = useState<Record<string, string>>(() => {
+    const set = task.billingShares;
+    if (!Array.isArray(set) || set.length === 0) return {};
+    return Object.fromEntries(set.map(sh => [sh.userId, String(sh.percent)]));
+  });
+  const setByApprover = Array.isArray(task.billingShares) && task.billingShares.length > 0;
   const [loading, setLoading] = useState(false);
   const [showDatabaseSetupModal, setShowDatabaseSetupModal] = useState(false);
   const { showSuccess, showError } = useToast();
@@ -62,6 +85,21 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
       return;
     }
 
+    /*
+     * A bill goes out divided, or it does not go out.
+     *
+     * Letting it through unallotted would put a hole in everybody's earnings
+     * that only shows up at the year end, by which time the person who raised it
+     * has long forgotten which bill it was.
+     */
+    const total = divisionTotal(shares);
+    if (total !== 100) {
+      showError(total === 0
+        ? 'Set how this bill divides between the partners and directors'
+        : `The division comes to ${total}%, not 100%`);
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -73,6 +111,9 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
         remarks: remarks.trim(),
         billedBy: user.name,
         billedById: user.id,
+        shares: Object.entries(shares)
+          .map(([userId, percent]) => ({ userId, percent: parseFloat(percent) || 0 }))
+          .filter(s => s.percent > 0) as any,
       });
 
       if (!response.success) {
@@ -241,6 +282,25 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
                 Amount prefilled from approval — edit it if the invoice differs.
               </p>
             )}
+
+            <div>
+              {setByApprover ? (
+                <p className="mb-2 text-[0.72rem] text-muted-foreground">
+                  Division set by {task.approverName || 'the approver'} when the work was signed off.
+                  Change it only if you have been told to.
+                </p>
+              ) : (
+                <p className="mb-2 text-[0.72rem] text-amber-800">
+                  No division came with this task — ask {task.approverName || 'the approver'} how it splits.
+                </p>
+              )}
+              <BillDivision
+                amount={parseFloat(taxableAmount) || 0}
+                defaultHolderId={task.approverId}
+                value={shares}
+                onChange={setShares}
+              />
+            </div>
 
             <div>
               <label className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>

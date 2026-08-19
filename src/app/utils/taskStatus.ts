@@ -35,6 +35,8 @@
  *   finished.
  */
 
+import { isApproverRole } from './roles';
+
 export const TASK_STATUS = {
   pending: 'Pending',
   inProgress: 'In Progress',
@@ -135,7 +137,7 @@ export const canApproveTask = (
   task: { approverId?: string | null },
   user: { id: string; role: string },
 ) => {
-  const isApprover = ['partner', 'admin', 'Partner', 'Admin'].includes(user.role);
+  const isApprover = isApproverRole(user.role);
   if (!isApprover) return false;
   return !task.approverId || task.approverId === user.id;
 };
