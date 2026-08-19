@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { KPICard } from './KPICard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
 import { Button } from './Button';
@@ -13,7 +12,7 @@ import { SubmitWorkModal } from './SubmitWorkModal';
 import { TaskThreadModal } from './TaskThreadModal';
 import { DailyTodoList } from './DailyTodoList';
 import { type BillingRecord } from '../utils/revenue';
-import { Loader2, X, IndianRupee, MessageSquare, ChevronLeft } from 'lucide-react';
+import { Loader2, X, IndianRupee, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface TeamLeaderDashboardProps {
   user?: {
@@ -25,6 +24,23 @@ interface TeamLeaderDashboardProps {
 }
 
 const NAVY = '#1b365d';
+
+/** How many team tasks a page holds. Enough to be worth a page, few enough to
+ *  read without scrolling on a laptop. */
+const TEAM_PAGE_SIZE = 10;
+
+/** Compact page list with ellipses, e.g. 1 … 4 5 6 … 12 */
+function pageList(current: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | '…')[] = [1];
+  const left = Math.max(2, current - 1);
+  const right = Math.min(total - 1, current + 1);
+  if (left > 2) pages.push('…');
+  for (let i = left; i <= right; i++) pages.push(i);
+  if (right < total - 1) pages.push('…');
+  pages.push(total);
+  return pages;
+}
 
 function StatusChip({ status }: { status?: string }) {
   return (
@@ -65,6 +81,9 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const [taskThread, setTaskThread] = useState<any | null>(null);
   const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  /* Team Tasks is the one list here that grows without limit — every open task
+     of every other person — so it is paged rather than scrolled. */
+  const [teamPage, setTeamPage] = useState(1);
   const [focus, setFocus] = useState<null | 'mine' | 'billing' | 'team' | 'approvals' | 'completed'>(null);
   const timeAgo = useTimeAgo(lastRefresh);
   const { showError } = useToast();
@@ -187,6 +206,12 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const isOpen = (t: any) => isOpenTask(t.status);
   const myTasks = user ? allTasks.filter(t => t.assignedToId === user.id && isOpen(t)) : [];
   const teamTasks = allTasks.filter(t => t.assignedToId !== user?.id && isOpen(t));
+  const teamTotalPages = Math.max(1, Math.ceil(teamTasks.length / TEAM_PAGE_SIZE));
+  // Clamped rather than reset: a live refresh that shortens the list must not
+  // strand the reader on a page that no longer exists.
+  const teamSafePage = Math.min(teamPage, teamTotalPages);
+  const teamPageStart = (teamSafePage - 1) * TEAM_PAGE_SIZE;
+  const pagedTeamTasks = teamTasks.slice(teamPageStart, teamPageStart + TEAM_PAGE_SIZE);
   const approvalQueue = allTasks.filter(t => isAwaitingApproval(t.status));
   const completedTasks = allTasks.filter(t => isFinishedTask(t.status));
 
@@ -289,19 +314,20 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
 
         {/* ── Pending for Billing — priority section ── */}
         {focused('billing') && pendingForBilling.length > 0 && (
-          <Card className="border-amber-200 bg-amber-50/40">
-            <CardHeader>
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
-                  <IndianRupee size={16} className="shrink-0 text-amber-600" />
-                  <CardTitle className="text-amber-800">Pending for Billing</CardTitle>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {pendingForBilling.length} task{pendingForBilling.length !== 1 ? 's' : ''} awaiting billing
-                </p>
+          <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
+            <div className="flex flex-col gap-3 border-b border-[#E7EDF4] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2.5">
+                <IndianRupee size={16} className="shrink-0" style={{ color: NAVY }} />
+                <h2 className="text-sm font-semibold" style={{ color: NAVY }}>Pending for Billing</h2>
+                <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  {pendingForBilling.length}
+                </span>
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
+              <p className="text-xs text-muted-foreground">
+                {pendingForBilling.length} task{pendingForBilling.length !== 1 ? 's' : ''} awaiting billing
+              </p>
+            </div>
+            <div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -340,17 +366,20 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                   ))}
                 </TableBody>
               </Table>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         )}
 
         {/* ── My tasks ── */}
         {focused('mine') && (
-        <Card>
-          <CardHeader>
-            <CardTitle>My Tasks</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
+        <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
+          <div className="flex items-center gap-2.5 border-b border-[#E7EDF4] px-5 py-4">
+            <h2 className="text-sm font-semibold" style={{ color: NAVY }}>My Tasks</h2>
+            <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {myTasks.length}
+            </span>
+          </div>
+          <div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -414,18 +443,21 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         )}
 
         {/* ── Team tasks ── */}
         {focused('team') && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Team Tasks</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
+        <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
+          <div className="flex items-center gap-2.5 border-b border-[#E7EDF4] px-5 py-4">
+            <h2 className="text-sm font-semibold" style={{ color: NAVY }}>Team Tasks</h2>
+            <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {teamTasks.length}
+            </span>
+          </div>
+          <div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -443,7 +475,7 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                       No team tasks available.
                     </TableCell>
                   </TableRow>
-                ) : teamTasks.map((task) => (
+                ) : pagedTeamTasks.map((task) => (
                   <TableRow key={task.id}>
                     <TableCell className="rt-title font-medium">{task.assignedTo || <Dash />}</TableCell>
                     <TableCell>{task.client || <Dash />}</TableCell>
@@ -456,8 +488,59 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+          </div>
+
+          {/* Only when there is more than one page — a single page of six tasks
+              with a "1" under it is furniture, not navigation. */}
+          {teamTotalPages > 1 && (
+            <div className="flex flex-col gap-3 border-t border-[#E7EDF4] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted-foreground">
+                Showing{' '}
+                <span className="font-medium" style={{ color: NAVY }}>
+                  {teamPageStart + 1}–{Math.min(teamPageStart + TEAM_PAGE_SIZE, teamTasks.length)}
+                </span>{' '}
+                of {teamTasks.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setTeamPage(p => Math.max(1, p - 1))}
+                  disabled={teamSafePage === 1}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E7EDF4] text-muted-foreground transition-colors hover:bg-[#F4F6F9] disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                {pageList(teamSafePage, teamTotalPages).map((p, i) =>
+                  p === '…' ? (
+                    <span key={`e${i}`} className="px-1.5 text-xs text-muted-foreground">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setTeamPage(p)}
+                      className="flex h-8 min-w-[32px] items-center justify-center rounded-lg px-2 text-xs font-medium transition-colors"
+                      style={
+                        p === teamSafePage
+                          ? { backgroundColor: NAVY, color: '#fff' }
+                          : { border: '1px solid #E7EDF4', color: NAVY }
+                      }
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+                <button
+                  onClick={() => setTeamPage(p => Math.min(teamTotalPages, p + 1))}
+                  disabled={teamSafePage === teamTotalPages}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E7EDF4] text-muted-foreground transition-colors hover:bg-[#F4F6F9] disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
 
         )}
 
@@ -528,16 +611,14 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
             nowhere to send you. Read-only: finished work needs no actions, and
             the thread stays reachable because that is where the history is. */}
         {focus === 'completed' && (
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <CardTitle>Completed</CardTitle>
-                <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                  {completedTasks.length}
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
+          <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
+            <div className="flex items-center gap-2.5 border-b border-[#E7EDF4] px-5 py-4">
+              <h2 className="text-sm font-semibold" style={{ color: NAVY }}>Completed</h2>
+              <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {completedTasks.length}
+              </span>
+            </div>
+            <div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -579,8 +660,8 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
                   ))}
                 </TableBody>
               </Table>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         )}
       </div>
 
