@@ -26,7 +26,7 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [approvers, setApprovers] = useState<any[]>([]);
-  /** Partners and admins sign tasks off, so their own need no approval gate. */
+  /** Partner level signs tasks off, so their own need no approval gate. */
   const isApprover = isApproverRole(currentUserRole);
   const [clients, setClients] = useState<any[]>([]);
   const [showCreateClient, setShowCreateClient] = useState(false);
@@ -46,8 +46,13 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
     taskDate: new Date().toISOString().split('T')[0],
     completionDate: '',
     comments: '',
-    /** Blank is meaningful: any partner or admin may pick the approval up. */
-    approverId: '',
+    /**
+     * Required. A partner, admin or director is defaulted to themselves — they
+     * are the likeliest answer and it saves a hunt — but the field is theirs to
+     * change, and anybody else starts with nothing chosen so the decision is
+     * made rather than inherited.
+     */
+    approverId: isApproverRole(currentUserRole) ? (currentUser?.id || '') : '',
   });
 
   const taskCategories = [
@@ -99,16 +104,22 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
         return;
       }
 
+      if (!formData.approverId) {
+        alert('Please choose who will approve this task.');
+        setLoading(false);
+        return;
+      }
+
       /**
-       * A partner or admin creating a task is the authority on it, so it starts
-       * at 'Pending' and needs no sign-off — and they become its approver, so
-       * the completion approval comes back to them. Anyone else is proposing
-       * work, so it starts at the approval gate; they may nominate an approver,
-       * and if they leave it blank whoever approves claims it.
+       * A partner, admin or director creating a task is the authority on it, so
+       * it starts at 'Pending' and needs no sign-off. Anyone else is proposing
+       * work, so it starts at the approval gate. Either way the approver is the
+       * person named on the form — they are who the completion approval goes to
+       * when the work is finished and the fee has to be set.
        */
       const chosenApprover = approvers.find(u => u.id === formData.approverId);
-      const approverId = isApprover ? (currentUser?.id || '') : formData.approverId;
-      const approverName = isApprover ? (currentUser?.name || '') : (chosenApprover?.name || '');
+      const approverId = formData.approverId;
+      const approverName = chosenApprover?.name || '';
 
       const taskData = {
         task: formData.taskName,
@@ -141,10 +152,8 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
       }
 
       const message = isApprover
-        ? `Task "${formData.taskName}" assigned to ${selectedUser.name} successfully!`
-        : approverName
-          ? `Task "${formData.taskName}" sent to ${approverName} for approval`
-          : `Task "${formData.taskName}" submitted for approval`;
+        ? `Task "${formData.taskName}" assigned to ${selectedUser.name}. ${approverName} will sign it off.`
+        : `Task "${formData.taskName}" sent to ${approverName} for approval`;
 
       alert(message);
       onTaskCreated();
@@ -318,27 +327,39 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
               </SelectField>
             </Field>
 
-            {/* Only shown to those whose tasks need signing off. A partner or
-                admin approves their own tasks by definition, so asking them
-                would be noise. */}
-            {!isApprover && (
-              <Field
-                label="Send for approval to"
-                hint="Optional — leave blank and any partner can approve it"
+            {/*
+              Named on every task, by everyone.
+              
+              It used to be optional, and blank meant "whichever partner gets to
+              it first". That reads as flexibility and behaves as nobody's job:
+              an unrouted task sits in every partner's queue, which is the same
+              as sitting in none of them. Naming somebody also gives the
+              completion approval — where the fee and the division are set — a
+              person to go back to.
+              
+              Partners and directors see it too. Their own work still starts at
+              'Pending' rather than at a gate, so this is not asking them for
+              permission; it is asking who signs the work off at the end, and
+              they are simply defaulted to themselves.
+            */}
+            <Field
+              label="Approver"
+              hint={isApprover ? 'Who signs this off when the work is done' : 'Who this is sent to for approval'}
+              required
+            >
+              <SelectField
+                value={formData.approverId}
+                onChange={e => setFormData({ ...formData, approverId: e.target.value })}
+                required
               >
-                <SelectField
-                  value={formData.approverId}
-                  onChange={e => setFormData({ ...formData, approverId: e.target.value })}
-                >
-                  <option value="">Any partner or admin</option>
-                  {approvers.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} · {roleLabel(a.role)}
-                    </option>
-                  ))}
-                </SelectField>
-              </Field>
-            )}
+                <option value="">Select an approver…</option>
+                {approvers.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} · {roleLabel(a.role)}
+                  </option>
+                ))}
+              </SelectField>
+            </Field>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Assignment date" required>
