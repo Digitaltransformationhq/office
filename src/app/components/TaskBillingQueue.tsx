@@ -110,8 +110,21 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
 
   const { awaiting, billed } = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const match = (t: any) => !q || [t.client, t.task, t.assignedTo, t.category, t.billNumber]
-      .some(v => (v || '').toString().toLowerCase().includes(q));
+    /*
+     * The bill number is not on the task — it is on the invoice raised against
+     * it, which this screen already has to hand.
+     *
+     * Searching `t.billNumber` matched nothing, ever: tasks carry no such
+     * field, so the one term anybody types here that is exact and unambiguous
+     * was the one term that could not be found. Looked up through the record
+     * instead, along with the remarks written on it.
+     */
+    const match = (t: any) => {
+      if (!q) return true;
+      const rec = recordFor(t.id);
+      return [t.client, t.task, t.assignedTo, t.category, rec?.billNumber, rec?.remarks]
+        .some(v => (v ?? '').toString().toLowerCase().includes(q));
+    };
 
     return {
       // Released by a partner and waiting on an invoice.
@@ -123,7 +136,7 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
         // Newest first: an invoice raised this morning is the one being checked.
         .sort((a, b) => (b.completionDate || '').localeCompare(a.completionDate || '')),
     };
-  }, [tasks, search]);
+  }, [tasks, search, recordFor]);
 
   const awaitingValue = awaiting.reduce((sum, t) => sum + amountOf(t), 0);
 
