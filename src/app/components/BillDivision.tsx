@@ -1,9 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Users, Equal, AlertCircle } from 'lucide-react';
+import { Users, Building2, AlertCircle } from 'lucide-react';
 import { usersAPI, type BillShare } from '../services/api';
 import { isApproverRole, roleLabel } from '../utils/roles';
 
 const NAVY = '#1b365d';
+
+/**
+ * The firm's own slice of a bill, held under a reserved id rather than by a
+ * person.
+ *
+ * The pool is a share of the invoice like any other — it just belongs to the
+ * office instead of to somebody — so it travels in the same list. That keeps one
+ * rule ("the shares total 100") instead of two, and means every screen that
+ * already reads a division shows the pool without being taught about it.
+ */
+export const OFFICE_POOL_ID = 'office-pool';
+export const OFFICE_POOL_NAME = 'Office pool';
 
 /** A holder is anyone at partner level. Admins are included: the firm's own
  *  account can hold a share, and excluding it would be a guess. */
@@ -71,6 +83,7 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
   }, [defaultHolderId]);
 
   const total = useMemo(() => divisionTotal(value), [value]);
+  const poolPct = parseFloat(value[OFFICE_POOL_ID] || '') || 0;
   const balanced = total === 100;
 
   const set = (id: string, raw: string) => {
@@ -80,20 +93,19 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
     onChange(next);
   };
 
-  /**
-   * Split evenly, with the remainder given to the first holder.
+  /*
+   * Entering the pool sets the pool, and nothing else.
    *
-   * Three ways is 33.33 each and a paisa left over. Handing it to somebody
-   * rather than dropping it is what makes the column total exactly 100 — and a
-   * division that reads 99.99 is one every reader stops to check.
+   * It used to re-divide the remainder evenly between the partners and
+   * directors, which was wrong for the same reason a firm-wide ratio was: a bill
+   * follows whoever the work belongs to, and an even split is rarely that. What
+   * the pool does is lower the figure the rest has to reach — the footer says by
+   * how much — and the person entering it decides the rest.
    */
-  const splitEqually = () => {
-    if (holders.length === 0) return;
-    const each = Math.floor((100 / holders.length) * 100) / 100;
-    const next: Record<string, string> = {};
-    holders.forEach(h => { next[h.id] = each.toFixed(2); });
-    const drift = Math.round((100 - each * holders.length) * 100) / 100;
-    if (drift !== 0) next[holders[0].id] = (each + drift).toFixed(2);
+  const setPool = (raw: string) => {
+    const next = { ...value };
+    if (!raw.trim() || (parseFloat(raw) || 0) <= 0) delete next[OFFICE_POOL_ID];
+    else next[OFFICE_POOL_ID] = raw;
     onChange(next);
   };
 
@@ -119,13 +131,39 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
         <span className="inline-flex items-center gap-2 text-[0.8rem] font-semibold" style={{ color: NAVY }}>
           <Users size={14} /> Division of this bill
         </span>
-        <button
-          type="button"
-          onClick={splitEqually}
-          className="inline-flex items-center gap-1 rounded-md border border-[#E7EDF4] bg-white px-2 py-1 text-[0.7rem] font-medium text-foreground/75 transition-colors hover:border-[#C7D7EC] hover:bg-[#F7FAFF]"
-        >
-          <Equal size={11} /> Split equally
-        </button>
+      </div>
+
+      {/*
+        The office's own slice, entered first because everything else follows
+        from it. Typing it re-divides the remainder between the partners and
+        directors straight away — the alternative is a form that silently stops
+        adding to 100 and waits for somebody to notice.
+      */}
+      <div className="flex items-center gap-3 border-b border-[#F1F4F8] bg-[#FBFCFE] px-4 py-2.5">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY }}>
+          <Building2 size={14} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[0.82rem] font-medium" style={{ color: NAVY }}>{OFFICE_POOL_NAME}</p>
+          <p className="truncate text-[0.68rem] text-muted-foreground">Firm&apos;s share</p>
+        </div>
+        <span className="w-28 shrink-0 text-right text-[0.75rem] tabular-nums text-muted-foreground">
+          {poolPct > 0 ? rupees(Math.round(amount * poolPct) / 100) : '—'}
+        </span>
+        <div className="relative w-24 shrink-0">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            value={value[OFFICE_POOL_ID] ?? ''}
+            onChange={e => setPool(e.target.value)}
+            placeholder="0"
+            aria-label="Common office pool percentage"
+            className="w-full rounded-lg border border-[#E7EDF4] bg-white py-1.5 pl-2.5 pr-6 text-right text-[0.8rem] tabular-nums outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
+          />
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[0.7rem] text-muted-foreground">%</span>
+        </div>
       </div>
 
       <ul className="divide-y divide-[#F5F7FA]">

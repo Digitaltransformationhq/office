@@ -28,11 +28,14 @@
  *   Both display as "Pending for Approval": the split is for the code, not the
  *   reader.
  *
- * TERMINAL STATE
+ * TERMINAL STATES
  *
- *   'Billed' — the work is done and the invoice is raised. 'Completed' is
- *   retired from the flow and kept only so rows that still carry it render as
- *   finished.
+ *   'Billed' — the work is done and the invoice is raised.
+ *
+ *   'Completed' — the work is done and no invoice was ever raised: a bill
+ *   withdrawn, or work dropped from the billing queue. Retired as a destination
+ *   for new work, but still reached by both of those paths, so it is a live
+ *   state and not merely a legacy one. It reads as "Not billed" for that reason.
  */
 
 import { isApproverRole } from './roles';
@@ -64,7 +67,9 @@ export const STATUS_COLOR: Record<string, string> = {
   [TASK_STATUS.pendingForBilling]: 'border border-purple-300 bg-purple-100 text-purple-700',
   [TASK_STATUS.billed]: 'border border-green-300 bg-green-100 text-green-700',
   [TASK_STATUS.overdue]: 'border border-red-300 bg-red-100 text-red-700',
-  [TASK_STATUS.completed]: 'border border-green-300 bg-green-100 text-green-700',
+  // Finished, never invoiced — see STATUS_LABEL. Slate rather than green: green
+  // is the colour of money in and this is the absence of it.
+  [TASK_STATUS.completed]: 'border border-slate-300 bg-slate-100 text-slate-600',
 };
 
 /**
@@ -81,7 +86,7 @@ export const STATUS_HEX: Record<string, string> = {
   [TASK_STATUS.pendingForBilling]: '#8b5cf6',
   [TASK_STATUS.billed]: '#4ea72e',
   [TASK_STATUS.overdue]: '#ef4444',
-  [TASK_STATUS.completed]: '#4ea72e',
+  [TASK_STATUS.completed]: '#94a3b8',
 };
 
 export const statusHex = (status?: string) => STATUS_HEX[status || ''] || '#94a3b8';
@@ -91,14 +96,23 @@ export const statusColor = (status?: string) =>
   STATUS_COLOR[status || ''] || 'border border-slate-300 bg-slate-100 text-slate-600';
 
 /**
- * What the user actually reads. Both gates display as "Pending for Approval";
- * legacy 'Completed' rows read as "Billed" so the board shows one vocabulary
- * for finished work rather than two words for the same thing.
+ * What the user actually reads. Both gates display as "Pending for Approval".
+ *
+ * 'Completed' reads as "Not billed", and that correction matters more than it
+ * looks. It used to render as "Billed", on the reasoning that the board should
+ * have one word for finished work — but the two are not the same finish. Every
+ * task in this system carrying 'Completed' has NO invoice against it, and every
+ * task carrying 'Billed' has one; the status is what a task lands on when a bill
+ * is withdrawn or when Accounts drops it from the queue without charging.
+ *
+ * So the old label told the firm that work had been invoiced when it had not,
+ * and did it in green, next to a billing division that could not show a share of
+ * a bill nobody ever raised.
  */
 export const STATUS_LABEL: Record<string, string> = {
   [TASK_STATUS.pendingNewTaskApproval]: 'Pending for Approval',
   [TASK_STATUS.pendingCompletionApproval]: 'Pending for Approval',
-  [TASK_STATUS.completed]: 'Billed',
+  [TASK_STATUS.completed]: 'Not billed',
 };
 
 export const statusLabel = (status?: string) =>

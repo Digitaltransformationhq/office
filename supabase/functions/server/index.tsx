@@ -3970,9 +3970,15 @@ app.get('/make-server-0abfa7cf/billing-records', async (c) => {
     const visible = parsedRecords.map((r: any) => {
       const shares = Array.isArray(r.shares) ? r.shares : [];
       if (seesEverything || shares.length === 0) return r;
-      const mine = shares.filter((s: any) => s.userId === viewerId);
+      const mine = shares.filter((s: any) =>
+        s.userId === viewerId || s.userId === 'office-pool');
       // `sharesWithheld` so the screen can say "divided, but not with you"
       // rather than showing a bill that looks as though nobody was credited.
+      // A partner who holds nothing on this bill sees nothing of it — the pool
+      // alone is not a share in it, so it must not make the bill look like theirs.
+      if (!shares.some((s: any) => s.userId === viewerId)) {
+        return { ...r, shares: [], sharesWithheld: shares.length };
+      }
       return { ...r, shares: mine, sharesWithheld: shares.length - mine.length };
     });
 
@@ -4002,6 +4008,18 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
      * 33.33 + 33.33 + 33.34, and floating point makes even that land a hair off
      * 100 often enough to matter.
      */
+    /*
+     * The firm's own slice travels in the same list as everybody else's, under
+     * a reserved id that belongs to no user.
+     *
+     * It is a share of the invoice like any other — it simply belongs to the
+     * office — so keeping it here means one rule ("the shares total 100") and one
+     * shape for every screen to read, rather than a second field that every
+     * reader has to remember to add in.
+     */
+    const OFFICE_POOL_ID = 'office-pool';
+    const OFFICE_POOL_NAME = 'Office pool';
+
     const rawShares = Array.isArray(body.shares) ? body.shares : [];
     let shares: Array<{ userId: string; name: string; percent: number; amount: number }> = [];
 
@@ -4009,7 +4027,9 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
       const holders = await supabase
         .from('users')
         .select('id, name, role')
-        .in('id', rawShares.map((s: any) => String(s.userId || '')));
+        .in('id', rawShares
+          .map((s: any) => String(s.userId || ''))
+          .filter((id: string) => id !== OFFICE_POOL_ID));
 
       const byId = new Map((holders.data || []).map((u: any) => [u.id, u]));
       const total = Math.round(
@@ -4024,8 +4044,25 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
       }
 
       for (const s of rawShares) {
-        const holder = byId.get(String(s.userId || ''));
+        const id = String(s.userId || '');
         const percent = Number(s.percent) || 0;
+
+        // The pool answers to nobody, so there is no user to look up and no
+        // privilege to check — only the same bounds as any other share.
+        if (id === OFFICE_POOL_ID) {
+          if (percent <= 0 || percent > 100) {
+            return c.json({ success: false, error: 'The office pool must be above 0 and at most 100' }, 400);
+          }
+          shares.push({
+            userId: OFFICE_POOL_ID,
+            name: OFFICE_POOL_NAME,
+            percent,
+            amount: Math.round((Number(taxableAmount) || 0) * percent) / 100,
+          });
+          continue;
+        }
+
+        const holder = byId.get(id);
         if (!holder) {
           return c.json({ success: false, error: 'A share names somebody who is not on the staff list' }, 400);
         }
