@@ -4,7 +4,7 @@ import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
 import { TaskCommentThread } from './TaskCommentThread';
 import { TASK_STATUS } from '../utils/taskStatus';
-import { BillDivision, divisionTotal } from './BillDivision';
+import { BillDivision, divisionReady, toBillShares, fromBillShares } from './BillDivision';
 import { X, ClipboardCheck, Pencil, Check, ChevronDown, RotateCcw } from 'lucide-react';
 
 interface ReviewTaskModalProps {
@@ -51,11 +51,9 @@ export function ReviewTaskModal({
    * the amount, by the same person, and carried to the billing dialog already
    * filled in.
    */
-  const [shares, setShares] = useState<Record<string, string>>(() => {
-    const existing = (task as any).billingShares;
-    if (!Array.isArray(existing)) return {};
-    return Object.fromEntries(existing.map((sh: any) => [sh.userId, String(sh.percent)]));
-  });
+  const [shares, setShares] = useState<Record<string, string>>(
+    () => fromBillShares((task as any).billingShares),
+  );
 
   const [billingAmount, setBillingAmount] = useState(
     task.taxableAmount != null ? String(task.taxableAmount) : ''
@@ -106,11 +104,8 @@ export function ReviewTaskModal({
         showError('Enter the billing amount before approving');
         return;
       }
-      const total = divisionTotal(shares);
-      if (total !== 100) {
-        showError(total === 0
-          ? 'Set how this bill divides between the partners and directors'
-          : `The division comes to ${total}%, not 100%`);
+      if (!divisionReady(shares)) {
+        showError('Give the partners and directors 100% of what is left after the office pool');
         return;
       }
     }
@@ -124,9 +119,7 @@ export function ReviewTaskModal({
         // Claim an unrouted task, so every later step has someone to go back to.
         ...(task.approverId ? {} : { approverId, approverName }),
         ...(isCompletionReview ? {
-          billingShares: Object.entries(shares)
-            .map(([userId, percent]) => ({ userId, percent: parseFloat(percent) || 0 }))
-            .filter(sh => sh.percent > 0),
+          billingShares: toBillShares(shares),
           taxableAmount: amount,
           billingFees: amount,
           billingDescription: billingNote.trim(),

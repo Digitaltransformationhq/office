@@ -5,40 +5,14 @@ import { isApproverRole, roleLabel } from '../utils/roles';
 
 const NAVY = '#1b365d';
 
-/**
- * The firm's own slice of a bill, held under a reserved id rather than by a
- * person.
- *
- * The pool is a share of the invoice like any other — it just belongs to the
- * office instead of to somebody — so it travels in the same list. That keeps one
- * rule ("the shares total 100") instead of two, and means every screen that
- * already reads a division shows the pool without being taught about it.
- */
-export const OFFICE_POOL_ID = 'office-pool';
-export const OFFICE_POOL_NAME = 'Office pool';
+import {
+  OFFICE_POOL_ID, OFFICE_POOL_NAME, poolPercentOf, holderPercentOf,
+  divisionReady, toBillShares, fromBillShares,
+} from '../utils/billDivision';
 
-/** A holder is anyone at partner level. Admins are included: the firm's own
- *  account can hold a share, and excluding it would be a guess. */
-interface Holder { id: string; name: string; role: string }
-
-interface BillDivisionProps {
-  /** The bill being divided, in rupees. Drives the amount beside each share. */
-  amount: number;
-  /** Whose bill it is, if the task names an approver — the sensible default. */
-  defaultHolderId?: string | null;
-  /** Percentages by user id. Owned by the parent so it can refuse to save. */
-  value: Record<string, string>;
-  onChange: (next: Record<string, string>) => void;
-}
-
-const rupees = (n: number) =>
-  `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-/** The total, rounded the way the server rounds it before comparing to 100. */
-export const divisionTotal = (value: Record<string, string>) =>
-  Math.round(
-    Object.values(value).reduce((sum, v) => sum + (parseFloat(v) || 0), 0) * 100,
-  ) / 100;
+export {
+  OFFICE_POOL_ID, OFFICE_POOL_NAME, divisionReady, toBillShares, fromBillShares,
+};
 
 /**
  * How one bill is divided between the partners and directors.
@@ -82,9 +56,13 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
     return () => { live = false; };
   }, [defaultHolderId]);
 
-  const total = useMemo(() => divisionTotal(value), [value]);
-  const poolPct = parseFloat(value[OFFICE_POOL_ID] || '') || 0;
-  const balanced = total === 100;
+  const poolPct = poolPercentOf(value);
+  /** What the partners and directors have allotted between them, out of 100. */
+  const allotted = useMemo(() => holderPercentOf(value), [value]);
+  const balanced = divisionReady(value);
+  /** The rupees actually being divided, once the firm has taken its cut. */
+  const poolAmount = Math.round(amount * poolPct) / 100;
+  const divisible = Math.round((amount - poolAmount) * 100) / 100;
 
   const set = (id: string, raw: string) => {
     const next = { ...value };
@@ -131,6 +109,13 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
         <span className="inline-flex items-center gap-2 text-[0.8rem] font-semibold" style={{ color: NAVY }}>
           <Users size={14} /> Division of this bill
         </span>
+        {/* Named here because the percentages below are of THIS figure, not of
+            the invoice — without it a 50 next to a 10% pool looks wrong. */}
+        {poolPct > 0 && (
+          <span className="text-[0.7rem] text-muted-foreground">
+            {rupees(divisible)} to divide
+          </span>
+        )}
       </div>
 
       {/*
@@ -148,7 +133,7 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
           <p className="truncate text-[0.68rem] text-muted-foreground">Firm&apos;s share</p>
         </div>
         <span className="w-28 shrink-0 text-right text-[0.75rem] tabular-nums text-muted-foreground">
-          {poolPct > 0 ? rupees(Math.round(amount * poolPct) / 100) : '—'}
+          {poolPct > 0 ? rupees(poolAmount) : '—'}
         </span>
         <div className="relative w-24 shrink-0">
           <input
@@ -179,7 +164,7 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
               {/* The rupees, worked out as they type. A percentage is not what
                   anyone is actually agreeing to. */}
               <span className="w-28 shrink-0 text-right text-[0.75rem] tabular-nums text-muted-foreground">
-                {pct > 0 ? rupees(Math.round(amount * pct) / 100) : '—'}
+                {pct > 0 ? rupees(Math.round(divisible * pct) / 100) : '—'}
               </span>
 
               <div className="relative w-24 shrink-0">
@@ -210,13 +195,13 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
           ) : (
             <span className="inline-flex items-center gap-1 text-amber-800">
               <AlertCircle size={12} />
-              {total > 100 ? `${(total - 100).toFixed(2)}% over` : `${(100 - total).toFixed(2)}% still to allot`}
+              {allotted > 100 ? `${(allotted - 100).toFixed(2)}% over` : `${(100 - allotted).toFixed(2)}% still to allot`}
             </span>
           )}
         </span>
         <span className={`text-[0.8rem] font-semibold tabular-nums ${balanced ? '' : 'text-amber-800'}`}
               style={balanced ? { color: '#2f6b1c' } : undefined}>
-          {total.toFixed(2)}%
+          {allotted.toFixed(2)}%
         </span>
       </div>
     </div>

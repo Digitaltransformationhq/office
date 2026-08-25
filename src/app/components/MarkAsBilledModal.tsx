@@ -5,7 +5,7 @@ import { useToast } from './Toast';
 import { DatabaseSetupModal } from './DatabaseSetupModal';
 import { TaskCommentThread } from './TaskCommentThread';
 import { X } from 'lucide-react';
-import { BillDivision, divisionTotal } from './BillDivision';
+import { BillDivision, divisionReady, toBillShares, fromBillShares } from './BillDivision';
 
 interface MarkAsBilledModalProps {
   task: {
@@ -56,11 +56,9 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
    * is empty and the panel falls back to its own default, which is the honest
    * state: somebody has to choose, and it should be visible that nobody has.
    */
-  const [shares, setShares] = useState<Record<string, string>>(() => {
-    const set = task.billingShares;
-    if (!Array.isArray(set) || set.length === 0) return {};
-    return Object.fromEntries(set.map(sh => [sh.userId, String(sh.percent)]));
-  });
+  const [shares, setShares] = useState<Record<string, string>>(
+    () => fromBillShares(task.billingShares),
+  );
   const setByApprover = Array.isArray(task.billingShares) && task.billingShares.length > 0;
   const [loading, setLoading] = useState(false);
   const [showDatabaseSetupModal, setShowDatabaseSetupModal] = useState(false);
@@ -92,11 +90,8 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
      * that only shows up at the year end, by which time the person who raised it
      * has long forgotten which bill it was.
      */
-    const total = divisionTotal(shares);
-    if (total !== 100) {
-      showError(total === 0
-        ? 'Set how this bill divides between the partners and directors'
-        : `The division comes to ${total}%, not 100%`);
+    if (!divisionReady(shares)) {
+      showError('Give the partners and directors 100% of what is left after the office pool');
       return;
     }
 
@@ -111,9 +106,7 @@ export function MarkAsBilledModal({ task, user, onClose, onSuccess }: MarkAsBill
         remarks: remarks.trim(),
         billedBy: user.name,
         billedById: user.id,
-        shares: Object.entries(shares)
-          .map(([userId, percent]) => ({ userId, percent: parseFloat(percent) || 0 }))
-          .filter(s => s.percent > 0) as any,
+        shares: toBillShares(shares) as any,
       });
 
       if (!response.success) {
