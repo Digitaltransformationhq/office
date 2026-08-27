@@ -227,24 +227,24 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
         The total, in the same two columns as the shares above it — read as the
         bottom of the column rather than as a separate remark. The check is then
         "does the last line say the bill", not arithmetic done in somebody's head
-        against a row of percentages.
+        against a row of percentages. It carries no caption: a total sitting under
+        a column it adds up does not need to say so.
       */}
       <div className={`border-t ${balanced ? 'border-[#E7EDF4] bg-[#F5FBF2]' : 'border-amber-200 bg-amber-50'}`}>
         <div className="flex items-center gap-3 px-4 py-2.5">
           <div className="min-w-0 flex-1">
             <p className="text-[0.82rem] font-semibold" style={{ color: balanced ? '#2f6b1c' : NAVY }}>
-              Total divided
+              Total
             </p>
-            <p className="truncate text-[0.68rem]">
-              {balanced ? (
-                <span className="text-muted-foreground">Office pool and every share, added up</span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-amber-800">
-                  <AlertCircle size={12} />
-                  {allotted > 100 ? `${(allotted - 100).toFixed(2)}% over` : `${(100 - allotted).toFixed(2)}% still to allot`}
-                </span>
-              )}
-            </p>
+            {/* Nothing under it once the division is right — the figures beside
+                it say what it is. The shortfall stays, because that one is not a
+                description of the total, it is the reason the total is wrong. */}
+            {!balanced && (
+              <p className="inline-flex items-center gap-1 truncate text-[0.68rem] text-amber-800">
+                <AlertCircle size={12} />
+                {allotted > 100 ? `${(allotted - 100).toFixed(2)}% over` : `${(100 - allotted).toFixed(2)}% still to allot`}
+              </p>
+            )}
           </div>
           <span className={`w-28 shrink-0 text-right text-[0.8rem] font-semibold tabular-nums ${balanced ? '' : 'text-amber-800'}`}
                 style={balanced ? { color: '#2f6b1c' } : undefined}>
