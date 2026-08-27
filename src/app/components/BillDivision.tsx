@@ -82,6 +82,25 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
   const poolAmount = Math.round(amount * poolPct) / 100;
   const divisible = Math.round((amount - poolAmount) * 100) / 100;
 
+  /** One holder's slice of the remainder, to the paisa. Used by the rows and by
+   *  the total below them, so the column and its sum are the same arithmetic. */
+  const shareOf = (pct: number) => Math.round(divisible * pct) / 100;
+
+  /*
+   * What the division actually comes to, in money.
+   *
+   * A percentage totalling 100 is not the same statement as the rupees adding up
+   * to the bill, and it is the rupees somebody is signing off. This sums the
+   * column exactly as it is displayed — the pool's cut plus every share — so the
+   * figure can be checked against the bill by reading, without arithmetic.
+   */
+  const allottedAmount = Math.round(
+    (poolAmount + holders.reduce((sum, h) => sum + shareOf(parseFloat(value[h.id] || '') || 0), 0)) * 100,
+  ) / 100;
+  /** Rounding to the paisa rarely lands exactly on the bill. Named rather than
+   *  hidden: an unexplained paisa is what makes people distrust a total. */
+  const rounding = Math.round((amount - allottedAmount) * 100) / 100;
+
   const set = (id: string, raw: string) => {
     const next = { ...value };
     if (!raw.trim()) delete next[id];
@@ -182,7 +201,7 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
               {/* The rupees, worked out as they type. A percentage is not what
                   anyone is actually agreeing to. */}
               <span className="w-28 shrink-0 text-right text-[0.75rem] tabular-nums text-muted-foreground">
-                {pct > 0 ? rupees(Math.round(divisible * pct) / 100) : '—'}
+                {pct > 0 ? rupees(shareOf(pct)) : '—'}
               </span>
 
               <div className="relative w-24 shrink-0">
@@ -204,23 +223,59 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
         })}
       </ul>
 
-      <div className={`flex items-center justify-between gap-3 border-t px-4 py-2.5 ${
-        balanced ? 'border-[#E7EDF4] bg-[#F5FBF2]' : 'border-amber-200 bg-amber-50'
-      }`}>
-        <span className="inline-flex items-center gap-1.5 text-[0.72rem] font-medium">
-          {balanced ? (
-            <span style={{ color: '#2f6b1c' }}>Divided in full</span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-amber-800">
-              <AlertCircle size={12} />
-              {allotted > 100 ? `${(allotted - 100).toFixed(2)}% over` : `${(100 - allotted).toFixed(2)}% still to allot`}
-            </span>
-          )}
-        </span>
-        <span className={`text-[0.8rem] font-semibold tabular-nums ${balanced ? '' : 'text-amber-800'}`}
-              style={balanced ? { color: '#2f6b1c' } : undefined}>
-          {allotted.toFixed(2)}%
-        </span>
+      {/*
+        The total, in the same two columns as the shares above it — read as the
+        bottom of the column rather than as a separate remark. The check is then
+        "does the last line say the bill", not arithmetic done in somebody's head
+        against a row of percentages.
+      */}
+      <div className={`border-t ${balanced ? 'border-[#E7EDF4] bg-[#F5FBF2]' : 'border-amber-200 bg-amber-50'}`}>
+        <div className="flex items-center gap-3 px-4 py-2.5">
+          <div className="min-w-0 flex-1">
+            <p className="text-[0.82rem] font-semibold" style={{ color: balanced ? '#2f6b1c' : NAVY }}>
+              Total divided
+            </p>
+            <p className="truncate text-[0.68rem]">
+              {balanced ? (
+                <span className="text-muted-foreground">Office pool and every share, added up</span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-amber-800">
+                  <AlertCircle size={12} />
+                  {allotted > 100 ? `${(allotted - 100).toFixed(2)}% over` : `${(100 - allotted).toFixed(2)}% still to allot`}
+                </span>
+              )}
+            </p>
+          </div>
+          <span className={`w-28 shrink-0 text-right text-[0.8rem] font-semibold tabular-nums ${balanced ? '' : 'text-amber-800'}`}
+                style={balanced ? { color: '#2f6b1c' } : undefined}>
+            {amount > 0 ? rupees(allottedAmount) : '—'}
+          </span>
+          <span className={`w-24 shrink-0 pr-2.5 text-right text-[0.8rem] font-semibold tabular-nums ${balanced ? '' : 'text-amber-800'}`}
+                style={balanced ? { color: '#2f6b1c' } : undefined}>
+            {allotted.toFixed(2)}%
+          </span>
+        </div>
+
+        {/* The bill the total is being checked against, and — once the
+            percentages do add up — the paisa that rounding to two decimals can
+            leave behind. Said out loud rather than quietly absorbed: a division
+            that comes to 100% and still does not come to the bill is the one
+            thing this line exists to reveal. While the percentages are still
+            short the gap is not rounding, and the message above already says
+            so, so nothing is claimed here. */}
+        {amount > 0 && (
+          <p className="border-t border-white/70 px-4 py-2 text-right text-[0.68rem] text-muted-foreground">
+            Bill amount {rupees(amount)}
+            {balanced && rounding !== 0 && (
+              <span className="font-medium text-amber-800">
+                {' · '}
+                {rounding > 0
+                  ? `${rupees(rounding)} unallotted`
+                  : `${rupees(Math.abs(rounding))} over`} after rounding
+              </span>
+            )}
+          </p>
+        )}
       </div>
     </div>
   );
