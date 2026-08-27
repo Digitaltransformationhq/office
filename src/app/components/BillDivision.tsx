@@ -14,6 +14,24 @@ export {
   OFFICE_POOL_ID, OFFICE_POOL_NAME, divisionReady, toBillShares, fromBillShares,
 };
 
+/** A holder is anyone at partner level. Admins are included: the firm's own
+ *  account can hold a share, and excluding it would be a guess. */
+interface Holder { id: string; name: string; role: string }
+
+interface BillDivisionProps {
+  /** The bill being divided, in rupees. Drives the amount beside each share. */
+  amount: number;
+  /** Whose bill it is, if the task names an approver — the sensible default. */
+  defaultHolderId?: string | null;
+  /** Percentages as entered: the pool of the whole bill, everyone else of what
+   *  is left. Owned by the parent so it can refuse to save. */
+  value: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+}
+
+const rupees = (n: number) =>
+  `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 /**
  * How one bill is divided between the partners and directors.
  *

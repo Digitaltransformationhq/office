@@ -23,6 +23,7 @@ import { ImportantDatesBar } from './components/ImportantDatesBar';
 import { MyInquiries } from './components/MyInquiries';
 import { InquiryManagement } from './components/InquiryManagement';
 import { ToastProvider } from './components/Toast';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Reports } from './components/Reports';
 import { ClientManagement } from './components/ClientManagement';
 import { GSTCompliance } from './components/GSTCompliance';
@@ -382,7 +383,12 @@ export default function App() {
           {/* Important Dates Bar - Shows for all users */}
           <ImportantDatesBar />
           {/* Announcement Bar - Shows for all users */}          <main className="flex-1 overflow-y-auto p-4 md:p-6">
-            {renderDashboard()}
+            {/* One screen's crash stays one screen's crash: the shell around it
+                survives, so the sidebar is still there to navigate away with —
+                and switching view clears the error rather than needing a reload. */}
+            <ErrorBoundary label="This screen" resetKey={activeView}>
+              {renderDashboard()}
+            </ErrorBoundary>
           </main>
         </div>
       </div>
