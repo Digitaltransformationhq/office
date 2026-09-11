@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { Button } from './Button';
 import { Input } from './Input';
 import { usersAPI, assignmentsAPI } from '../services/api';
+import { sortByText, sortText } from '../utils/sorting';
 
 interface AssignTaskModalProps {
   onClose: () => void;
@@ -36,7 +37,7 @@ export function AssignTaskModal({ onClose, currentUser, onSuccess }: AssignTaskM
       const response = await usersAPI.getAll();
       // Filter out current user
       const otherUsers = (response.data || []).filter((u: any) => u.id !== currentUser.id);
-      setUsers(otherUsers);
+      setUsers(sortByText(otherUsers, (u: any) => u.name));
     } catch (error) {
       console.error('Error loading users:', error);
     }
@@ -88,7 +89,8 @@ export function AssignTaskModal({ onClose, currentUser, onSuccess }: AssignTaskM
     }
   };
 
-  const categories = [
+  // A–Z, matching the category picker on the task screens.
+  const categories = sortText([
     'Income Tax',
     'GST',
     'Audit',
@@ -100,7 +102,7 @@ export function AssignTaskModal({ onClose, currentUser, onSuccess }: AssignTaskM
     'Consultancy',
     'Litigation',
     'MCA Work'
-  ];
+  ]);
 
   const priorities = ['Low', 'Medium', 'High', 'Urgent'];
 

@@ -6,6 +6,7 @@ import { GSTFilingModal } from './GSTFilingModal';
 import { GSTAnnualView } from './GSTAnnualView';
 import { GSTMonthlyMobile } from './GSTMonthlyMobile';
 import { Search, AlertTriangle, CheckCircle2, Clock, ChevronDown } from 'lucide-react';
+import { sortByText, sortText } from '../utils/sorting';
 import {
   STATUS_META, EMPTY_STATUS, financialYearOf, fyMonths, dueDateFor, isOverdue,
   returnsFor, shortDate, today, type AnnualReturnType, type GstPeriod,
@@ -155,7 +156,7 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
     filingMap.get(`${registrationId}|${returnType}|${periodKey}`) || null;
 
   const people = useMemo(
-    () => [...new Set(registrations.map(r => r.responsiblePersonName).filter(Boolean) as string[])].sort(),
+    () => sortText([...new Set(registrations.map(r => r.responsiblePersonName).filter(Boolean) as string[])]),
     [registrations],
   );
 
@@ -189,9 +190,11 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
     return n;
   };
 
+  // A–Z by client. The register is read by looking a client up in it, and the
+  // spreadsheet it replaced was in the order rows happened to be typed.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return registrations.filter(r => {
+    return sortByText(registrations.filter(r => {
       if (r.status === 'Cancelled') return false;
       if (person !== 'all' && r.responsiblePersonName !== person) return false;
       if (frequency !== 'all' && r.filingFrequency !== frequency) return false;
@@ -199,7 +202,7 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
         .some(v => (v || '').toLowerCase().includes(q))) return false;
       if (onlyOpen && openCount(r) === 0) return false;
       return true;
-    });
+    }), r => r.clientName);
   }, [registrations, search, person, frequency, onlyOpen, months, filingMap]);
 
   const summary = useMemo(() => {

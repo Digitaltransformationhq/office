@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Users, Building2, AlertCircle } from 'lucide-react';
 import { usersAPI, type BillShare } from '../services/api';
 import { isApproverRole, roleLabel } from '../utils/roles';
+import { sortByText } from '../utils/sorting';
 
 const NAVY = '#1b365d';
 
@@ -55,9 +56,10 @@ export function BillDivision({ amount, defaultHolderId, value, onChange }: BillD
       try {
         const r = await usersAPI.getAll();
         if (!live) return;
-        const list = (r.data || [])
+        // A–Z, so the share rows list in the same order every time this opens.
+        const list = sortByText((r.data || [])
           .filter((u: any) => isApproverRole(u.role) && u.status !== 'Inactive')
-          .map((u: any) => ({ id: u.id, name: u.name, role: u.role }));
+          .map((u: any) => ({ id: u.id, name: u.name, role: u.role })), (h: Holder) => h.name);
         setHolders(list);
 
         // Seed only an untouched form. Coming back to a part-filled division and

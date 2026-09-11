@@ -16,6 +16,7 @@ import {
 } from '../utils/revenue';
 import { TASK_CATEGORIES } from '../utils/taskCategories';
 import { Loader2, RefreshCw, Download } from 'lucide-react';
+import { sortByText } from '../utils/sorting';
 
 const NAVY = '#1b365d';
 
@@ -123,12 +124,14 @@ export function Billing({ user }: BillingProps) {
     URL.revokeObjectURL(url);
   };
 
-  const filteredClients = clients.filter(client =>
+  // A–Z by client name — this is a lookup table, not a ranking like the revenue
+  // breakdowns above, which stay ordered by what they measure.
+  const filteredClients = sortByText(clients.filter(client =>
     client.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     client.fileNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     client.pan?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     client.firmName?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ), c => c.name);
 
   if (loading) {
     return (

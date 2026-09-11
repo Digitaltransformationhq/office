@@ -4,6 +4,7 @@ import { tasksAPI, usersAPI, clientsAPI } from '../services/api';
 import { TaskCommentThread } from './TaskCommentThread';
 import { TASK_STATUS, statusLabel } from '../utils/taskStatus';
 import { X, ChevronDown } from 'lucide-react';
+import { sortByText, sortText } from '../utils/sorting';
 import { isApproverRole } from '../utils/roles';
 
 interface Task {
@@ -68,7 +69,8 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
     comments: task.comments || '',
   });
 
-  const taskCategories = [
+  // A–Z, matching the same picker on the create screen.
+  const taskCategories = sortText([
     'Income Tax',
     'GST',
     'Audit',
@@ -81,7 +83,7 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
     'Litigation',
     'MCA Work',
     'IT Related Work',
-  ];
+  ]);
 
   /**
    * Only statuses the database actually accepts.
@@ -242,14 +244,15 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
     setShowClientDropdown(false);
   };
 
-  const filteredUsers = users.filter(user =>
+  // A–Z, matching the same two pickers on the create screen.
+  const filteredUsers = sortByText(users.filter(user =>
     user.name.toLowerCase().includes(assignSearch.toLowerCase()) ||
     user.email.toLowerCase().includes(assignSearch.toLowerCase())
-  );
+  ), u => u.name);
 
-  const filteredClients = clients.filter(client =>
+  const filteredClients = sortByText(clients.filter(client =>
     client.name.toLowerCase().includes(clientSearch.toLowerCase())
-  );
+  ), c => c.name);
 
   const NAVY = '#1b365d';
   const fieldCls =

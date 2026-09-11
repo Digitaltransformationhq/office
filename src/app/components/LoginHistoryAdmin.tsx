@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { loginAPI } from '../services/api';
 import { useLiveData } from '../hooks/useLiveData';
 import { History, MapPin, Globe, Check, X, Search, ChevronDown } from 'lucide-react';
+import { sortText } from '../utils/sorting';
 
 /**
  * Every user's sign-ins, for the admin.
@@ -53,8 +54,10 @@ export function LoginHistoryAdmin() {
     }
   };
 
+  // The rows below stay in time order — a log is read newest-first — but the
+  // name picker over them is a list, so it runs A–Z like every other one.
   const people = useMemo(
-    () => Array.from(new Set(history.map(h => h.user_name).filter(Boolean))).sort(),
+    () => sortText(Array.from(new Set(history.map(h => h.user_name).filter(Boolean)))),
     [history],
   );
 

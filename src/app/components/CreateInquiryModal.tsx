@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useToast } from './Toast';
 import { inquiriesAPI } from '../services/api';
+import { sortOptions } from '../utils/sorting';
 import { X, Inbox, ChevronDown, Info } from 'lucide-react';
 
 interface CreateInquiryModalProps {
@@ -22,7 +23,7 @@ export function CreateInquiryModal({ currentUserId, currentUserName, onClose, on
     workType: 'GST Filing', notes: '', expectedTimeline: '', sourceOfInquiry: '',
   });
 
-  const workTypes = ['GST Filing', 'Audit', 'Income Tax', 'Company Registration', 'TDS Returns', 'PF/ESIC Returns', 'Accounting Services', 'Consultancy', 'Others'];
+  const workTypes = sortOptions(['GST Filing', 'Audit', 'Income Tax', 'Company Registration', 'TDS Returns', 'PF/ESIC Returns', 'Accounting Services', 'Consultancy', 'Others']);
   const set = (field: string, value: string) => setFormData(prev => ({ ...prev, [field]: value }));
 
   const handleSubmit = async (e: React.FormEvent) => {

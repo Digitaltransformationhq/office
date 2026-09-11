@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { IndianRupee, PieChart, Receipt, Search, Lock } from 'lucide-react';
+import { compareText } from '../utils/sorting';
 import { KPICard } from './KPICard';
 import { useToast } from './Toast';
 import { billingAPI, type BillShare } from '../services/api';
@@ -92,8 +93,12 @@ export function RevenueShare({ user }: RevenueShareProps) {
         out.push({ bill, share });
       }
     }
+    // A–Z by the task the bill was raised against, then by whose share it is —
+    // this is a list you read looking for a particular job, not a ledger.
     return out.sort((a, b) =>
-      String(b.bill.billDate || '').localeCompare(String(a.bill.billDate || '')));
+      compareText(a.bill.taskName, b.bill.taskName) ||
+      compareText(a.bill.clientName, b.bill.clientName) ||
+      compareText(a.share.name, b.share.name));
   }, [inRange, search]);
 
   /** Per person, for the summary above the lines. */

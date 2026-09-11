@@ -5,6 +5,7 @@ import { ViewInquiryModal } from './ViewInquiryModal';
 import { useToast } from './Toast';
 import { inquiriesAPI } from '../services/api';
 import { Plus, ChevronDown } from 'lucide-react';
+import { sortByText } from '../utils/sorting';
 
 interface MyInquiriesProps {
   userId: number;
@@ -61,7 +62,10 @@ export function MyInquiries({ userId, userName }: MyInquiriesProps) {
   };
 
   const count = (s: string) => inquiries.filter(i => i.status === s).length;
-  const filteredInquiries = inquiries.filter(i => filterStatus === 'all' || i.status === filterStatus);
+  const filteredInquiries = sortByText(
+    inquiries.filter(i => filterStatus === 'all' || i.status === filterStatus),
+    i => i.client_name,
+  );
 
   const tabs = [
     { key: 'all', label: 'All', n: inquiries.length },

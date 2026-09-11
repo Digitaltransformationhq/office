@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { tasksAPI } from '../services/api';
+import { sortTasks } from '../utils/sorting';
 import { X, Building2, Pencil } from 'lucide-react';
 import { NAVY, rupees, FEE_FIELDS, ModalTabs, overlayCls, panelCls } from './clientModalUI';
 import { statusColor, statusLabel } from '../utils/taskStatus';
@@ -24,7 +25,7 @@ export function ViewClientModal({ client, onClose, onEdit }: ViewClientModalProp
     setLoading(true);
     try {
       const response = await tasksAPI.getAll();
-      setClientTasks((response.data || []).filter((task: any) => task.client === client.name));
+      setClientTasks(sortTasks((response.data || []).filter((task: any) => task.client === client.name)));
     } catch (error) {
       console.error('Error loading client tasks:', error);
     } finally {

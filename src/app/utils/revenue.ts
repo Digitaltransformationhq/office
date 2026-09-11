@@ -7,6 +7,8 @@
  * (supabase/functions/server/index.tsx).
  */
 
+import { compareText } from './sorting';
+
 export interface BillingRecord {
   id: string;
   taskId: string;
@@ -252,7 +254,7 @@ export function padSlices(slices: RevenueSlice[], allLabels: readonly string[]):
   const present = new Set(slices.map(s => s.label));
   const missing = allLabels
     .filter(label => label && !present.has(label))
-    .sort((a, b) => a.localeCompare(b))
+    .sort(compareText)
     .map(label => ({ key: `empty:${label}`, label, revenue: 0, budgeted: 0, count: 0, hours: 0 }));
   // `slices` is already sorted by revenue desc, so the zeros land at the bottom.
   return [...slices, ...missing];

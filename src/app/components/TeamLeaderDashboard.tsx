@@ -7,6 +7,7 @@ import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useLiveData } from '../hooks/useLiveData';
 import { useToast } from './Toast';
 import { statusColor, statusLabel, isOpenTask, isAwaitingApproval, isFinishedTask } from '../utils/taskStatus';
+import { sortByText, sortTasks } from '../utils/sorting';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
 import { SubmitWorkModal } from './SubmitWorkModal';
 import { TaskThreadModal } from './TaskThreadModal';
@@ -204,8 +205,10 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const focused = (key: string) => focus === null || focus === key;
 
   const isOpen = (t: any) => isOpenTask(t.status);
-  const myTasks = user ? allTasks.filter(t => t.assignedToId === user.id && isOpen(t)) : [];
-  const teamTasks = allTasks.filter(t => t.assignedToId !== user?.id && isOpen(t));
+  // Every list on this page runs A–Z by task, so a name can be found by scanning
+  // to the right letter rather than reading the whole table.
+  const myTasks = user ? sortTasks(allTasks.filter(t => t.assignedToId === user.id && isOpen(t))) : [];
+  const teamTasks = sortTasks(allTasks.filter(t => t.assignedToId !== user?.id && isOpen(t)));
   const teamTotalPages = Math.max(1, Math.ceil(teamTasks.length / TEAM_PAGE_SIZE));
   // Clamped rather than reset: a live refresh that shortens the list must not
   // strand the reader on a page that no longer exists.
@@ -213,20 +216,11 @@ export function TeamLeaderDashboard({ user }: TeamLeaderDashboardProps) {
   const teamPageStart = (teamSafePage - 1) * TEAM_PAGE_SIZE;
   const pagedTeamTasks = teamTasks.slice(teamPageStart, teamPageStart + TEAM_PAGE_SIZE);
   const approvalQueue = allTasks.filter(t => isAwaitingApproval(t.status));
-  const completedTasks = allTasks.filter(t => isFinishedTask(t.status));
-
-  // Pending for Billing tasks — newest completion first
-  const pendingForBilling = allTasks
-    .filter(t => t.status === 'Pending for Billing')
-    .sort((a, b) => {
-      const dateA = a.completionDate ? new Date(a.completionDate).getTime() : 0;
-      const dateB = b.completionDate ? new Date(b.completionDate).getTime() : 0;
-      return dateB - dateA;
-    });
-
+  const completedTasks = sortTasks(allTasks.filter(t => isFinishedTask(t.status)));
+  const pendingForBilling = sortTasks(allTasks.filter(t => t.status === 'Pending for Billing'));
 
   // Roles are normalized in transformUser, so a single comparison is enough.
-  const staffMembers = users.filter(u => u.role === 'team-member');
+  const staffMembers = sortByText(users.filter(u => u.role === 'team-member'), u => u.name);
   const workloadData = staffMembers.map(member => ({
     name: member.name,
     taskCount: allTasks.filter(t => t.assignedToId === member.id && isOpen(t)).length,

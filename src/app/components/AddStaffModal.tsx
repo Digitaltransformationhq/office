@@ -207,11 +207,12 @@ export function AddStaffModal({ onClose, onSuccess }: AddStaffModalProps) {
                   className={`${inputCls} appearance-none pr-9`}
                   required
                 >
-                  <option value="team-member">Team Member (Staff)</option>
+                  {/* A–Z by what the option reads as, like every other list here. */}
                   <option value="team-leader">Accounts</option>
-                  <option value="partner">Partner</option>
-                <option value="director">Director</option>
                   <option value="admin">Admin</option>
+                  <option value="director">Director</option>
+                  <option value="partner">Partner</option>
+                  <option value="team-member">Team Member (Staff)</option>
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               </div>

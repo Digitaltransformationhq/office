@@ -11,6 +11,7 @@ import { KPICard } from './KPICard';
 import { DailyTodoList } from './DailyTodoList';
 import { useLiveData } from '../hooks/useLiveData';
 import { statusColor, statusLabel, statusHex, isAwaitingApproval, isOpenTask, canApproveTask } from '../utils/taskStatus';
+import { sortTasks, sortText } from '../utils/sorting';
 import {
   filterByRange, financialYearLabel, formatINRCompact, monthOverMonth,
   pendingBilling, totals, type BillingRecord,
@@ -172,15 +173,17 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
   };
 
   const pendingTasks = tasks.filter(t => isOpenTask(t.status)).map(t => ({ ...t, aging: calculateAging(t.targetDate) }));
-  const uniqueCategories = Array.from(new Set(tasks.map((t: any) => t.category).filter(Boolean)));
-  const uniqueStatuses = Array.from(new Set(tasks.map((t: any) => t.status).filter(Boolean)));
+  const uniqueCategories = sortText(Array.from(new Set(tasks.map((t: any) => t.category).filter(Boolean))));
+  const uniqueStatuses = sortText(Array.from(new Set(tasks.map((t: any) => t.status).filter(Boolean))));
 
   const q = search.trim().toLowerCase();
-  const filteredTasks = pendingTasks
+  // A–Z by task, so page 2 of a filtered list is still somewhere you can reason
+  // about — the same task sits in the same place whichever way you got there.
+  const filteredTasks = sortTasks(pendingTasks
     .filter(t => !q || t.client?.toLowerCase().includes(q) || t.task?.toLowerCase().includes(q) || t.assignedTo?.toLowerCase().includes(q))
     .filter(t => fCategory === 'all' || t.category === fCategory)
     .filter(t => fPriority === 'all' || t.priority === fPriority)
-    .filter(t => fStatus === 'all' || t.status === fStatus);
+    .filter(t => fStatus === 'all' || t.status === fStatus));
 
   const hasFilters = !!q || fCategory !== 'all' || fPriority !== 'all' || fStatus !== 'all';
   const clearFilters = () => { setSearch(''); setFCategory('all'); setFPriority('all'); setFStatus('all'); };
@@ -200,8 +203,8 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
    * that nothing was due.
    */
   const tasksDueOn = (date: Date) =>
-    tasks.filter(t =>
-      t.targetDate && toKey(new Date(t.targetDate)) === toKey(date) && isOpenTask(t.status));
+    sortTasks(tasks.filter(t =>
+      t.targetDate && toKey(new Date(t.targetDate)) === toKey(date) && isOpenTask(t.status)));
 
   /*
    * Only what this partner can actually sign off — their own routed work plus

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Search, Users } from 'lucide-react';
 import { statusColor, statusLabel } from '../utils/taskStatus';
+import { sortTasks } from '../utils/sorting';
 import { overlayCls, panelCls } from './clientModalUI';
 
 const NAVY = '#1b365d';
@@ -64,9 +65,9 @@ export function TeamWorkloadModal({
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return tasks;
-    return tasks.filter(t => [t.task, t.client, t.category, t.assignedTo, t.priority, statusLabel(t.status)]
-      .some(v => (v || '').toLowerCase().includes(q)));
+    if (!q) return sortTasks(tasks);
+    return sortTasks(tasks.filter(t => [t.task, t.client, t.category, t.assignedTo, t.priority, statusLabel(t.status)]
+      .some(v => (v || '').toLowerCase().includes(q))));
   }, [tasks, search]);
 
   const high = tasks.filter(t => t.priority === 'High' || t.priority === 'Urgent').length;

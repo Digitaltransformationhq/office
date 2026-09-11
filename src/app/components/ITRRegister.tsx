@@ -5,6 +5,7 @@ import { useLiveData } from '../hooks/useLiveData';
 import { ITRFilingModal } from './ITRFilingModal';
 import { ClientDiscussionsModal } from './ClientDiscussionsModal';
 import { Search, AlertTriangle, CheckCircle2, Clock, ChevronDown, ChevronLeft, ChevronRight, MessageSquareText } from 'lucide-react';
+import { compareText, sortText } from '../utils/sorting';
 import { ITR_STATUS_META, ITR_CHECKLIST, itrDueDate, itrIsOverdue } from '../utils/itr';
 import { financialYearOf, formatDate } from '../utils/gst';
 
@@ -71,7 +72,7 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
   };
 
   const people = useMemo(
-    () => [...new Set(filings.map(f => f.responsiblePersonName).filter(Boolean) as string[])].sort(),
+    () => sortText([...new Set(filings.map(f => f.responsiblePersonName).filter(Boolean) as string[])]),
     [filings],
   );
 
@@ -101,7 +102,9 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
     const ad = a.dueDate || itrDueDate(a.financialYear, a.isAudit, a.businessIncome) || '';
     const bd = b.dueDate || itrDueDate(b.financialYear, b.isAudit, b.businessIncome) || '';
     if (ad !== bd) return ad < bd ? -1 : 1;
-    return (a.clientName || '').localeCompare(b.clientName || '');
+    // Everything else equal, A–Z by client, through the shared collator so the
+    // lower-case names file with their capitalised twins instead of after them.
+    return compareText(a.clientName, b.clientName);
   }), [filtered]);
 
   useEffect(() => { setPage(1); }, [search, person, status, onlyOpen, financialYear]);

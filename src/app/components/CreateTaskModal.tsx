@@ -5,6 +5,7 @@ import { CreateClientModal } from './CreateClientModal';
 import { TASK_STATUS } from '../utils/taskStatus';
 import { X, ClipboardList, ChevronDown, Plus, Info, Search } from 'lucide-react';
 import { isApproverRole, roleLabel } from '../utils/roles';
+import { sortByText, sortText } from '../utils/sorting';
 
 interface CreateTaskModalProps {
   onClose: () => void;
@@ -55,10 +56,12 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
     approverId: isApproverRole(currentUserRole) ? (currentUser?.id || '') : '',
   });
 
-  const taskCategories = [
+  // A–Z, like every other picker: twelve categories are quicker to find in an
+  // order you can predict than in the order somebody happened to type them.
+  const taskCategories = sortText([
     'Income Tax', 'GST', 'Audit', 'Certification', 'Project Finance', 'Accounts',
     'Advisory', 'Office Work', 'Consultancy', 'Litigation', 'MCA Work', 'IT Related Work',
-  ];
+  ]);
 
   useEffect(() => {
     loadData();
@@ -183,13 +186,16 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
     handleClientSelect(clientName);
   };
 
-  const filteredUsers = users.filter(user =>
+  // Both pickers list A–Z. They are typed at, and a dropdown that answers a
+  // half-typed name in database order makes you read every hit to find the one
+  // you meant.
+  const filteredUsers = sortByText(users.filter(user =>
     user.name.toLowerCase().includes(assignSearch.toLowerCase()) ||
     user.email.toLowerCase().includes(assignSearch.toLowerCase())
-  );
-  const filteredClients = clients.filter(client =>
+  ), u => u.name);
+  const filteredClients = sortByText(clients.filter(client =>
     client.name.toLowerCase().includes(clientSearch.toLowerCase())
-  );
+  ), c => c.name);
 
   const isStaffUser = currentUserRole === 'team-member' || currentUserRole === 'Staff' || currentUserRole === 'Team Member';
   const partners = filteredUsers.filter(u => isApproverRole(u.role));
@@ -353,7 +359,7 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
                 required
               >
                 <option value="">Select an approver…</option>
-                {approvers.map(a => (
+                {sortByText(approvers, a => a.name).map(a => (
                   <option key={a.id} value={a.id}>
                     {a.name} · {roleLabel(a.role)}
                   </option>

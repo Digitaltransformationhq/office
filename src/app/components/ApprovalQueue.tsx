@@ -5,6 +5,7 @@ import { leaveAPI } from '../services/api';
 import { useLiveData } from '../hooks/useLiveData';
 import { leaveLabel, leaveChip } from '../utils/leave';
 import { CalendarCheck, CheckCircle2, Search, ChevronDown } from 'lucide-react';
+import { sortByText } from '../utils/sorting';
 
 interface ApprovalQueueProps {
   /** Real user id ('user:7'), not a numeric extraction: it is written to
@@ -49,13 +50,14 @@ export function ApprovalQueue({ userId, userName, userRole, showHeading = true }
     }
   };
 
-  const rows = useMemo(() => pendingLeaves
+  // A–Z by whose leave it is: the queue is scanned for a person, not a date.
+  const rows = useMemo(() => sortByText(pendingLeaves
     .filter(l => typeFilter === 'all' || l.leaveType === typeFilter)
     .filter(l => {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
       return [l.userName, l.reason].some(v => (v || '').toLowerCase().includes(q));
-    }), [pendingLeaves, typeFilter, search]);
+    }), l => l.userName), [pendingLeaves, typeFilter, search]);
 
   const totalDays = useMemo(
     () => pendingLeaves.reduce((sum, l) => sum + (Number(l.totalDays) || 0), 0),

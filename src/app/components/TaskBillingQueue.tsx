@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Search, IndianRupee, AlertTriangle, ReceiptText, Undo2, XCircle } from 'lucide-react';
+import { sortTasks } from '../utils/sorting';
 import { MarkAsBilledModal } from './MarkAsBilledModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './Toast';
@@ -126,15 +127,14 @@ export function TaskBillingQueue({ tasks, records, user, onBilled }: TaskBilling
         .some(v => (v ?? '').toString().toLowerCase().includes(q));
     };
 
+    // Both lists run A–Z by task. Accounts works these by looking up a
+    // particular job — the one the client just rang about — so the order that
+    // helps is the one that says where to look, not the order the work happened
+    // to finish in.
     return {
       // Released by a partner and waiting on an invoice.
-      awaiting: tasks
-        .filter(t => t.status === 'Pending for Billing' && match(t))
-        .sort((a, b) => (a.completionDate || '').localeCompare(b.completionDate || '')),
-      billed: tasks
-        .filter(t => t.status === 'Billed' && match(t))
-        // Newest first: an invoice raised this morning is the one being checked.
-        .sort((a, b) => (b.completionDate || '').localeCompare(a.completionDate || '')),
+      awaiting: sortTasks(tasks.filter(t => t.status === 'Pending for Billing' && match(t))),
+      billed: sortTasks(tasks.filter(t => t.status === 'Billed' && match(t))),
     };
   }, [tasks, search, recordFor]);
 

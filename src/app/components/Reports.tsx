@@ -4,6 +4,7 @@ import { tasksAPI, clientsAPI, usersAPI, billingAPI, todosAPI, type Todo } from 
 import { useToast } from './Toast';
 import { ClipboardList, Wallet, BarChart3, Download, IndianRupee, Users, TrendingUp, ChevronDown, Receipt, Search, X, Clock, ListChecks, Check } from 'lucide-react';
 import { statusColor, statusLabel, isFinishedTask } from '../utils/taskStatus';
+import { sortByText, sortTasks, sortText } from '../utils/sorting';
 
 interface ReportsProps {
   user?: { id: string; name: string; email: string; role: string };
@@ -77,9 +78,12 @@ export function Reports({ user }: ReportsProps) {
       const [tasksRes, clientsRes, usersRes, billingRes] = await Promise.all([
         tasksAPI.getAll(), clientsAPI.getAll(), usersAPI.getAll(), billingAPI.getAll().catch(() => ({ data: [] })),
       ]);
-      setTasks(tasksRes.data || []);
-      setClients(clientsRes.data || []);
-      setUsers(usersRes.data || []);
+      // Sorted on arrival: every report below reads off these three, so one
+      // A–Z here is what puts the task table, the client table and the team
+      // table all in the same order.
+      setTasks(sortTasks(tasksRes.data || []));
+      setClients(sortByText(clientsRes.data || [], (c: any) => c.name));
+      setUsers(sortByText(usersRes.data || [], (u: any) => u.name));
       setBillingRecords(billingRes.data || []);
     } catch (error) {
       console.error('Error loading report data:', error);
@@ -218,7 +222,7 @@ export function Reports({ user }: ReportsProps) {
 
   // ── Billing records (actual billed tasks) ──
   const bq = bSearch.trim().toLowerCase();
-  const filteredRecords = billingRecords
+  const filteredRecords = sortByText(billingRecords, (r: any) => r.taskName)
     .filter(r => !bq || [r.clientName, r.taskName, r.billNumber, r.assignedTo].some((v: any) => (v || '').toLowerCase().includes(bq)))
     .filter(r => bClient === 'all' || r.clientName === bClient)
     .filter(r => bStaff === 'all' || r.assignedTo === bStaff)
@@ -226,8 +230,8 @@ export function Reports({ user }: ReportsProps) {
     .filter(r => !bTo || new Date(r.billDate) <= new Date(bTo));
   const bHasFilters = !!bq || bClient !== 'all' || bStaff !== 'all' || bFrom || bTo;
   const clearBFilters = () => { setBSearch(''); setBClient('all'); setBStaff('all'); setBFrom(''); setBTo(''); };
-  const uniqueBClients = Array.from(new Set(billingRecords.map(r => r.clientName))).filter(Boolean).sort();
-  const uniqueBStaff = Array.from(new Set(billingRecords.map(r => r.assignedTo))).filter(Boolean).sort();
+  const uniqueBClients = sortText(Array.from(new Set(billingRecords.map(r => r.clientName))).filter(Boolean));
+  const uniqueBStaff = sortText(Array.from(new Set(billingRecords.map(r => r.assignedTo))).filter(Boolean));
   const totalBilled = filteredRecords.reduce((s, r) => s + (r.budgetedFee || 0), 0);
   const totalTaxable = filteredRecords.reduce((s, r) => s + (r.taxableAmount || 0), 0);
   const totalHours = filteredRecords.reduce((s, r) => s + (r.hoursLogged || 0), 0);

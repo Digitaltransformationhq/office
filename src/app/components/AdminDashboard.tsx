@@ -7,6 +7,7 @@ import { Button } from './Button';
 import { usersAPI, clientsAPI, tasksAPI, billingAPI } from '../services/api';
 import { inquiriesAPI } from '../services/api';
 import { RevenueBreakdownCard } from './RevenueBreakdown';
+import { sortByText } from '../utils/sorting';
 import {
   filterByRange, financialYearLabel, formatINRCompact, monthOverMonth, padSlices,
   pendingBilling, revenueByCategory, revenueByPerson,
@@ -236,17 +237,19 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     isOpenTask(t.status) && t.targetDate
     && new Date(t.targetDate).getTime() < Date.now()).length;
 
+  // Both tables are looked up by name, so both run A–Z. The category breakdown
+  // above stays ranked: that one is measuring, not listing.
   const uq = userSearch.trim().toLowerCase();
-  const filteredUsers = users.filter(u => !uq ||
+  const filteredUsers = sortByText(users.filter(u => !uq ||
     (u.name || '').toLowerCase().includes(uq) ||
     (u.email || '').toLowerCase().includes(uq) ||
-    (u.role || '').toLowerCase().includes(uq));
+    (u.role || '').toLowerCase().includes(uq)), u => u.name);
   const cq = clientSearch.trim().toLowerCase();
-  const filteredClients = clients.filter(c => !cq ||
+  const filteredClients = sortByText(clients.filter(c => !cq ||
     (c.name || '').toLowerCase().includes(cq) ||
     (c.industry || '').toLowerCase().includes(cq) ||
     (c.gstin || c.gst || '').toLowerCase().includes(cq) ||
-    (c.contact || c.mobileNumber || '').toLowerCase().includes(cq));
+    (c.contact || c.mobileNumber || '').toLowerCase().includes(cq)), c => c.name);
 
   return (
     <div className="space-y-0">      {/* No padding here — <main> in App.tsx already pads the page. */}

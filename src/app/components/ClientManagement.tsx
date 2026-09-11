@@ -5,6 +5,7 @@ import { EditClientModal } from './EditClientModal';
 import { ViewClientModal } from './ViewClientModal';
 import { useToast } from './Toast';
 import { Building2, Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil } from 'lucide-react';
+import { sortByText } from '../utils/sorting';
 import { useLiveData } from '../hooks/useLiveData';
 
 const NAVY = '#1b365d';
@@ -85,16 +86,18 @@ export function ClientManagement() {
     [clients],
   );
 
+  // A–Z by client name. Paged at twenty-five a screen, an unsorted list means
+  // knowing which page a client is on before you can look them up.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return clients.filter(c => {
+    return sortByText(clients.filter(c => {
       if (type !== 'all' && (c.clientType || 'Filing') !== type) return false;
       if (!q) return true;
       return [
         c.name, c.firmName, c.industry, c.pan, c.gstin || c.gst,
         c.contact || c.mobileNumber, c.email || c.emailId, c.fileNumber,
       ].some(v => (v || '').toString().toLowerCase().includes(q));
-    });
+    }), c => c.name);
   }, [clients, search, type]);
 
   // A search that shortens the list must not leave you stranded on page 20.

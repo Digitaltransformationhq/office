@@ -103,11 +103,12 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
 
             <Field label="Role" required>
               <SelectField value={formData.role} onChange={e => handleChange('role', e.target.value)}>
-                <option value="team-member">Staff</option>
+                {/* A–Z by what the option reads as, like every other list here. */}
                 <option value="team-leader">Accounts</option>
                 <option value="admin">Admin</option>
-                <option value="partner">Partner</option>
                 <option value="director">Director</option>
+                <option value="partner">Partner</option>
+                <option value="team-member">Staff</option>
               </SelectField>
             </Field>
 

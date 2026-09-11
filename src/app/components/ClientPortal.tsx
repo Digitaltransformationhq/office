@@ -8,6 +8,7 @@ import { CreateQueryModal } from './CreateQueryModal';
 import { ViewQueryModal } from './ViewQueryModal';
 import { useToast } from './Toast';
 import { statusLabel, isFinishedTask } from '../utils/taskStatus';
+import { sortByText, sortTasks } from '../utils/sorting';
 
 interface ClientPortalProps {
   clientId: number;
@@ -51,7 +52,7 @@ export function ClientPortal({ clientId, clientName }: ClientPortalProps) {
         if (response.ok) {
           const data = await response.json();
           const tasksWithDueDates = (data.data || []).filter((task: any) => task.targetDate);
-          setDueDates(tasksWithDueDates);
+          setDueDates(sortTasks(tasksWithDueDates));
         }
       }
     } catch (error) {
@@ -172,7 +173,7 @@ export function ClientPortal({ clientId, clientName }: ClientPortalProps) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  documents.map((doc) => (
+                  sortByText(documents, d => d.documentName).map((doc) => (
                     <TableRow key={doc.id}>
                       <TableCell>{doc.documentName}</TableCell>
                       <TableCell>
@@ -231,7 +232,7 @@ export function ClientPortal({ clientId, clientName }: ClientPortalProps) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  queries.map((query) => (
+                  sortByText(queries, q => q.subject).map((query) => (
                     <TableRow key={query.id}>
                       <TableCell>{query.subject}</TableCell>
                       <TableCell>

@@ -8,6 +8,7 @@ import { TaskThreadModal } from './TaskThreadModal';
 import { statusColor, statusLabel, isOpenTask, isFinishedTask, TASK_STATUS } from '../utils/taskStatus';
 import { useLiveData } from '../hooks/useLiveData';
 import { isApproverRole } from '../utils/roles';
+import { compareText, compareTasks, sortText } from '../utils/sorting';
 import {
   Search, SlidersHorizontal, Check, X, Repeat2,
   RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp, Plus,
@@ -105,7 +106,10 @@ export function TaskMIS({ user }: TaskMISProps) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState('all');
 
-  const [sortCol, setSortCol] = useState('targetDate');
+  // A–Z by task name, like every other list in the app. The due date is still
+  // one click away in the header; it is just no longer the order you land on,
+  // because a list you are scanning for a name has to be ordered by that name.
+  const [sortCol, setSortCol] = useState('task');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   /** The task being handed to the approver, with the note that goes with it. */
@@ -254,28 +258,39 @@ export function TaskMIS({ user }: TaskMISProps) {
     .filter(t => statusFilter === 'all' || statusLabel(t.status) === statusFilter)
     .filter(t => assignmentStatusFilter === 'all' || (t.assignmentStatus || 'Accepted') === assignmentStatusFilter);
 
+  /**
+   * Text columns compare through the shared collator rather than `<`, so
+   * "apple" and "Apple" sort together instead of the capitals forming their own
+   * alphabet above the rest. Numeric columns keep their own comparison.
+   */
   const sorted = [...filtered].sort((a, b) => {
-    const map: Record<string, any> = {
+    const rank = (p: string) => ({ Urgent: 1, High: 2, Medium: 3, Low: 4 }[p] || 5);
+    const text: Record<string, [string, string]> = {
       client: [a.client, b.client],
       task: [a.task, b.task],
       category: [a.category, b.category],
-      priority: [{ Urgent: 1, High: 2, Medium: 3, Low: 4 }[a.priority] || 5, { Urgent: 1, High: 2, Medium: 3, Low: 4 }[b.priority] || 5],
       assignedTo: [a.assignedTo, b.assignedTo],
-      status: [a.status, b.status],
+      status: [statusLabel(a.status), statusLabel(b.status)],
+    };
+    const numeric: Record<string, [number, number]> = {
+      priority: [rank(a.priority), rank(b.priority)],
       targetDate: [new Date(a.targetDate).getTime(), new Date(b.targetDate).getTime()],
     };
-    const [va, vb] = map[sortCol] || [0, 0];
-    if (va < vb) return sortDir === 'asc' ? -1 : 1;
-    if (va > vb) return sortDir === 'asc' ? 1 : -1;
-    return 0;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    // Rows that tie on the chosen column fall back to A–Z by task, so a table
+    // sorted by priority or due date still has a settled order inside each
+    // group rather than reshuffling on every refresh.
+    const [va, vb] = numeric[sortCol] || [0, 0];
+    const primary = text[sortCol] ? compareText(...text[sortCol]) : va - vb;
+    return dir * primary || compareTasks(a, b);
   });
 
-  const uniqueCategories = Array.from(new Set(tasks.map(t => t.category)));
+  const uniqueCategories = sortText(Array.from(new Set(tasks.map(t => t.category))));
   // Deduplicated by label, and filtered by label below: the two approval gates
   // are stored as different values but read as one stage, so listing the raw
   // values would put "Pending for Approval" in the dropdown twice and make each
   // entry match only half the tasks the user meant.
-  const uniqueStatuses = Array.from(new Set(tasks.map(t => statusLabel(t.status))));
+  const uniqueStatuses = sortText(Array.from(new Set(tasks.map(t => statusLabel(t.status)))));
 
   const stats = [
     { label: 'Total', val: tasks.length, tab: 'all' as const, dot: NAVY },

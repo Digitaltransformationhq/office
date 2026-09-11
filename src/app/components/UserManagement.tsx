@@ -8,6 +8,7 @@ import { EditUserModal } from './EditUserModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './Toast';
 import { UserPlus, Search, ChevronDown } from 'lucide-react';
+import { sortByText } from '../utils/sorting';
 import { useLiveData } from '../hooks/useLiveData';
 
 const NAVY = '#1b365d';
@@ -61,10 +62,11 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   };
 
   const q = search.trim().toLowerCase();
-  const filtered = users.filter(u => !q ||
+  // A–Z by name, so the staff list stays in one order as people are added.
+  const filtered = sortByText(users.filter(u => !q ||
     (u.name || '').toLowerCase().includes(q) ||
     (u.email || '').toLowerCase().includes(q) ||
-    (u.role || '').toLowerCase().includes(q));
+    (u.role || '').toLowerCase().includes(q)), u => u.name);
 
   return (
     <div className="flex flex-col gap-6">

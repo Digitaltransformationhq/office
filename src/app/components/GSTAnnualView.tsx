@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { GstFiling, GstRegistration } from '../services/api';
 import { Search } from 'lucide-react';
+import { sortByText } from '../utils/sorting';
 import {
   ANNUAL_RETURNS, STATUS_META, EMPTY_STATUS, annualDueDate, annualPeriod,
   annualReturnsFor, dueNote, formatDate, isOverdue, type AnnualReturnType, type GstPeriod,
@@ -66,11 +67,13 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
   };
 
   const candidates = useMemo(
-    () => registrations
-      .filter(r => r.status !== 'Cancelled')
-      .map(r => ({ registration: r, types: typesFor(r) }))
-      .filter(row => row.types.length > 0)
-      .sort((a, b) => (a.registration.clientName || '').localeCompare(b.registration.clientName || '')),
+    () => sortByText(
+      registrations
+        .filter(r => r.status !== 'Cancelled')
+        .map(r => ({ registration: r, types: typesFor(r) }))
+        .filter(row => row.types.length > 0),
+      row => row.registration.clientName,
+    ),
     [registrations, filingMap],
   );
 

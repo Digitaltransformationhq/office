@@ -4,6 +4,7 @@ import { useToast } from './Toast';
 import { useLiveData } from '../hooks/useLiveData';
 import { Button } from './Button';
 import { X, Search, IndianRupee, Undo2, ReceiptText, AlertTriangle } from 'lucide-react';
+import { sortByText } from '../utils/sorting';
 import { NAVY, inputCls, overlayCls, panelCls, rupees } from './clientModalUI';
 import { formatDate, today } from '../utils/gst';
 
@@ -45,11 +46,12 @@ export function ITRBillingQueue({ currentUser }: ITRBillingQueueProps) {
     }
   };
 
+  // A–Z by client, so a return can be found by name rather than by scrolling.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return queue;
-    return queue.filter(f => [f.clientName, f.pan, f.fileNumber, f.responsiblePersonName]
+    const rows = !q ? queue : queue.filter(f => [f.clientName, f.pan, f.fileNumber, f.responsiblePersonName]
       .some(v => (v || '').toLowerCase().includes(q)));
+    return sortByText(rows, f => f.clientName);
   }, [queue, search]);
 
   // Sent back and not yet corrected — shown first, because it is the only part

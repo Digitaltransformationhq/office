@@ -4,6 +4,7 @@ import { ReviewInquiryModalEnhanced } from './ReviewInquiryModalEnhanced';
 import { useToast } from './Toast';
 import { inquiriesAPI } from '../services/api';
 import { useLiveData } from '../hooks/useLiveData';
+import { compareText, sortText } from '../utils/sorting';
 import {
   Search, ChevronDown, ArrowUp, ArrowDown,
   Inbox, Clock, CheckCircle2, PauseCircle, XCircle, Mail, Phone,
@@ -45,8 +46,10 @@ export function InquiryManagement({ userId, userName }: InquiryManagementProps) 
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterWorkType, setFilterWorkType] = useState('all');
   const [filterSubmitter, setFilterSubmitter] = useState('all');
-  const [sortBy, setSortBy] = useState<'date' | 'client' | 'status'>('date');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  // A–Z by client, like every other list here. Newest-first is still a click
+  // away on the sort control.
+  const [sortBy, setSortBy] = useState<'date' | 'client' | 'status'>('client');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const { showError } = useToast();
 
   useEffect(() => { loadData(); }, []);
@@ -75,8 +78,8 @@ export function InquiryManagement({ userId, userName }: InquiryManagementProps) 
     setShowReviewModal(true);
   };
 
-  const uniqueSubmitters = Array.from(new Set(inquiries.map(i => i.submitted_by))).filter(Boolean);
-  const uniqueWorkTypes = Array.from(new Set(inquiries.map(i => i.work_type))).filter(Boolean);
+  const uniqueSubmitters = sortText(Array.from(new Set(inquiries.map(i => i.submitted_by))).filter(Boolean));
+  const uniqueWorkTypes = sortText(Array.from(new Set(inquiries.map(i => i.work_type))).filter(Boolean));
 
   const hasFilters = searchTerm || filterStatus !== 'all' || filterWorkType !== 'all' || filterSubmitter !== 'all';
   const clearFilters = () => { setSearchTerm(''); setFilterStatus('all'); setFilterWorkType('all'); setFilterSubmitter('all'); };
@@ -97,18 +100,14 @@ export function InquiryManagement({ userId, userName }: InquiryManagementProps) 
       if (filterSubmitter !== 'all' && inquiry.submitted_by !== filterSubmitter) return false;
       return true;
     })
+    // Text columns go through the shared collator, so "abc traders" files with
+    // "ABC Traders" rather than below every capitalised name on the list.
     .sort((a, b) => {
-      let compareA, compareB;
-      switch (sortBy) {
-        case 'client': compareA = a.client_name || ''; compareB = b.client_name || ''; break;
-        case 'status': compareA = a.status || ''; compareB = b.status || ''; break;
-        case 'date':
-        default:
-          compareA = new Date(a.created_at || 0).getTime();
-          compareB = new Date(b.created_at || 0).getTime();
-      }
-      if (sortOrder === 'asc') return compareA > compareB ? 1 : -1;
-      return compareA < compareB ? 1 : -1;
+      const dir = sortOrder === 'asc' ? 1 : -1;
+      if (sortBy === 'client') return dir * compareText(a.client_name, b.client_name);
+      if (sortBy === 'status') return dir * compareText(a.status, b.status);
+      const byDate = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      return dir * byDate || compareText(a.client_name, b.client_name);
     });
 
   const count = (s: string) => inquiries.filter(i => i.status === s).length;

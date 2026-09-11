@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { clientsAPI, inquiriesAPI } from '../services/api';
+import { sortOptions } from '../utils/sorting';
 import { useToast } from './Toast';
 import { useBackButton } from '../hooks/useBackButton';
 import { X, Inbox, Pencil, PauseCircle, Check, ChevronDown, CheckCircle2, Send } from 'lucide-react';
@@ -254,7 +255,7 @@ export function ReviewInquiryModalEnhanced({ inquiry, reviewerId, reviewerName, 
                     <Field label="Work type">
                       <div className="relative">
                         <select value={editedInquiry.workType} onChange={e => setEditedInquiry(p => ({ ...p, workType: e.target.value }))} className={`${inputCls} appearance-none pr-9`}>
-                          {['GST Filing', 'Audit', 'Income Tax', 'Company Registration', 'TDS Returns', 'PF/ESIC Returns', 'Accounting Services', 'Consultancy', 'Others'].map(w => <option key={w} value={w}>{w}</option>)}
+                          {sortOptions(['GST Filing', 'Audit', 'Income Tax', 'Company Registration', 'TDS Returns', 'PF/ESIC Returns', 'Accounting Services', 'Consultancy', 'Others']).map(w => <option key={w} value={w}>{w}</option>)}
                         </select>
                         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       </div>

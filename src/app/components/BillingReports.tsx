@@ -5,6 +5,7 @@ import { Button } from './Button';
 import { Input } from './Input';
 import { Badge } from './Badge';
 import { billingAPI, clientsAPI, usersAPI } from '../services/api';
+import { sortByText, sortText } from '../utils/sorting';
 
 interface BillingReportsProps {
   user?: {
@@ -94,7 +95,8 @@ export function BillingReports({ user }: BillingReportsProps) {
       );
     }
 
-    setFilteredRecords(filtered);
+    // A–Z by task, so the table and the CSV it exports read the same way.
+    setFilteredRecords(sortByText(filtered, (r: any) => r.taskName));
   };
 
   const exportToCSV = () => {
@@ -177,10 +179,10 @@ export function BillingReports({ user }: BillingReportsProps) {
   }
 
   // Get unique client names for filter
-  const uniqueClients = Array.from(new Set(billingRecords.map((r) => r.clientName))).sort();
+  const uniqueClients = sortText(Array.from(new Set(billingRecords.map((r) => r.clientName))));
 
   // Get unique staff names for filter
-  const uniqueStaff = Array.from(new Set(billingRecords.map((r) => r.assignedTo))).sort();
+  const uniqueStaff = sortText(Array.from(new Set(billingRecords.map((r) => r.assignedTo))));
 
   return (
     <div className="space-y-0">      <div className="space-y-6 p-4 md:p-6">

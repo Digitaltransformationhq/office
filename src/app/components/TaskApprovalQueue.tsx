@@ -3,6 +3,7 @@ import { ReviewTaskModal } from './ReviewTaskModal';
 import { tasksAPI } from '../services/api';
 import { useToast } from './Toast';
 import { TASK_STATUS, canApproveTask } from '../utils/taskStatus';
+import { compareTasks } from '../utils/sorting';
 import { normalizeRole } from '../utils/roles';
 import { ArrowRight, CheckCircle2, Clock, PlayCircle, RotateCcw, Search } from 'lucide-react';
 
@@ -152,10 +153,13 @@ export function TaskApprovalQueue({ userId, userName, userRole }: TaskApprovalQu
         // are never buried below rows they can only watch. Within those, the two
         // gates cluster rather than interleave, so the green block reads as one
         // pile of finished work instead of a colour scattered down the list.
+        // Inside a gate the cards run A–Z by task, so the pile reads the same
+        // way twice running instead of reordering itself as rows arrive.
         .sort((a, b) =>
           Number(canApproveTask(b, { id: userId, role: userRole })) -
           Number(canApproveTask(a, { id: userId, role: userRole })) ||
-          Number(isCompletionGate(b)) - Number(isCompletionGate(a)))
+          Number(isCompletionGate(b)) - Number(isCompletionGate(a)) ||
+          compareTasks(a, b))
         .map((task) => {
         const mine = canApproveTask(task, { id: userId, role: userRole });
         const done = isCompletionGate(task);

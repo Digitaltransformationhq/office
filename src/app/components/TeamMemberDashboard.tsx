@@ -11,6 +11,7 @@ import { useTimeAgo } from '../hooks/useTimeAgo';
 import { useToast } from './Toast';
 import { DailyTodoList } from './DailyTodoList';
 import { TASK_STATUS, statusColor, statusLabel, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
+import { sortTasks } from '../utils/sorting';
 import { Loader2, Plus, MessageSquarePlus, MessageSquare, RotateCcw, ChevronLeft } from 'lucide-react';
 
 interface TeamMemberDashboardProps {
@@ -316,10 +317,13 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
     );
   }
 
-  const activeTasks = tasks.filter(t => isOpenTask(t.status));
-  const inProgressTasks = tasks.filter(t => t.status === 'In Progress');
-  const awaitingTasks = tasks.filter(t => isAwaitingApproval(t.status));
-  const completedTasks = tasks.filter(t => isFinishedTask(t.status));
+  // Sorted once, at the top: every tile below slices this list, so ordering it
+  // here is what makes all five views read A–Z rather than four of them.
+  const allTasks = sortTasks(tasks);
+  const activeTasks = allTasks.filter(t => isOpenTask(t.status));
+  const inProgressTasks = allTasks.filter(t => t.status === 'In Progress');
+  const awaitingTasks = allTasks.filter(t => isAwaitingApproval(t.status));
+  const completedTasks = allTasks.filter(t => isFinishedTask(t.status));
 
   /*
    * The list below the tiles shows whichever one is selected.
@@ -329,14 +333,14 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
    * own dashboard to ask.
    */
   const VIEWS = {
-    all: { label: 'All Tasks', tasks },
+    all: { label: 'All Tasks', tasks: allTasks },
     active: { label: 'Active Tasks', tasks: activeTasks },
     'in-progress': { label: 'In Progress', tasks: inProgressTasks },
     awaiting: { label: 'Awaiting Approval', tasks: awaitingTasks },
     completed: { label: 'Completed', tasks: completedTasks },
   } as const;
   const shownTasks = VIEWS[view].tasks;
-  const returnedTasks = tasks.filter(isRejectedTask);
+  const returnedTasks = allTasks.filter(isRejectedTask);
 
   /** One definition of what a task offers, rendered two ways (card + table). */
   const taskActions = (task: any): TaskAction[] => {

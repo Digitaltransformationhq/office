@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { usersAPI, tasksAPI } from '../services/api';
+import { sortByText } from '../utils/sorting';
 import { X, ChevronDown, Repeat2 } from 'lucide-react';
 import { isApproverRole } from '../utils/roles';
 
@@ -42,7 +43,8 @@ export function ReassignTaskModal({ task, currentUser, onClose, onSuccess }: Rea
       const response = await usersAPI.getAll();
       // Filter out current user
       const otherUsers = (response.data || []).filter((u: any) => u.id !== currentUser.id);
-      setUsers(otherUsers);
+      // A–Z, so each role group in the picker below reads in name order.
+      setUsers(sortByText(otherUsers, (u: any) => u.name));
     } catch (error) {
       console.error('Error loading users:', error);
     }

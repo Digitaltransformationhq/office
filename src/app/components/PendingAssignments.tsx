@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from './Badge';
 import { Button } from './Button';
 import { assignmentsAPI } from '../services/api';
+import { sortByText } from '../utils/sorting';
 
 interface PendingAssignmentsProps {
   user: {
@@ -87,10 +88,14 @@ export function PendingAssignments({ user }: PendingAssignmentsProps) {
     }
   };
 
-  const filteredAssignments = assignments.filter(a => {
-    if (filter === 'all') return true;
-    return a.status.toLowerCase() === filter;
-  });
+  // A–Z by the task being assigned — the column the eye lands on first.
+  const filteredAssignments = sortByText(
+    assignments.filter(a => {
+      if (filter === 'all') return true;
+      return a.status.toLowerCase() === filter;
+    }),
+    a => a.taskName,
+  );
 
   const pendingCount = assignments.filter(a => a.status === 'Pending').length;
   const acceptedCount = assignments.filter(a => a.status === 'Accepted').length;
