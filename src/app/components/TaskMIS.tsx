@@ -456,13 +456,14 @@ export function TaskMIS({ user }: TaskMISProps) {
       {/* Filter bar */}
       {showFilters && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#E7EDF4] bg-[#F9FAFB] p-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input placeholder="Client…" value={clientFilter} onChange={e => setClientFilter(e.target.value)} className={searchCls} />
-          </div>
+          {/* Task first, matching the column it filters. */}
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input placeholder="Task…" value={taskFilter} onChange={e => setTaskFilter(e.target.value)} className={searchCls} />
+          </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input placeholder="Client…" value={clientFilter} onChange={e => setClientFilter(e.target.value)} className={searchCls} />
           </div>
           {isPartnerOrAdmin && (
             <div className="relative">
@@ -508,14 +509,19 @@ export function TaskMIS({ user }: TaskMISProps) {
                   <div key={task.id} className="overflow-hidden rounded-xl border border-[#E7EDF4]">
                     <button onClick={() => toggleCard(task.id)} className="flex w-full items-start gap-2.5 px-3.5 py-3 text-left">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[0.85rem] font-medium" style={{ color: NAVY }}>{task.client}</p>
+                        {/* Same order as the table: the task is what these are
+                            sorted by, so it is what the closed card shows. */}
+                        <p className="text-[0.85rem] font-medium" style={{ color: NAVY }}>{task.task}</p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">{task.client}</p>
                         <span className={`mt-1.5 inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.66rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span>
                       </div>
                       <ChevronDown size={16} className={`mt-0.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
                     </button>
                     {open && (
                       <dl className="divide-y divide-[#F1F4F8] border-t border-[#F1F4F8] px-3.5">
-                        <CardRow label="Task"><span style={{ color: NAVY }}>{task.task}</span></CardRow>
+                        {/* No Task or Client row here — both are on the face of
+                            the card now, and repeating them inside pushes the
+                            rows that are actually hidden further down. */}
                         {task.reassignedFromName && <CardRow label="Reassigned from">{task.reassignedFromName}</CardRow>}
                         <CardRow label="Category">
                           <span className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-[0.7rem] font-medium" style={{ backgroundColor: 'rgba(27,54,93,0.06)', color: NAVY, border: '1px solid rgba(27,54,93,0.18)' }}>{task.category || '—'}</span>
@@ -563,7 +569,10 @@ export function TaskMIS({ user }: TaskMISProps) {
               </colgroup>
               <thead className="sticky top-0 z-10 bg-[#F9FAFB]">
                 <tr className="border-b border-[#E7EDF4]">
-                  <SortTh col="client" label="Client & Task" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  {/* Two sort targets in one cell, because the column carries two
+                      things. "Task" leads because that is what the rows are
+                      ordered by; "Client" is still one click away. */}
+                  <SortTh col="task" label="Task" also={{ col: 'client', label: 'Client' }} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                   <SortTh col="category" label="Category" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                   <SortTh col="priority" label="Priority" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                   {isPartnerOrAdmin && <SortTh col="assignedTo" label="Assigned" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />}
@@ -578,10 +587,12 @@ export function TaskMIS({ user }: TaskMISProps) {
                   const assign = task.assignmentStatus || 'Accepted';
                   return (
                     <tr key={task.id} className={`border-b border-[#EFF3F8] transition-colors hover:bg-[#F9FBFD] ${isPendingAcceptance ? 'bg-[#FFFBEB]' : ''}`}>
-                      {/* Client & Task */}
+                      {/* Task & Client — the task leads, because the list is
+                          ordered by it and a column you cannot read down in
+                          order looks like a list that was never sorted. */}
                       <td className="px-3 py-3">
-                        <p className="truncate text-[0.82rem] font-medium" style={{ color: NAVY }} title={task.client}>{task.client}</p>
-                        <p className="truncate text-xs text-muted-foreground" title={task.task}>{task.task}</p>
+                        <p className="truncate text-[0.82rem] font-medium" style={{ color: NAVY }} title={task.task}>{task.task}</p>
+                        <p className="truncate text-xs text-muted-foreground" title={task.client}>{task.client}</p>
                         {task.reassignedFromName && (
                           <p className="truncate text-[0.62rem] text-muted-foreground/70">↙ {task.reassignedFromName}</p>
                         )}
@@ -685,19 +696,50 @@ function CardRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function SortTh({ col, label, sortCol, sortDir, onSort }: {
-  col: string; label: string; sortCol: string; sortDir: 'asc' | 'desc'; onSort: (c: string) => void;
+/**
+ * A sortable column heading, optionally carrying a second sort target.
+ *
+ * The first column holds two things — the task and the client beneath it — and
+ * both are worth sorting by. Rather than splitting the column and squeezing
+ * every other one, the heading reads "Task / Client" and each word sorts by
+ * itself, with the arrow marking whichever is live.
+ */
+function SortTh({ col, label, also, sortCol, sortDir, onSort }: {
+  col: string;
+  label: string;
+  also?: { col: string; label: string };
+  sortCol: string; sortDir: 'asc' | 'desc'; onSort: (c: string) => void;
 }) {
-  const active = sortCol === col;
+  const arrow = (c: string) => sortCol === c
+    && (sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />);
+  const part = (c: string, text: string) => (
+    <span
+      onClick={() => onSort(c)}
+      className={`inline-flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground ${
+        sortCol === c ? 'text-foreground' : ''
+      }`}
+    >
+      {text}
+      {arrow(c)}
+    </span>
+  );
+  // An ordinary heading keeps the whole cell as its click target, as it always
+  // had. Only the two-target heading narrows it to the words themselves —
+  // there, a cell-wide handler would have to pick one of the two for the reader.
   return (
     <th
-      onClick={() => onSort(col)}
-      className="cursor-pointer select-none px-3 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:text-foreground"
+      onClick={also ? undefined : () => onSort(col)}
+      className={`select-none px-3 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground ${
+        also ? '' : 'cursor-pointer transition-colors hover:text-foreground'
+      }`}
     >
-      <span className="inline-flex items-center gap-1">
-        {label}
-        {active && (sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
-      </span>
+      {part(col, label)}
+      {also && (
+        <>
+          <span className="px-1 text-muted-foreground/40">/</span>
+          {part(also.col, also.label)}
+        </>
+      )}
     </th>
   );
 }
