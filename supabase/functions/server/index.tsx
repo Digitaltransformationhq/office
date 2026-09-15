@@ -2204,15 +2204,13 @@ app.get('/make-server-0abfa7cf/itr/register', async (c) => {
       return c.json({ success: false, error: 'fy query parameter is required' }, 400);
     }
 
-    const { data, error } = await supabase
+    const data = await selectAll(() => supabase
       .from('itr_filings')
       .select('*, clients ( id, name, pan, file_number, client_type )')
       .eq('financial_year', financialYear)
-      .order('id', { ascending: true });
+      .order('id', { ascending: true }));
 
-    if (error) throw error;
-
-    return c.json({ success: true, data: { financialYear, filings: data || [] } });
+    return c.json({ success: true, data: { financialYear, filings: data } });
   } catch (error) {
     console.log('Error fetching ITR register:', error);
     return c.json({ success: false, error: 'Failed to fetch the ITR register', details: String(error) }, 500);
@@ -2228,18 +2226,16 @@ app.get('/make-server-0abfa7cf/itr/register', async (c) => {
 app.get('/make-server-0abfa7cf/itr/billing-queue', async (c) => {
   try {
     const financialYear = c.req.query('fy');
-    let query = supabase
-      .from('itr_filings')
-      .select('*, clients ( id, name, pan, file_number, client_type, itr_fees )')
-      .in('billing_status', ['Pending', 'Returned'])
-      .order('filed_on', { ascending: true });
+    const data = await selectAll(() => {
+      let query = supabase
+        .from('itr_filings')
+        .select('*, clients ( id, name, pan, file_number, client_type, itr_fees )')
+        .in('billing_status', ['Pending', 'Returned']);
+      if (financialYear) query = query.eq('financial_year', financialYear);
+      return query.order('filed_on', { ascending: true }).order('id', { ascending: true });
+    });
 
-    if (financialYear) query = query.eq('financial_year', financialYear);
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    return c.json({ success: true, data: data || [] });
+    return c.json({ success: true, data });
   } catch (error) {
     console.log('Error fetching the ITR billing queue:', error);
     return c.json({ success: false, error: 'Failed to fetch the billing queue', details: String(error) }, 500);
@@ -2332,14 +2328,13 @@ app.put('/make-server-0abfa7cf/itr/filings/:id/return', async (c) => {
 /** Which financial years the register holds returns for. */
 app.get('/make-server-0abfa7cf/itr/financial-years', async (c) => {
   try {
-    const { data, error } = await supabase
+    const data = await selectAll(() => supabase
       .from('itr_filings')
       .select('financial_year')
-      .order('financial_year', { ascending: false });
+      .order('financial_year', { ascending: false })
+      .order('id', { ascending: true }));
 
-    if (error) throw error;
-
-    return c.json({ success: true, data: [...new Set((data || []).map((r: any) => r.financial_year))] });
+    return c.json({ success: true, data: [...new Set(data.map((r: any) => r.financial_year))] });
   } catch (error) {
     console.log('Error fetching ITR financial years:', error);
     return c.json({ success: false, error: 'Failed to fetch financial years' }, 500);
@@ -2501,28 +2496,25 @@ app.get('/make-server-0abfa7cf/gst/register', async (c) => {
       return c.json({ success: false, error: 'fy query parameter is required' }, 400);
     }
 
+    // A year of filings is roughly 2 returns x 12 months x every registration —
+    // several thousand rows — so both lists are paged past the 1000-row cap.
     const [registrations, filings] = await Promise.all([
-      supabase
+      selectAll(() => supabase
         .from('client_gst_registrations')
         .select(`${GST_REGISTRATION_FIELDS}, clients ( id, name, pan, file_number )`)
-        .order('code_no', { ascending: true }),
-      supabase
+        .order('code_no', { ascending: true })
+        .order('id', { ascending: true })),
+      selectAll(() => supabase
         .from('gst_filings')
         .select('*')
         .eq('financial_year', financialYear)
-        .order('period_key', { ascending: true }),
+        .order('period_key', { ascending: true })
+        .order('id', { ascending: true })),
     ]);
-
-    if (registrations.error) throw registrations.error;
-    if (filings.error) throw filings.error;
 
     return c.json({
       success: true,
-      data: {
-        financialYear,
-        registrations: registrations.data || [],
-        filings: filings.data || [],
-      },
+      data: { financialYear, registrations, filings },
     });
   } catch (error) {
     console.log('Error fetching GST register:', error);
@@ -2533,14 +2525,13 @@ app.get('/make-server-0abfa7cf/gst/register', async (c) => {
 /** Which financial years the register holds anything for. */
 app.get('/make-server-0abfa7cf/gst/financial-years', async (c) => {
   try {
-    const { data, error } = await supabase
+    const data = await selectAll(() => supabase
       .from('gst_filings')
       .select('financial_year')
-      .order('financial_year', { ascending: false });
+      .order('financial_year', { ascending: false })
+      .order('id', { ascending: true }));
 
-    if (error) throw error;
-
-    const years = [...new Set((data || []).map((r: any) => r.financial_year))];
+    const years = [...new Set(data.map((r: any) => r.financial_year))];
     return c.json({ success: true, data: years });
   } catch (error) {
     console.log('Error fetching GST financial years:', error);
