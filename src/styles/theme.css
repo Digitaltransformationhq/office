@@ -8,8 +8,10 @@
   --primary-foreground: #FFFFFF;
   --secondary: #FFFFFF;
   --secondary-foreground: #0B1F3A;
-  --accent: #C8A951;
-  --accent-foreground: #FFFFFF;
+  /* Hover and highlight surfaces: a soft navy tint. Was gold (#C8A951), which
+     read as a warning next to the navy-and-white screens. */
+  --accent: #EEF2F8;
+  --accent-foreground: #1B365D;
 
   /* Neutral Colors */
   --background: #F5F7FA;
@@ -36,24 +38,24 @@
   --switch-background: #D1D5DB;
   --popover: #FFFFFF;
   --popover-foreground: #111827;
-  --ring: #C8A951;
+  --ring: #1B365D;
 
   /* Chart Colors */
   --chart-1: #3B82F6;
   --chart-2: #10B981;
   --chart-3: #F59E0B;
   --chart-4: #EF4444;
-  --chart-5: #C8A951;
+  --chart-5: #8B5CF6;
 
   /* Sidebar */
   --sidebar: #0B1F3A;
   --sidebar-foreground: #FFFFFF;
-  --sidebar-primary: #C8A951;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: rgba(200, 169, 81, 0.1);
+  --sidebar-primary: #FFFFFF;
+  --sidebar-primary-foreground: #0B1F3A;
+  --sidebar-accent: rgba(255, 255, 255, 0.08);
   --sidebar-accent-foreground: #FFFFFF;
   --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #C8A951;
+  --sidebar-ring: #FFFFFF;
 
   /* Typography */
   --font-weight-medium: 500;
