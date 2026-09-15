@@ -12,6 +12,24 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
 
+// Every row of a query, however many there are.
+//
+// PostgREST returns at most 1000 rows per request and says nothing when it stops
+// there, so a plain select on a table past that size quietly drops the rest: the
+// client master read 1000 when there were 1264. This fetches page by page until
+// a short page comes back. The query must be ordered on something unique (add
+// `id` as the last order) or rows can repeat or go missing across pages.
+const PAGE_SIZE = 1000;
+async function selectAll<T = any>(build: () => any): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await build().range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE_SIZE) return rows;
+  }
+}
+
 // Web Push (VAPID) — keys provided via environment variables
 const VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC_KEY') ?? '';
 const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') ?? '';
@@ -1590,14 +1608,13 @@ app.put('/make-server-0abfa7cf/announcements/:announcementId/toggle', async (c) 
 
 app.get('/make-server-0abfa7cf/clients', async (c) => {
   try {
-    const { data, error } = await supabase
+    const data = await selectAll(() => supabase
       .from('clients')
       .select('*')
-      .order('name', { ascending: true });
+      .order('name', { ascending: true })
+      .order('id', { ascending: true }));
 
-    if (error) throw error;
-
-    return c.json({ success: true, data: data || [] });
+    return c.json({ success: true, data });
   } catch (error) {
     console.log('Error fetching clients:', error);
     return c.json({ success: false, error: 'Failed to fetch clients' }, 500);
