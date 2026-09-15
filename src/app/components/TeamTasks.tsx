@@ -4,6 +4,7 @@ import { Users, ArrowRight } from 'lucide-react';
 import { UserManagement } from './UserManagement';
 import { useLiveData } from '../hooks/useLiveData';
 import { isOpenTask } from '../utils/taskStatus';
+import { sortByText } from '../utils/sorting';
 import { TeamWorkloadModal } from './TeamWorkloadModal';
 
 interface Task {
@@ -39,8 +40,15 @@ function initials(name?: string) {
 function roleLabel(role: string) {
   if (role === 'team-leader') return 'Accounts';
   if (role === 'team-member') return 'Staff';
+  if (role === 'partner') return 'Partner';
+  if (role === 'director') return 'Director';
   return role.replace('-', ' ');
 }
+
+// Everyone who does the firm's work. Partners and directors take tasks too, so a
+// workload view without them undercounts the team. The admin login is a shared
+// account rather than a person, and clients are not staff.
+const TEAM_ROLES = new Set(['partner', 'director', 'team-leader', 'team-member']);
 
 function workload(n: number) {
   if (n > 5) return { label: 'Heavy', cls: 'bg-[#FDECEC] text-[#c0392b]' };
@@ -73,7 +81,7 @@ export function TeamTasks({ user }: { user?: { id: string; name: string; email: 
     }
   };
 
-  const staffMembers = users.filter(u => u.role === 'team-member' || u.role === 'team-leader');
+  const staffMembers = sortByText(users.filter(u => TEAM_ROLES.has(u.role)), u => u.name);
   const pendingTasks = tasks.filter(t => isOpenTask(t.status));
   const isHigh = (p: string) => p === 'High' || p === 'Urgent';
 
