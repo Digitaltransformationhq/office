@@ -154,56 +154,35 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
           <h1 className="text-[1.5rem] font-semibold tracking-tight" style={{ color: NAVY }}>Clients</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">Your client master and fee schedules</p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {canExport && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  disabled={loading || exporting || clients.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#E7EDF4] bg-white px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[#F4F6F9] disabled:opacity-50"
-                  style={{ color: NAVY }}
-                >
-                  <Download size={16} /> {exporting ? 'Exporting…' : 'Export to Excel'}
-                  <ChevronDown size={14} className="text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60">
-                <DropdownMenuItem disabled={!isFiltered} onSelect={() => runExport(filtered, 'filtered')}>
-                  <div className="flex flex-col">
-                    <span>Filtered list ({filtered.length})</span>
-                    <span className="text-xs text-muted-foreground">
-                      {isFiltered ? 'Only the clients shown by the current filter' : 'Set a filter or search first'}
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => runExport(clients, 'all')}>
-                  <div className="flex flex-col">
-                    <span>All clients ({clients.length})</span>
-                    <span className="text-xs text-muted-foreground">The whole client master</span>
-                  </div>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <button
-            onClick={() => setShowAdd(true)}
-            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#1b365d] px-4 py-2.5 text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]"
-          >
-            <Building2 size={16} /> Add Client
-          </button>
-        </div>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#1b365d] px-4 py-2.5 text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]"
+        >
+          <Building2 size={16} /> Add Client
+        </button>
       </div>
 
       <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
-        <div className="flex flex-col gap-3 border-b border-[#E7EDF4] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2.5">
+        {/* Toolbar: title on the left, search taking the middle, filters and
+            export on the right. Wraps to rows on narrow screens. */}
+        <div className="flex flex-col gap-3 border-b border-[#E7EDF4] px-5 py-4 lg:flex-row lg:items-center lg:gap-4">
+          <div className="flex shrink-0 items-center gap-2.5">
             <h2 className="text-sm font-semibold" style={{ color: NAVY }}>Client Master</h2>
             <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
               {filtered.length}
               {filtered.length !== clients.length && <span className="text-muted-foreground/60"> / {clients.length}</span>}
             </span>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name, PAN, GSTIN, contact, email or file number…"
+              className="w-full rounded-lg border border-[#E7EDF4] bg-white py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
+            />
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
           {nonFilerCount > 0 && (
             <div className="flex rounded-lg border border-[#E7EDF4] p-0.5">
               {([['all', 'All'], ['Filing', 'Filing'], ['Non-filer', 'Non-filers']] as const).map(([key, label]) => (
@@ -232,15 +211,37 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
               No PAN <span className={noPanOnly ? 'text-[#92400E]/70' : 'text-muted-foreground/60'}>{noPanCount}</span>
             </button>
           )}
-          <div className="relative w-full sm:w-[260px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search name, PAN, GSTIN, contact…"
-              className="w-full rounded-lg border border-[#E7EDF4] bg-white py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
-            />
-          </div>
+          {canExport && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  disabled={loading || exporting || clients.length === 0}
+                  title="Export to Excel"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#E7EDF4] bg-white px-3 py-2 text-xs font-medium transition-colors hover:bg-[#F4F6F9] disabled:opacity-50"
+                  style={{ color: NAVY }}
+                >
+                  <Download size={14} /> {exporting ? 'Exporting…' : 'Export'}
+                  <ChevronDown size={13} className="text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuItem disabled={!isFiltered} onSelect={() => runExport(filtered, 'filtered')}>
+                  <div className="flex flex-col">
+                    <span>With current filters ({filtered.length})</span>
+                    <span className="text-xs text-muted-foreground">
+                      {isFiltered ? 'Only the clients shown by the search and filters' : 'Search or pick a filter first'}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => runExport(clients, 'all')}>
+                  <div className="flex flex-col">
+                    <span>All clients ({clients.length})</span>
+                    <span className="text-xs text-muted-foreground">The whole client master</span>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           </div>
         </div>
 
