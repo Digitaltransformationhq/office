@@ -59,10 +59,9 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [type, setType] = useState<'all' | 'Filing' | 'Non-filer'>('all');
-  // PAN is how duplicates are caught, so the clients without one are a list to
-  // work through, not a detail to scroll past.
-  const [noPanOnly, setNoPanOnly] = useState(false);
+  // One filter at a time. "No PAN" sits with the client types because it is
+  // read the same way: a slice of the client master to work through.
+  const [type, setType] = useState<'all' | 'Filing' | 'Non-filer' | 'no-pan'>('all');
   const [page, setPage] = useState(1);
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
   const [showAdd, setShowAdd] = useState(false);
@@ -104,25 +103,25 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return sortByText(clients.filter(c => {
-      if (type !== 'all' && (c.clientType || 'Filing') !== type) return false;
-      if (noPanOnly && c.pan) return false;
+      if (type === 'no-pan') { if (c.pan) return false; }
+      else if (type !== 'all' && (c.clientType || 'Filing') !== type) return false;
       if (!q) return true;
       return [
         c.name, c.firmName, c.industry, c.pan, c.gstin || c.gst,
         c.contact || c.mobileNumber, c.email || c.emailId, c.fileNumber,
       ].some(v => (v || '').toString().toLowerCase().includes(q));
     }), c => c.name);
-  }, [clients, search, type, noPanOnly]);
+  }, [clients, search, type]);
 
   // A search that shortens the list must not leave you stranded on page 20.
-  useEffect(() => { setPage(1); }, [search, type, noPanOnly]);
+  useEffect(() => { setPage(1); }, [search, type]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const paged = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
-  const isFiltered = type !== 'all' || noPanOnly || search.trim() !== '';
+  const isFiltered = type !== 'all' || search.trim() !== '';
 
   const openExisting = (clientId: string) => {
     const existing = clients.find(c => c.id === clientId);
@@ -183,34 +182,27 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
             />
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {nonFilerCount > 0 && (
-            <div className="flex rounded-lg border border-[#E7EDF4] p-0.5">
-              {([['all', 'All'], ['Filing', 'Filing'], ['Non-filer', 'Non-filers']] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setType(key)}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                    type === key ? 'text-white' : 'text-muted-foreground hover:bg-[#F4F6F9]'
-                  }`}
-                  style={type === key ? { backgroundColor: NAVY } : undefined}
-                >
-                  {label}
-                  {key === 'Non-filer' && <span className={`ml-1 ${type === key ? 'text-white/60' : 'text-muted-foreground/60'}`}>{nonFilerCount}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-          {noPanCount > 0 && (
-            <button
-              onClick={() => setNoPanOnly(v => !v)}
-              title="Clients with no PAN on record"
-              className={`rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${
-                noPanOnly ? 'border-[#b45309] bg-[#FFFBEB] text-[#92400E]' : 'border-[#E7EDF4] text-muted-foreground hover:bg-[#F4F6F9]'
-              }`}
-            >
-              No PAN <span className={noPanOnly ? 'text-[#92400E]/70' : 'text-muted-foreground/60'}>{noPanCount}</span>
-            </button>
-          )}
+          <div className="flex rounded-lg border border-[#E7EDF4] p-0.5">
+            {([
+              ['all', 'All', null],
+              ['Filing', 'Filing', null],
+              ['Non-filer', 'Non-filers', nonFilerCount],
+              ['no-pan', 'No PAN', noPanCount],
+            ] as const).map(([key, label, count]) => (
+              <button
+                key={key}
+                onClick={() => setType(key)}
+                title={key === 'no-pan' ? 'Clients with no PAN on record' : undefined}
+                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  type === key ? 'text-white' : 'text-muted-foreground hover:bg-[#F4F6F9]'
+                }`}
+                style={type === key ? { backgroundColor: NAVY } : undefined}
+              >
+                {label}
+                {count !== null && <span className={`ml-1 ${type === key ? 'text-white/60' : 'text-muted-foreground/60'}`}>{count}</span>}
+              </button>
+            ))}
+          </div>
           {canExport && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
