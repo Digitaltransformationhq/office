@@ -4,9 +4,14 @@ import { AddClientModal } from './AddClientModal';
 import { EditClientModal } from './EditClientModal';
 import { ViewClientModal } from './ViewClientModal';
 import { useToast } from './Toast';
-import { Building2, Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil } from 'lucide-react';
+import { Building2, Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil, Download } from 'lucide-react';
 import { sortByText } from '../utils/sorting';
 import { useLiveData } from '../hooks/useLiveData';
+import { isApproverRole } from '../utils/roles';
+import { exportClientsToExcel } from '../utils/exportClients';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 const NAVY = '#1b365d';
 
@@ -46,7 +51,11 @@ function Dash() {
   return <span className="text-slate-300">—</span>;
 }
 
-export function ClientManagement() {
+export function ClientManagement({ user }: { user?: { role?: string } | null }) {
+  // The whole client book, fees included, in one file: admin, partners and
+  // directors only. The desks that can open this page do not get the button.
+  const canExport = isApproverRole(user?.role);
+  const [exporting, setExporting] = useState(false);
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -57,7 +66,7 @@ export function ClientManagement() {
   const [showEdit, setShowEdit] = useState(false);
   const [showView, setShowView] = useState(false);
   const [selected, setSelected] = useState<any>(null);
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
 
   useEffect(() => { load(); }, []);
 
@@ -108,6 +117,22 @@ export function ClientManagement() {
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const paged = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
+  const isFiltered = type !== 'all' || search.trim() !== '';
+
+  const runExport = async (list: any[], label: string) => {
+    if (list.length === 0) { showError('No clients to export'); return; }
+    try {
+      setExporting(true);
+      await exportClientsToExcel(sortByText(list, c => c.name), label);
+      showSuccess(`Exported ${list.length} client${list.length === 1 ? '' : 's'}`);
+    } catch (e) {
+      console.error('Client export failed:', e);
+      showError('Export failed. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const openView = (client: any) => { setSelected(client); setShowView(true); };
   const openEdit = (client: any) => { setSelected(client); setShowEdit(true); };
 
@@ -119,12 +144,44 @@ export function ClientManagement() {
           <h1 className="text-[1.5rem] font-semibold tracking-tight" style={{ color: NAVY }}>Clients</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">Your client master and fee schedules</p>
         </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#1b365d] px-4 py-2.5 text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]"
-        >
-          <Building2 size={16} /> Add Client
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {canExport && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  disabled={loading || exporting || clients.length === 0}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#E7EDF4] bg-white px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[#F4F6F9] disabled:opacity-50"
+                  style={{ color: NAVY }}
+                >
+                  <Download size={16} /> {exporting ? 'Exporting…' : 'Export to Excel'}
+                  <ChevronDown size={14} className="text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuItem disabled={!isFiltered} onSelect={() => runExport(filtered, 'filtered')}>
+                  <div className="flex flex-col">
+                    <span>Filtered list ({filtered.length})</span>
+                    <span className="text-xs text-muted-foreground">
+                      {isFiltered ? 'Only the clients shown by the current filter' : 'Set a filter or search first'}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => runExport(clients, 'all')}>
+                  <div className="flex flex-col">
+                    <span>All clients ({clients.length})</span>
+                    <span className="text-xs text-muted-foreground">The whole client master</span>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <button
+            onClick={() => setShowAdd(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#1b365d] px-4 py-2.5 text-sm font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]"
+          >
+            <Building2 size={16} /> Add Client
+          </button>
+        </div>
       </div>
 
       <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">

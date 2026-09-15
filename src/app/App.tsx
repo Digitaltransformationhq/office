@@ -237,7 +237,7 @@ export default function App() {
        * the menu does not offer.
        */
       case 'clients':
-        if (canAccessClients(user)) return <ClientManagement />;
+        if (canAccessClients(user)) return <ClientManagement user={user} />;
         if (user) setActiveView(user.role);
         return null;
       case 'gst-compliance':
