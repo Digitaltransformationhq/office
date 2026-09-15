@@ -433,7 +433,7 @@ function NonFilerTag({ type }: { type?: string }) {
 
 /** A missing PAN, said as what it is rather than a dash that reads as "fine". */
 function NoPan({ reason }: { reason?: string }) {
-  const label = reason === 'Client has no PAN' ? 'No PAN' : reason === 'Foreign / non-resident entity' ? 'Foreign entity' : 'PAN awaited';
+  const label = reason === 'Client has no PAN' ? 'No PAN' : reason === 'Foreign / non-resident entity' ? 'Foreign entity' : 'PAN Awaited';
   return (
     <span className="whitespace-nowrap rounded-md border border-[#FDE68A] bg-[#FFFBEB] px-1.5 py-0.5 font-sans text-[0.68rem] font-medium text-[#92400E]" title={reason || 'PAN awaited from client'}>
       {label}
