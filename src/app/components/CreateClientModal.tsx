@@ -3,14 +3,22 @@ import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { Input } from './Input';
 import { Button } from './Button';
 import { clientsAPI } from '../services/api';
+import { DuplicateWarning, type PossibleDuplicate } from './clientModalUI';
 
 interface CreateClientModalProps {
   onClose: () => void;
   onClientCreated: (clientName: string) => void;
 }
 
+/**
+ * The quick "new client" from the task form. It asks for no PAN — the client
+ * master form does — so the server records it as "PAN awaited", and a match
+ * against an existing client offers that client for the task instead.
+ */
 export function CreateClientModal({ onClose, onClientCreated }: CreateClientModalProps) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<{ message: string; existingName?: string } | null>(null);
+  const [duplicates, setDuplicates] = useState<PossibleDuplicate[] | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     industry: '',
@@ -19,29 +27,39 @@ export function CreateClientModal({ onClose, onClientCreated }: CreateClientModa
     email: '',
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const save = async (confirmNotDuplicate = false) => {
     setLoading(true);
-
+    setError(null);
     try {
-      await clientsAPI.create({
+      // This used to call onClientCreated whatever the server said, so a refused
+      // client was handed to the task as if it existed.
+      const response = await clientsAPI.create({
         name: formData.name,
         industry: formData.industry,
         gst: formData.gst,
         contact: formData.contact,
         email: formData.email,
         status: 'Active',
+        confirmNotDuplicate,
       });
-
-      onClientCreated(formData.name);
-      onClose();
-    } catch (error) {
-      console.error('Error creating client:', error);
-      alert('Failed to create client. Please try again.');
+      if (response.success) {
+        onClientCreated(formData.name);
+        onClose();
+      } else if (response.code === 'POSSIBLE_DUPLICATE') {
+        setDuplicates(response.duplicates || []);
+      } else {
+        setError({ message: response.error || 'Failed to create client', existingName: response.existingClientName });
+      }
+    } catch (e) {
+      console.error('Error creating client:', e);
+      setError({ message: 'Failed to create client. Please try again.' });
     } finally {
       setLoading(false);
     }
   };
+
+  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); save(false); };
+  const useExisting = (name: string) => { onClientCreated(name); onClose(); };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
@@ -58,6 +76,28 @@ export function CreateClientModal({ onClose, onClientCreated }: CreateClientModa
           </div>
         </CardHeader>
         <CardContent>
+          {duplicates && (
+            <div className="mb-4">
+              <DuplicateWarning
+                duplicates={duplicates}
+                busy={loading}
+                onOpen={d => useExisting(d.name)}
+                onSaveAnyway={() => save(true)}
+                onBack={() => setDuplicates(null)}
+              />
+              <p className="mt-2 text-xs text-muted-foreground">"Open this client" uses that client for the task.</p>
+            </div>
+          )}
+          {error && (
+            <div className="mb-4 rounded-lg border border-[#F5C6C6] bg-[#FDECEC] px-3 py-2 text-sm text-[#c0392b]">
+              {error.message}
+              {error.existingName && (
+                <button type="button" onClick={() => useExisting(error.existingName!)} className="ml-2 font-medium underline">
+                  Use {error.existingName}
+                </button>
+              )}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               label="Client Name"
@@ -104,7 +144,7 @@ export function CreateClientModal({ onClose, onClientCreated }: CreateClientModa
             />
 
             <div className="flex gap-3 pt-4">
-              <Button type="submit" disabled={loading} className="flex-1">
+              <Button type="submit" disabled={loading || !!duplicates} className="flex-1">
                 {loading ? 'Creating...' : 'Create Client'}
               </Button>
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1">

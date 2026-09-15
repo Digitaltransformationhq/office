@@ -1653,13 +1653,14 @@ const CLIENT_COLUMNS: Record<string, string> = {
   pfEsicPtLabourFees: 'pf_esic_pt_labour_fees',
   consultancyFees: 'consultancy_fees',
   totalFees: 'total_fees',
+  panMissingReason: 'pan_missing_reason',
 };
 
-/** Uppercased and trimmed, with an empty string becoming NULL so the partial
+/** Uppercased, with spaces removed and an empty string becoming NULL so the partial
  *  unique index on PAN treats "not recorded" as absent rather than as a value. */
 function normaliseCode(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  const trimmed = value.trim().toUpperCase();
+  const trimmed = value.replace(/\s+/g, '').toUpperCase();
   return trimmed || null;
 }
 
@@ -1676,6 +1677,175 @@ function toClientRow(body: Record<string, any>) {
   return row;
 }
 
+// ============================================
+// CLIENT IDENTITY
+// ============================================
+// PAN is who a client is. The client master once held 1264 rows for 810 clients
+// because records arrived without one and nothing else was compared, so every
+// write that could create a second copy of someone goes through these checks.
+//
+//   blocked   a PAN that is not a PAN, a PAN or GSTIN that belongs to another client
+//   required  a reason, when there is no PAN (see add-client-identity-rules.sql)
+//   warned    the same phone or email, or a name close to an existing client's —
+//             families share numbers and names repeat, so a person decides, and
+//             sends confirmNotDuplicate to go ahead
+
+const PAN_FORMAT = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const GSTIN_FORMAT = /^[0-9]{2}[A-Z0-9]{10}[0-9A-Z]{3}$/;
+const PAN_MISSING_REASONS = ['PAN awaited from client', 'Client has no PAN', 'Foreign / non-resident entity'];
+
+type IdentityError = { status: 400 | 409; body: Record<string, unknown> };
+
+/** Settles PAN, reason and GSTIN on `row`, or says why the write cannot happen. */
+async function checkClientIdentity(row: Record<string, any>, clientId?: string): Promise<IdentityError | null> {
+  if (row.pan) {
+    if (!PAN_FORMAT.test(row.pan)) {
+      return { status: 400, body: { success: false, code: 'INVALID_PAN', error: `"${row.pan}" is not a valid PAN. A PAN is 10 characters, like ABCDE1234F.` } };
+    }
+    let query = supabase.from('clients').select('id, name').eq('pan', row.pan);
+    if (clientId) query = query.neq('id', clientId);
+    const { data: clash } = await query.maybeSingle();
+    if (clash) {
+      return { status: 409, body: { success: false, code: 'PAN_EXISTS', error: `PAN ${row.pan} already belongs to ${clash.name}`, existingClientId: clash.id, existingClientName: clash.name } };
+    }
+    row.pan_missing_reason = null;
+  } else if ('pan' in row || !clientId) {
+    // No PAN, on a new client or one whose PAN is being cleared. A form states why;
+    // the quick paths (an inquiry converted, a client added from a task) cannot
+    // know, and "awaited" is the honest default for them.
+    const reason = row.pan_missing_reason || 'PAN awaited from client';
+    if (!PAN_MISSING_REASONS.includes(reason)) {
+      return { status: 400, body: { success: false, code: 'INVALID_PAN_REASON', error: `Choose why this client has no PAN: ${PAN_MISSING_REASONS.join(', ')}` } };
+    }
+    row.pan_missing_reason = reason;
+  }
+
+  if (row.gst && GSTIN_FORMAT.test(row.gst)) {
+    let owned = supabase.from('clients').select('id, name').eq('gst', row.gst).limit(1);
+    if (clientId) owned = owned.neq('id', clientId);
+    const [{ data: sameGst }, { data: reg }] = await Promise.all([
+      owned,
+      supabase.from('client_gst_registrations').select('client_id, clients ( id, name )')
+        .eq('gstin', row.gst).neq('status', 'Cancelled').maybeSingle(),
+    ]);
+    const other = (reg && reg.client_id !== clientId && (reg as any).clients) || sameGst?.[0];
+    if (other) {
+      return { status: 409, body: { success: false, code: 'GSTIN_EXISTS', error: `GSTIN ${row.gst} already belongs to ${other.name}`, existingClientId: other.id, existingClientName: other.name } };
+    }
+  }
+  return null;
+}
+
+const NAME_NOISE = new Set(['MR', 'MRS', 'MS', 'DR', 'M', 'S', 'PVT', 'PRIVATE', 'LTD', 'LIMITED', 'LIMTED', 'LLP', 'CO', 'AND', 'THE', 'OF', 'IN', 'PARTNER', 'BHAI', 'BEN', 'BAHEN']);
+
+/**
+ * How a name sounds, so spellings of one name compare equal.
+ *
+ * Names here are written from speech, so the same person arrives as SANJEEV and
+ * Sanjiv, UPADHYAY and UPADYAY, KASHIA and KASHIYA. Plain edit distance put
+ * SANJEEV/SANJIV at 0.846 and let the duplicate through; folding the spellings
+ * that sound alike first makes them identical. Case never matters — everything
+ * is uppercased before it gets here.
+ */
+function soundKey(word: string): string {
+  return word
+    .replace(/CHH/g, 'CH').replace(/PH/g, 'F').replace(/([CTDBKGS])H/g, '$1')
+    .replace(/W/g, 'V').replace(/Z/g, 'J').replace(/Q/g, 'K')
+    .replace(/EE/g, 'I').replace(/OO/g, 'U').replace(/Y/g, 'I')
+    .replace(/(.)\1+/g, '$1');
+}
+
+/** The words that identify a name: brackets, punctuation and titles removed. */
+function nameWords(name: string): string[] {
+  return (name || '').toUpperCase().replace(/\(.*?\)/g, ' ').replace(/[^A-Z ]/g, ' ')
+    .split(/\s+/).filter(w => w.length > 1 && !NAME_NOISE.has(w));
+}
+
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** "Sanjiv Mishra" and "SANJEEV MISHRA (PARTNER IN …)"; "Suman Rajiv Mishra" inside "Suman Rajiv Kumar Mishra". */
+function namesLookAlike(a: string, b: string): boolean {
+  const wa = nameWords(a).map(soundKey), wb = nameWords(b).map(soundKey);
+  const ja = wa.join(''), jb = wb.join('');
+  if (ja.length < 4 || jb.length < 4) return false;
+  if (ja === jb) return true;
+  if (1 - editDistance(ja, jb) / Math.max(ja.length, jb.length) >= 0.85) return true;
+  // The shorter name's words all inside the longer one: "SUMAN RAJIV MISHRA" in
+  // "SUMAN RAJIV KUMAR MISHRA", "SACHIN DEVISAHAY ARYA" in "ARYA SACHINBHAI DEVISAHAY".
+  // The given name has to line up, directly or surname-first; without that a
+  // wife's full name, which carries her husband's, would flag him —
+  // "URVI PRIYESH PATEL" is not "PRIYESH PATEL".
+  const [short, long] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+  if (short.length < 2) return false;
+  // One letter out is a spelling (KACHIA/KASIA), but only with the ends intact —
+  // SHIVANG and SHIVANI are different people.
+  const same = (w = '', u = '') => !!w && !!u && (u === w || (w.length >= 4 && u.startsWith(w)) ||
+    (w.length >= 5 && u.length >= 5 && w[0] === u[0] && w[w.length - 1] === u[u.length - 1] && editDistance(w, u) <= 1));
+  const last = short[short.length - 1];
+  const givenLinesUp = same(short[0], long[0]) ||
+    (same(short[0], long[1]) && same(short[1], long[0])) ||
+    (same(last, long[0]) && same(short[0], long[1])) ||
+    (same(short[0], long[long.length - 1]) && same(short[1], long[0]));
+  return givenLinesUp && short.every(w => long.some(u => same(w, u)));
+}
+
+const phonesIn = (...values: unknown[]) =>
+  new Set(values.join(' ').replace(/[\s-]/g, '').match(/[6-9][0-9]{9}/g) || []);
+const emailsIn = (...values: unknown[]) =>
+  new Set((values.join(' ').toLowerCase().match(/[\w.+-]+@[\w-]+\.[\w.]+/g) || []));
+
+/** Existing clients this one may well be, strongest match first. */
+async function findPossibleDuplicates(row: Record<string, any>, clientId?: string) {
+  const all = await selectAll(() => supabase.from('clients')
+    .select('id, name, firm_name, pan, gst, contact, mobile_number, email, email_id, client_type')
+    .order('id', { ascending: true }));
+
+  // A number or address on many records is the office's or a family's, and says
+  // nothing about who this client is.
+  const phoneUse = new Map<string, number>();
+  const emailUse = new Map<string, number>();
+  for (const c of all) {
+    phonesIn(c.contact, c.mobile_number).forEach(p => phoneUse.set(p, (phoneUse.get(p) || 0) + 1));
+    emailsIn(c.email, c.email_id).forEach(e => emailUse.set(e, (emailUse.get(e) || 0) + 1));
+  }
+  const myPhones = [...phonesIn(row.contact, row.mobile_number)].filter(p => (phoneUse.get(p) || 0) <= 3);
+  const myEmails = [...emailsIn(row.email, row.email_id)].filter(e => (emailUse.get(e) || 0) <= 3);
+
+  const matches = [];
+  for (const c of all) {
+    if (c.id === clientId) continue;
+    // Two different PANs are two different taxpayers, however alike the names.
+    if (row.pan && c.pan && row.pan !== c.pan) continue;
+    const reasons: string[] = [];
+    if (namesLookAlike(row.name, c.name) || (c.firm_name && namesLookAlike(row.name, c.firm_name))) reasons.push('Similar name');
+    const theirPhones = phonesIn(c.contact, c.mobile_number);
+    if (myPhones.some(p => theirPhones.has(p))) reasons.push('Same phone number');
+    const theirEmails = emailsIn(c.email, c.email_id);
+    if (myEmails.some(e => theirEmails.has(e))) reasons.push('Same email');
+    if (reasons.length) {
+      matches.push({ id: c.id, name: c.name, pan: c.pan, gstin: c.gst, contact: c.contact || c.mobile_number, clientType: c.client_type, reasons });
+    }
+  }
+  return matches.sort((a, b) => b.reasons.length - a.reasons.length).slice(0, 5);
+}
+
+const duplicateWarning = (duplicates: unknown[]) => ({
+  success: false,
+  code: 'POSSIBLE_DUPLICATE',
+  error: 'This looks like a client you already have',
+  duplicates,
+});
+
 app.post('/make-server-0abfa7cf/clients', async (c) => {
   try {
     const body = await c.req.json();
@@ -1685,18 +1855,12 @@ app.post('/make-server-0abfa7cf/clients', async (c) => {
 
     const row = toClientRow(body);
 
-    // PAN is the client's unique code, so a second client under an existing PAN
-    // is a mistake worth naming rather than a constraint violation to relay.
-    if (row.pan) {
-      const { data: clash } = await supabase
-        .from('clients').select('id, name').eq('pan', row.pan).maybeSingle();
-      if (clash) {
-        return c.json({
-          success: false,
-          error: `PAN ${row.pan} already belongs to ${clash.name}`,
-          existingClientId: clash.id,
-        }, 409);
-      }
+    const invalid = await checkClientIdentity(row);
+    if (invalid) return c.json(invalid.body, invalid.status);
+
+    if (body.confirmNotDuplicate !== true) {
+      const duplicates = await findPossibleDuplicates(row);
+      if (duplicates.length) return c.json(duplicateWarning(duplicates), 409);
     }
 
     row.id = `client:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1720,16 +1884,27 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
     const body = await c.req.json();
     const row = toClientRow(body);
 
-    if (row.pan) {
-      const { data: clash } = await supabase
-        .from('clients').select('id, name').eq('pan', row.pan).neq('id', clientId).maybeSingle();
-      if (clash) {
-        return c.json({
-          success: false,
-          error: `PAN ${row.pan} already belongs to ${clash.name}`,
-          existingClientId: clash.id,
-        }, 409);
-      }
+    const { data: current, error: currentError } = await supabase
+      .from('clients').select('name, pan, gst, contact, mobile_number, email, email_id').eq('id', clientId).maybeSingle();
+    if (currentError) throw currentError;
+    if (!current) return c.json({ success: false, error: 'Client not found' }, 404);
+
+    const invalid = await checkClientIdentity(row, clientId);
+    if (invalid) return c.json(invalid.body, invalid.status);
+
+    // Only an edit to who the client is can make them look like someone else.
+    // Changing a fee must not raise a warning about a namesake.
+    // Phones and emails are compared as sets: the edit form puts the mobile number
+    // into the contact field, which moves a value without changing it.
+    const merged = { ...current, ...row };
+    const newValues = (found: Set<string>, before: Set<string>) => [...found].some(v => !before.has(v));
+    const identityChanged =
+      ['name', 'pan', 'gst'].some(k => k in row && (row[k] || null) !== (current[k] || null)) ||
+      newValues(phonesIn(merged.contact, merged.mobile_number), phonesIn(current.contact, current.mobile_number)) ||
+      newValues(emailsIn(merged.email, merged.email_id), emailsIn(current.email, current.email_id));
+    if (identityChanged && body.confirmNotDuplicate !== true) {
+      const duplicates = await findPossibleDuplicates(merged, clientId);
+      if (duplicates.length) return c.json(duplicateWarning(duplicates), 409);
     }
 
     const { data, error } = await supabase

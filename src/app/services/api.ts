@@ -124,6 +124,8 @@ function transformClient(client: any) {
     status: client.status,
     fileNumber: client.file_number,
     pan: client.pan,
+    /** Why there is no PAN, when there is none — see add-client-identity-rules.sql. */
+    panMissingReason: client.pan_missing_reason,
     firmName: client.firm_name,
     itrFees: client.itr_fees || 0,
     gstFees: client.gst_fees || 0,
@@ -140,6 +142,18 @@ function transformClient(client: any) {
     createdAt: client.created_at,
     updatedAt: client.updated_at,
   };
+}
+
+/**
+ * A refused client save, in words — for the screens that create a client in
+ * passing and have no room for the full duplicate warning.
+ */
+export function clientSaveError(response: any): string {
+  if (response?.code === 'POSSIBLE_DUPLICATE' && response.duplicates?.length) {
+    const names = response.duplicates.map((d: any) => d.name).join(', ');
+    return `Not added: this looks like an existing client (${names}). Check the client master before adding them again.`;
+  }
+  return response?.error || 'Failed to create client';
 }
 
 async function fetchAPI(endpoint: string, options: RequestInit = {}) {

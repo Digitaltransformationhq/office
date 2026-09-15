@@ -21,6 +21,7 @@ const COLUMNS: { header: string; width: number; cell: (c: Client) => any }[] = [
   { header: 'Client Type', width: 12, cell: c => text(c.clientType || 'Filing') },
   { header: 'Status', width: 10, cell: c => text(c.status || 'Active') },
   { header: 'PAN', width: 14, cell: c => text(c.pan) },
+  { header: 'No PAN Reason', width: 24, cell: c => text(c.pan ? '' : c.panMissingReason) },
   { header: 'GSTIN', width: 18, cell: c => text(c.gstin || c.gst) },
   { header: 'File Number', width: 12, cell: c => text(c.fileNumber) },
   { header: 'Industry', width: 20, cell: c => text(c.industry) },

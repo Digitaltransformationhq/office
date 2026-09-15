@@ -60,6 +60,9 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [type, setType] = useState<'all' | 'Filing' | 'Non-filer'>('all');
+  // PAN is how duplicates are caught, so the clients without one are a list to
+  // work through, not a detail to scroll past.
+  const [noPanOnly, setNoPanOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
   const [showAdd, setShowAdd] = useState(false);
@@ -94,6 +97,7 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
     () => clients.filter(c => c.clientType === 'Non-filer').length,
     [clients],
   );
+  const noPanCount = useMemo(() => clients.filter(c => !c.pan).length, [clients]);
 
   // A–Z by client name. Paged at twenty-five a screen, an unsorted list means
   // knowing which page a client is on before you can look them up.
@@ -101,23 +105,29 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
     const q = search.trim().toLowerCase();
     return sortByText(clients.filter(c => {
       if (type !== 'all' && (c.clientType || 'Filing') !== type) return false;
+      if (noPanOnly && c.pan) return false;
       if (!q) return true;
       return [
         c.name, c.firmName, c.industry, c.pan, c.gstin || c.gst,
         c.contact || c.mobileNumber, c.email || c.emailId, c.fileNumber,
       ].some(v => (v || '').toString().toLowerCase().includes(q));
     }), c => c.name);
-  }, [clients, search, type]);
+  }, [clients, search, type, noPanOnly]);
 
   // A search that shortens the list must not leave you stranded on page 20.
-  useEffect(() => { setPage(1); }, [search, type]);
+  useEffect(() => { setPage(1); }, [search, type, noPanOnly]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const paged = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
-  const isFiltered = type !== 'all' || search.trim() !== '';
+  const isFiltered = type !== 'all' || noPanOnly || search.trim() !== '';
+
+  const openExisting = (clientId: string) => {
+    const existing = clients.find(c => c.id === clientId);
+    if (existing) { setSelected(existing); setShowView(true); }
+  };
 
   const runExport = async (list: any[], label: string) => {
     if (list.length === 0) { showError('No clients to export'); return; }
@@ -210,6 +220,17 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
                 </button>
               ))}
             </div>
+          )}
+          {noPanCount > 0 && (
+            <button
+              onClick={() => setNoPanOnly(v => !v)}
+              title="Clients with no PAN on record"
+              className={`rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${
+                noPanOnly ? 'border-[#b45309] bg-[#FFFBEB] text-[#92400E]' : 'border-[#E7EDF4] text-muted-foreground hover:bg-[#F4F6F9]'
+              }`}
+            >
+              No PAN <span className={noPanOnly ? 'text-[#92400E]/70' : 'text-muted-foreground/60'}>{noPanCount}</span>
+            </button>
           )}
           <div className="relative w-full sm:w-[260px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -327,7 +348,7 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
                           </div>
                         </td>
                         <td className="px-3 py-2.5 identifier text-[0.78rem] text-foreground/75">
-                          {client.pan || <Dash />}
+                          {client.pan || <NoPan reason={client.panMissingReason} />}
                         </td>
                         <td className="px-3 py-2.5 identifier text-[0.78rem] text-foreground/75">
                           {client.gstin || client.gst || <Dash />}
@@ -374,9 +395,14 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
         )}
       </section>
 
-      {showAdd && <AddClientModal onClose={() => setShowAdd(false)} onSuccess={() => { load(); setShowAdd(false); }} />}
+      {showAdd && <AddClientModal onClose={() => setShowAdd(false)} onSuccess={() => { load(); setShowAdd(false); }} onOpenExisting={openExisting} />}
       {showEdit && selected && (
-        <EditClientModal client={selected} onClose={() => { setShowEdit(false); setSelected(null); }} onSuccess={() => { load(); setShowEdit(false); setSelected(null); }} />
+        <EditClientModal
+          client={selected}
+          onClose={() => { setShowEdit(false); setSelected(null); }}
+          onSuccess={() => { load(); setShowEdit(false); setSelected(null); }}
+          onOpenExisting={openExisting}
+        />
       )}
       {showView && selected && (
         <ViewClientModal client={selected} onClose={() => { setShowView(false); setSelected(null); }} onEdit={() => { setShowView(false); setShowEdit(true); }} />
@@ -400,6 +426,16 @@ function NonFilerTag({ type }: { type?: string }) {
       title="On record, but this firm does not file their return"
     >
       Non-filer
+    </span>
+  );
+}
+
+/** A missing PAN, said as what it is rather than a dash that reads as "fine". */
+function NoPan({ reason }: { reason?: string }) {
+  const label = reason === 'Client has no PAN' ? 'No PAN' : reason === 'Foreign / non-resident entity' ? 'Foreign entity' : 'PAN awaited';
+  return (
+    <span className="whitespace-nowrap rounded-md bg-[#FFFBEB] px-1.5 py-0.5 font-sans text-[0.68rem] font-medium text-[#92400E]" title={reason || 'PAN awaited from client'}>
+      {label}
     </span>
   );
 }

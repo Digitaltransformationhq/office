@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button } from './Button';
-import { clientsAPI, inquiriesAPI } from '../services/api';
+import { clientsAPI, inquiriesAPI, clientSaveError } from '../services/api';
 import { sortOptions } from '../utils/sorting';
 import { useToast } from './Toast';
 import { useBackButton } from '../hooks/useBackButton';
@@ -75,7 +75,7 @@ export function ReviewInquiryModal({ inquiry, reviewerId, reviewerName, onClose,
         showSuccess(`Inquiry approved! ${editedInquiry.clientName} added to client master.`);
         setShowTaskCreation(true);
       } else {
-        showError(clientResponse.error || 'Failed to create client');
+        showError(clientSaveError(clientResponse));
       }
     } catch (error: any) {
       console.error('Error approving inquiry:', error);
