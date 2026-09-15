@@ -4,7 +4,7 @@ import { AddClientModal } from './AddClientModal';
 import { EditClientModal } from './EditClientModal';
 import { ViewClientModal } from './ViewClientModal';
 import { useToast } from './Toast';
-import { Building2, Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil, Download } from 'lucide-react';
+import { Building2, Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil, Download, Filter, Users } from 'lucide-react';
 import { sortByText } from '../utils/sorting';
 import { useLiveData } from '../hooks/useLiveData';
 import { isApproverRole } from '../utils/roles';
@@ -216,21 +216,31 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
                   <ChevronDown size={13} className="text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuItem disabled={!isFiltered} onSelect={() => runExport(filtered, 'filtered')}>
-                  <div className="flex flex-col">
-                    <span>With current filters ({filtered.length})</span>
-                    <span className="text-xs text-muted-foreground">
-                      {isFiltered ? 'Only the clients shown by the search and filters' : 'Search or pick a filter first'}
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => runExport(clients, 'all')}>
-                  <div className="flex flex-col">
-                    <span>All clients ({clients.length})</span>
-                    <span className="text-xs text-muted-foreground">The whole client master</span>
-                  </div>
-                </DropdownMenuItem>
+              {/* Styled to the app's own surfaces: the UI kit's default accent is
+                  the gold theme colour, which reads as a warning here. */}
+              <DropdownMenuContent
+                align="end"
+                sideOffset={6}
+                className="w-72 rounded-xl border border-[#E7EDF4] bg-white p-1.5 shadow-[0_16px_40px_-16px_rgba(10,23,40,0.35)]"
+              >
+                <p className="px-2.5 pb-1.5 pt-1 text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                  Export to Excel
+                </p>
+                <ExportOption
+                  icon={<Filter size={15} className="text-[#1b365d]" />}
+                  title="With current filters"
+                  count={filtered.length}
+                  note={isFiltered ? 'Only the clients shown by the search and filters' : 'Search or pick a filter first'}
+                  disabled={!isFiltered}
+                  onSelect={() => runExport(filtered, 'filtered')}
+                />
+                <ExportOption
+                  icon={<Users size={15} className="text-[#1b365d]" />}
+                  title="All clients"
+                  count={clients.length}
+                  note="The whole client master"
+                  onSelect={() => runExport(clients, 'all')}
+                />
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -420,6 +430,34 @@ function NonFilerTag({ type }: { type?: string }) {
     >
       Non-filer
     </span>
+  );
+}
+
+function ExportOption({ icon, title, count, note, disabled, onSelect }: {
+  icon: React.ReactNode; title: string; count: number; note: string; disabled?: boolean; onSelect: () => void;
+}) {
+  return (
+    <DropdownMenuItem
+      disabled={disabled}
+      onSelect={onSelect}
+      className="group cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2.5 focus:bg-[#F4F6F9] focus:text-[#1b365d] data-[disabled]:opacity-45"
+    >
+      <span
+        className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors group-focus:bg-white"
+        style={{ backgroundColor: 'rgba(27,54,93,0.07)', color: NAVY }}
+      >
+        {icon}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium" style={{ color: NAVY }}>{title}</span>
+          <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-[0.68rem] font-medium text-muted-foreground group-focus:bg-white">
+            {count}
+          </span>
+        </span>
+        <span className="mt-0.5 text-xs leading-snug text-muted-foreground">{note}</span>
+      </span>
+    </DropdownMenuItem>
   );
 }
 
