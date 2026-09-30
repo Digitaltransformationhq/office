@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { Input } from './Input';
 import { Button } from './Button';
 import { clientsAPI } from '../services/api';
-import { DuplicateWarning, type PossibleDuplicate } from './clientModalUI';
+import { DuplicateWarning, panProblem, type PossibleDuplicate } from './clientModalUI';
 
 interface CreateClientModalProps {
   onClose: () => void;
@@ -11,9 +11,9 @@ interface CreateClientModalProps {
 }
 
 /**
- * The quick "new client" from the task form. It asks for no PAN — the client
- * master form does — so the server records it as "PAN awaited", and a match
- * against an existing client offers that client for the task instead.
+ * The quick "new client" from the task form. PAN is optional here — left blank,
+ * the server records it as "PAN awaited" — and a match against an existing
+ * client offers that client for the task instead.
  */
 export function CreateClientModal({ onClose, onClientCreated }: CreateClientModalProps) {
   const [loading, setLoading] = useState(false);
@@ -22,12 +22,16 @@ export function CreateClientModal({ onClose, onClientCreated }: CreateClientModa
   const [formData, setFormData] = useState({
     name: '',
     industry: '',
+    pan: '',
     gst: '',
     contact: '',
     email: '',
   });
 
   const save = async (confirmNotDuplicate = false) => {
+    const pan = formData.pan.replace(/\s+/g, '').toUpperCase();
+    const badPan = pan ? panProblem({ pan }) : null;
+    if (badPan) { setError({ message: badPan }); return; }
     setLoading(true);
     setError(null);
     try {
@@ -36,6 +40,7 @@ export function CreateClientModal({ onClose, onClientCreated }: CreateClientModa
       const response = await clientsAPI.create({
         name: formData.name,
         industry: formData.industry,
+        pan,
         gst: formData.gst,
         contact: formData.contact,
         email: formData.email,
@@ -115,6 +120,15 @@ export function CreateClientModal({ onClose, onClientCreated }: CreateClientModa
               onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
               placeholder="e.g., Manufacturing, IT Services, Retail"
               required
+            />
+
+            <Input
+              label="PAN Number"
+              type="text"
+              value={formData.pan}
+              onChange={(e) => setFormData({ ...formData, pan: e.target.value.toUpperCase() })}
+              placeholder="e.g., ABCDE1234F (leave blank if awaited)"
+              maxLength={10}
             />
 
             <Input
