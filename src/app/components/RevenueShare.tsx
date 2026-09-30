@@ -3,9 +3,12 @@ import { IndianRupee, PieChart, Receipt, Search, Lock } from 'lucide-react';
 import { compareText } from '../utils/sorting';
 import { KPICard } from './KPICard';
 import { useToast } from './Toast';
-import { billingAPI, type BillShare } from '../services/api';
+import { billingAPI, tasksAPI, type BillShare } from '../services/api';
 import { isApproverRole, roleLabel } from '../utils/roles';
-import { financialYearLabel, filterByRange, type BillingRecord } from '../utils/revenue';
+import {
+  financialYearLabel, filterByRange, formatINRCompact, monthOverMonth, pendingBilling, totals,
+  type BillingRecord,
+} from '../utils/revenue';
 
 const NAVY = '#1b365d';
 const thCls = 'px-3 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground';
@@ -53,6 +56,7 @@ type Range = 'fy' | 'month' | 'all';
  */
 export function RevenueShare({ user }: RevenueShareProps) {
   const [records, setRecords] = useState<BillingRecord[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<Range>('fy');
   const [search, setSearch] = useState('');
@@ -64,8 +68,14 @@ export function RevenueShare({ user }: RevenueShareProps) {
     let live = true;
     (async () => {
       try {
-        const r = await billingAPI.getAll();
+        const [r, t] = await Promise.all([
+          billingAPI.getAll(),
+          // Only feeds the pending-billing tile, so a failure here is not worth
+          // failing the page over.
+          tasksAPI.getAll().catch(() => null),
+        ]);
         if (!live) return;
+        if (t?.success) setTasks(t.data || []);
         if (r.success) setRecords(r.data || []);
         else showError(r.error || 'Could not load the billing records');
       } catch {
@@ -114,6 +124,12 @@ export function RevenueShare({ user }: RevenueShareProps) {
       .map(([userId, v]) => ({ userId, ...v }))
       .sort((a, b) => b.amount - a.amount);
   }, [lines]);
+
+  // The firm's headline figures, moved here from the Partner Dashboard. Same
+  // helpers as the Billing page, so the two cannot disagree.
+  const periodTotals = useMemo(() => totals(inRange), [inRange]);
+  const mom = useMemo(() => monthOverMonth(records), [records]);
+  const pendingBill = useMemo(() => pendingBilling(tasks), [tasks]);
 
   const shareTotal = byPerson.reduce((s, p) => s + p.amount, 0);
   /*
@@ -190,6 +206,31 @@ export function RevenueShare({ user }: RevenueShareProps) {
           These are shares of what was <strong>billed</strong> — before salaries, rent and every other cost.
           They are not profit, and this system does not track expenses.
         </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <KPICard
+          title={`Total revenue · ${rangeLabel}`}
+          value={formatINRCompact(periodTotals.revenue)}
+          variant="success"
+          note="Invoices raised"
+        />
+        <KPICard
+          title="Revenue this month"
+          value={formatINRCompact(mom.current)}
+          trend={mom.change === null ? undefined : {
+            value: `${Math.abs(mom.change).toFixed(0)}% vs last month`,
+            isPositive: mom.change >= 0,
+          }}
+        />
+        {/* Sent for billing, invoice not yet raised. Ignores the period — a
+            backlog is a backlog. */}
+        <KPICard
+          title="Pending billing"
+          value={formatINRCompact(pendingBill.amount)}
+          variant="warning"
+          note={`${pendingBill.count} task${pendingBill.count === 1 ? '' : 's'} awaiting invoice`}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

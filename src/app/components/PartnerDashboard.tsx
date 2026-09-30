@@ -1,21 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './Card';
 import { Button } from './Button';
-import { tasksAPI, usersAPI, inquiriesAPI, billingAPI } from '../services/api';
+import { tasksAPI, usersAPI, inquiriesAPI } from '../services/api';
 import { CreateTaskModal } from './CreateTaskModal';
 import { AddStaffModal } from './AddStaffModal';
 import { TaskApprovalQueue } from './TaskApprovalQueue';
 import { InquiryApprovalQueue } from './InquiryApprovalQueue';
 import { useTimeAgo } from '../hooks/useTimeAgo';
-import { KPICard } from './KPICard';
 import { DailyTodoList } from './DailyTodoList';
 import { useLiveData } from '../hooks/useLiveData';
 import { statusColor, statusLabel, statusHex, isAwaitingApproval, isOpenTask, canApproveTask } from '../utils/taskStatus';
 import { sortTasks, sortText } from '../utils/sorting';
-import {
-  filterByRange, financialYearLabel, formatINRCompact, monthOverMonth,
-  pendingBilling, totals, type BillingRecord,
-} from '../utils/revenue';
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, X, Search } from 'lucide-react';
 
 const NAVY = '#1b365d';
@@ -119,7 +114,6 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
   useEffect(() => { setPage(1); }, [search, fCategory, fPriority, fStatus]);
 
   const currentUser = user || JSON.parse(localStorage.getItem('kaps_user') || '{}');
-  const isAdmin = currentUser?.role === 'admin';
 
   const extractNumericId = (userId: string): number => {
     if (!userId) return 0;
@@ -127,18 +121,15 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
     return parseInt(userId) || 0;
   };
 
-  const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
-
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [tasksResult, usersResult, inquiriesResult, billingResult] = await Promise.allSettled([
-        tasksAPI.getAll(), usersAPI.getAll(), inquiriesAPI.getPending(), billingAPI.getAll(),
+      const [tasksResult, usersResult, inquiriesResult] = await Promise.allSettled([
+        tasksAPI.getAll(), usersAPI.getAll(), inquiriesAPI.getPending(),
       ]);
       if (tasksResult.status === 'fulfilled') setTasks(tasksResult.value.data || []);
       if (usersResult.status === 'fulfilled') setUsers(usersResult.value.data || []);
       if (inquiriesResult.status === 'fulfilled') setInquiries(inquiriesResult.value.data || []);
-      if (billingResult.status === 'fulfilled') setBillingRecords(billingResult.value.data || []);
       setLastRefresh(new Date());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -146,19 +137,18 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
 
   const loadDataSilently = useCallback(async () => {
     try {
-      const [t, u, i, b] = await Promise.allSettled([
-        tasksAPI.getAll(), usersAPI.getAll(), inquiriesAPI.getPending(), billingAPI.getAll(),
+      const [t, u, i] = await Promise.allSettled([
+        tasksAPI.getAll(), usersAPI.getAll(), inquiriesAPI.getPending(),
       ]);
       if (t.status === 'fulfilled') setTasks(t.value.data || []);
       if (u.status === 'fulfilled') setUsers(u.value.data || []);
       if (i.status === 'fulfilled') setInquiries(i.value.data || []);
-      if (b.status === 'fulfilled') setBillingRecords(b.value.data || []);
       setLastRefresh(new Date());
     } catch (e) { console.error(e); }
   }, []);
 
   useEffect(() => { loadData(); }, []);
-  useLiveData(['tasks', 'users', 'inquiries', 'billing'], () => loadDataSilently());
+  useLiveData(['tasks', 'users', 'inquiries'], () => loadDataSilently());
 
   const handleNoteChange = (key: string, value: string) => {
     const updated = { ...notes, [key]: value };
@@ -218,28 +208,6 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
     isAwaitingApproval(t.status) &&
     canApproveTask(t, { id: currentUser?.id || '', role: currentUser?.role || '' })).length;
 
-  // Revenue roll-ups. Derived exactly as AdminDashboard derives them, from the
-  // same helpers, so the two screens cannot disagree about the firm's numbers.
-  const fyTotals = totals(filterByRange(billingRecords, 'fy'));
-  const mom = monthOverMonth(billingRecords);
-  const pendingBill = pendingBilling(tasks);
-  const fyLabel = financialYearLabel();
-
-  /*
-   * This person's own share of the year's billing, at a glance.
-   *
-   * Summed from the divisions on the bills, and only from what the server chose
-   * to send — a partner is given their own share lines and nobody else's, so
-   * this adds up to their figure without the browser ever holding anyone
-   * else's. An admin is sent every line, so for them it is the firm's whole
-   * divided total rather than a personal one, which is why the tile says so.
-   */
-  const myShare = filterByRange(billingRecords, 'fy').reduce((sum, r: any) => {
-    const mine = (r.shares || []).filter((sh: any) =>
-      isAdmin || sh.userId === currentUser?.id);
-    return sum + mine.reduce((a: number, sh: any) => a + (Number(sh.amount) || 0), 0);
-  }, 0);
-
   // Week label
   const weekStart = weekDates[0];
   const weekEnd = weekDates[5];
@@ -297,39 +265,6 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
               onClick={() => setShowInquiryApprovals(true)}
             />
           </div>
-        </div>
-
-        {/* ── KPI tiles ── */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          <KPICard
-            title={`Total revenue · ${fyLabel}`}
-            value={formatINRCompact(fyTotals.revenue)}
-            variant="success"
-            note="Invoices raised"
-          />
-          <KPICard
-            title="Revenue this month"
-            value={formatINRCompact(mom.current)}
-            trend={mom.change === null ? undefined : {
-              value: `${Math.abs(mom.change).toFixed(0)}% vs last month`,
-              isPositive: mom.change >= 0,
-            }}
-          />
-          {/* Sent for billing, invoice not yet raised. */}
-          <KPICard
-            title="Pending billing"
-            value={formatINRCompact(pendingBill.amount)}
-            variant="warning"
-            note={`${pendingBill.count} task${pendingBill.count === 1 ? '' : 's'} awaiting invoice`}
-          />
-          {/* Their own share, beside the firm's figures rather than instead of
-              them: a partner wants both, and only one of them is about them. */}
-          <KPICard
-            title={isAdmin ? `Divided · ${fyLabel}` : `Your share · ${fyLabel}`}
-            value={formatINRCompact(myShare)}
-            note="Billed, not received"
-          />
-          <KPICard title="Total Tasks" value={tasks.length} />
         </div>
 
         {/* ── My to-do list ──
