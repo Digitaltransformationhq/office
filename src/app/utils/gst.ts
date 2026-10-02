@@ -250,6 +250,11 @@ export const STATUS_META: Record<GstFilingStatus, StatusMeta> = {
     color: '#CBD5E1',
     className: 'bg-white text-slate-300 border-[#F1F4F8]',
   },
+  'Discontinued': {
+    code: 'DC', label: 'Discontinued', open: false,
+    color: '#64748B',
+    className: 'bg-[#F1F5F9] text-[#475569] border-[#CBD5E1]',
+  },
 };
 
 /**
@@ -260,7 +265,7 @@ export const STATUS_META: Record<GstFilingStatus, StatusMeta> = {
 const GROUPED: { label: string; statuses: GstFilingStatus[] }[] = [
   { label: 'Completed', statuses: ['Filed', 'Nil'] },
   { label: 'In progress', statuses: ['Data Received', 'Challan Sent', 'OTP Awaited', 'Message Sent', 'Data Not Provided'] },
-  { label: 'Nothing yet', statuses: ['Pending', 'Not Applicable'] },
+  { label: 'Not required', statuses: ['Discontinued', 'Not Applicable'] },
 ];
 
 /**
@@ -273,7 +278,8 @@ const GROUPED: { label: string; statuses: GstFilingStatus[] }[] = [
  */
 export const STATUS_GROUPS: { label: string; statuses: GstFilingStatus[] }[] = (() => {
   const placed = new Set(GROUPED.flatMap(g => g.statuses));
-  const rest = (Object.keys(STATUS_META) as GstFilingStatus[]).filter(s => !placed.has(s));
+  // Pending represents untouched periods and is not a selectable status.
+  const rest = (Object.keys(STATUS_META) as GstFilingStatus[]).filter(s => s !== 'Pending' && !placed.has(s));
   return rest.length ? [...GROUPED, { label: 'Other', statuses: rest }] : GROUPED;
 })();
 

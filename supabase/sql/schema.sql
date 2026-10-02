@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS gst_filings (
   due_date DATE,
   status TEXT NOT NULL DEFAULT 'Pending'
     CHECK (status IN ('Pending', 'Message Sent', 'Data Not Provided', 'Data Received',
-                      'OTP Awaited', 'Challan Sent', 'Nil', 'Filed', 'Not Applicable')),
+                      'OTP Awaited', 'Challan Sent', 'Nil', 'Filed', 'Not Applicable', 'Discontinued')),
   -- The half of the cell the spreadsheet could not record: a date says when it
   -- was filed but not when the data arrived, so nothing showed how long a return
   -- sat waiting.

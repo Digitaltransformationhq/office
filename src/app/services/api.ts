@@ -827,6 +827,7 @@ export const GST_FILING_STATUSES = [
   'Nil',
   'Filed',
   'Not Applicable',
+  'Discontinued',
 ] as const;
 
 export type GstFilingStatus = typeof GST_FILING_STATUSES[number];
