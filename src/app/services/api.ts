@@ -167,7 +167,20 @@ async function fetchAPI(endpoint: string, options: RequestInit = {}) {
     },
   });
 
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    // An older edge function returns plain-text 404 for routes it does not
+    // implement. Keep that distinct from a JSON "client not found" response.
+    return {
+      success: false,
+      code: response.status === 404 ? 'ENDPOINT_NOT_AVAILABLE' : 'INVALID_API_RESPONSE',
+      error: response.status === 404
+        ? 'This action is not available on the server yet. The backend needs to be updated.'
+        : `The server returned an unexpected response (HTTP ${response.status}). Please try again later.`,
+    };
+  }
 
   if (!response.ok) {
     console.error(`API Error (${endpoint}):`, data);
@@ -366,6 +379,17 @@ export const usersAPI = {
 
 // Clients API
 export const clientsAPI = {
+  delete: async (clientId: string, password: string) => {
+    const result = await fetchAPI(`/clients/${encodeURIComponent(clientId)}${actorParam()}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    });
+    if (result.code === 'ENDPOINT_NOT_AVAILABLE') {
+      return { ...result, error: 'Client deletion is not enabled on the live server yet. Deploy the updated backend before trying again.' };
+    }
+    return result;
+  },
+
   getAll: async () => {
     const result = await fetchAPI('/clients');
     return {

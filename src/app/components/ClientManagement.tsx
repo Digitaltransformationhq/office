@@ -4,10 +4,11 @@ import { AddClientModal } from './AddClientModal';
 import { EditClientModal } from './EditClientModal';
 import { ViewClientModal } from './ViewClientModal';
 import { useToast } from './Toast';
-import { Building2, Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil, Download, Filter, Users } from 'lucide-react';
+import { Building2, Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil, Download, Filter, Users, Trash2 } from 'lucide-react';
 import { sortByText } from '../utils/sorting';
 import { useLiveData } from '../hooks/useLiveData';
-import { isApproverRole } from '../utils/roles';
+import { isApproverRole, normalizeRole } from '../utils/roles';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { exportClientsToExcel } from '../utils/exportClients';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -55,6 +56,10 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
   // The whole client book, fees included, in one file: admin, partners and
   // directors only. The desks that can open this page do not get the button.
   const canExport = isApproverRole(user?.role);
+  const canDelete = normalizeRole(user?.role) === 'admin';
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,6 +149,32 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
 
   const openView = (client: any) => { setSelected(client); setShowView(true); };
   const openEdit = (client: any) => { setSelected(client); setShowEdit(true); };
+  const openDelete = (client: any) => {
+    if (!canDelete) return;
+    setDeletePassword('');
+    setDeleteTarget(client);
+  };
+  const deleteClient = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canDelete || !deleteTarget || deleting || !deletePassword) return;
+    setDeleting(true);
+    try {
+      const response = await clientsAPI.delete(deleteTarget.id, deletePassword);
+      if (!response.success) {
+        showError(response.error || 'Failed to delete client');
+        return;
+      }
+      setClients(prev => prev.filter(c => c.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      showSuccess('Client deleted successfully');
+      await load({ silent: true });
+    } catch {
+      showError('Could not reach the server. Check your connection before trying again.');
+    } finally {
+      setDeletePassword('');
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -291,6 +322,7 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
                         </CardRow>
                         <CardRow label="Contact">{client.contact || client.mobileNumber || <Dash />}</CardRow>
                         <div className="flex items-center justify-end gap-2 py-2.5">
+                          {canDelete && <button onClick={() => openDelete(client)} className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">Delete</button>}
                           <button onClick={() => openEdit(client)} className="rounded-full border border-[#E7EDF4] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#F4F6F9]" style={{ color: NAVY }}>Edit</button>
                           <button onClick={() => openView(client)} className="rounded-full bg-[#1b365d] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#142a4a]">View</button>
                         </div>
@@ -369,6 +401,7 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
                           <div className="flex items-center justify-end gap-1 opacity-60 transition-opacity group-hover:opacity-100">
                             <IconBtn label="Edit client" onClick={() => openEdit(client)}><Pencil size={14} /></IconBtn>
                             <IconBtn label="View client" onClick={() => openView(client)}><Eye size={14} /></IconBtn>
+                            {canDelete && <IconBtn label="Delete client" onClick={() => openDelete(client)}><Trash2 size={14} className="text-red-600" /></IconBtn>}
                           </div>
                         </td>
                       </tr>
@@ -399,6 +432,36 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
       </section>
 
       {showAdd && <AddClientModal onClose={() => setShowAdd(false)} onSuccess={() => { load(); setShowAdd(false); }} onOpenExisting={openExisting} />}
+      <Dialog open={canDelete && !!deleteTarget} onOpenChange={open => {
+        if (!open && !deleting) { setDeleteTarget(null); setDeletePassword(''); }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {deleteTarget?.name}?</DialogTitle>
+            <DialogDescription>
+              This permanently deletes the client and linked GST registrations, GST/ITR filings,
+              discussions, document records and queries. This cannot be undone.
+              Enter your admin password to confirm.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={deleteClient} className="space-y-4">
+            <div>
+              <label htmlFor="delete-client-password" className="mb-1 block text-sm font-medium">Your admin password</label>
+              <input id="delete-client-password" type="password" autoComplete="current-password" required
+                value={deletePassword} onChange={e => setDeletePassword(e.target.value)} disabled={deleting}
+                className="w-full rounded-lg border border-[#E7EDF4] px-3 py-2" />
+            </div>
+            <div className="flex justify-end gap-3">
+              <button type="button" disabled={deleting} onClick={() => { setDeleteTarget(null); setDeletePassword(''); }}
+                className="rounded-full border px-4 py-2 text-sm disabled:opacity-50">Cancel</button>
+              <button type="submit" disabled={deleting || !deletePassword}
+                className="rounded-full bg-red-700 px-4 py-2 text-sm text-white disabled:opacity-50">
+                {deleting ? 'Deleting…' : 'Delete client'}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
       {showEdit && selected && (
         <EditClientModal
           client={selected}

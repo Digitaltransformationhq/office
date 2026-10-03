@@ -61,7 +61,7 @@ export function FeeInput({ label, value, onChange }: { label: string; value: num
         <input
           type="number"
           min="0"
-          step="100"
+          step="0.01"
           value={value}
           onChange={e => onChange(parseFloat(e.target.value) || 0)}
           className={`${inputCls} pl-7`}
@@ -122,8 +122,8 @@ export function FeeList({ values, selectedServices, onSelectionChange, onChange 
                 ref={el => { inputs.current[f.key] = el; }}
                 type="number"
                 min="0"
-                step="100"
-                inputMode="numeric"
+                step="0.01"
+                inputMode="decimal"
                 value={on ? (values[f.key] || '') : ''}
                 placeholder={on ? '0' : '—'}
                 disabled={!on}

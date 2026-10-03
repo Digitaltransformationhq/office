@@ -1898,6 +1898,40 @@ app.post('/make-server-0abfa7cf/clients', async (c) => {
   }
 });
 
+app.delete('/make-server-0abfa7cf/clients/:clientId', async (c) => {
+  try {
+    const actorId = c.req.query('actedById');
+    if (!actorId) return c.json({ success: false, error: 'Only an admin can delete clients' }, 403);
+    const { data: actor, error: actorError } = await supabase.from('users')
+      .select('role, status, password').eq('id', actorId).maybeSingle();
+    if (actorError) throw actorError;
+    if (!actor || !isAdminRole(actor.role) || actor.status !== 'Active') {
+      return c.json({ success: false, error: 'Only an active admin can delete clients' }, 403);
+    }
+    // A client-supplied actor ID alone is not proof of identity. Require the
+    // admin's password before this destructive action; never log or return it.
+    const body = await c.req.json().catch(() => ({}));
+    if (typeof body.password !== 'string' || !body.password ||
+        !await verifyPassword(body.password, actor.password)) {
+      return c.json({ success: false, error: 'Incorrect admin password' }, 403);
+    }
+    const { data, error } = await supabase.from('clients').delete()
+      .eq('id', c.req.param('clientId')).select('id').maybeSingle();
+    if (error) {
+      if (error.code === '23503') {
+        return c.json({ success: false, error: 'This client has linked records that prevent deletion' }, 409);
+      }
+      throw error;
+    }
+    if (!data) return c.json({ success: false, error: 'Client not found' }, 404);
+    await Promise.all(['clients', 'gst', 'itr', 'discussions', 'billing'].map(broadcastChange));
+    return c.json({ success: true });
+  } catch (error) {
+    console.log('Error deleting client:', error);
+    return c.json({ success: false, error: 'Failed to delete client' }, 500);
+  }
+});
+
 app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
   try {
     const clientId = c.req.param('clientId');
