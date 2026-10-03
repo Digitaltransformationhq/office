@@ -67,7 +67,7 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
    * the next one — so tying them to a single year selector would make one of
    * them permanently wrong.
    */
-  const [tab, setTab] = useState<'monthly' | 'annual'>('monthly');
+  const [tab, setTab] = useState<'monthly' | 'annual' | 'composition'>('monthly');
   const [annualYear, setAnnualYear] = useState(() => {
     const y = Number(financialYearOf().slice(0, 4)) - 1;
     return `${y}-${String((y + 1) % 100).padStart(2, '0')}`;
@@ -88,11 +88,11 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
 
   useEffect(() => { load(); }, [financialYear]);
 
-  useEffect(() => { if (tab === 'annual') loadAnnual(); }, [tab, annualYear]);
+  useEffect(() => { if (tab !== 'monthly') loadAnnual(); }, [tab, annualYear]);
 
   useLiveData(['gst', 'clients'], () => {
     load({ silent: true });
-    if (tab === 'annual') loadAnnual({ silent: true });
+    if (tab !== 'monthly') loadAnnual({ silent: true });
   });
 
   const load = async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -251,6 +251,7 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
           <p className="mt-0.5 text-sm text-muted-foreground">
             {tab === 'monthly'
               ? 'GSTR-1 and GSTR-3B across every registration, month by month'
+              : tab === 'composition' ? 'GSTR-4 returns for composition clients only'
               : 'GSTR-9, GSTR-9C and GSTR-4 — the returns for a whole year'}
           </p>
         </div>
@@ -269,11 +270,12 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
 
       {/* Monthly / annual */}
       <div className="flex gap-1 rounded-xl border border-[#E7EDF4] bg-white p-1">
-        {([['monthly', 'Monthly returns', 'GSTR-1 · 3B'], ['annual', 'Annual returns', 'GSTR-9 · 9C · 4']] as const).map(([key, label, sub]) => (
+        {([['monthly', 'Monthly returns', 'GSTR-1 · 3B'], ['annual', 'Annual returns', 'GSTR-9 · 9C · 4'], ['composition', 'Composition', 'GSTR-4']] as const).map(([key, label, sub]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            aria-pressed={tab === key}
+            className={`min-w-0 flex-1 rounded-lg px-2 py-2 text-xs sm:px-4 sm:text-sm font-medium transition-colors ${
               tab === key ? 'text-white' : 'text-muted-foreground hover:bg-[#F4F6F9]'
             }`}
             style={tab === key ? { backgroundColor: NAVY } : undefined}
@@ -319,13 +321,15 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
           </div>
         </div>
 
-        {tab === 'annual' ? (
+        {tab !== 'monthly' ? (
           annualLoading ? (
             <div className="flex items-center justify-center py-20">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#1b365d] border-t-transparent" />
             </div>
           ) : (
             <GSTAnnualView
+              key={tab}
+              compositionOnly={tab === 'composition'}
               registrations={annual.registrations}
               filings={annual.filings}
               financialYear={annualYear}

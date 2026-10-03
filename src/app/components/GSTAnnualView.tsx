@@ -10,6 +10,7 @@ import {
 const NAVY = '#1b365d';
 
 interface GSTAnnualViewProps {
+  compositionOnly?: boolean;
   registrations: GstRegistration[];
   filings: GstFiling[];
   financialYear: string;
@@ -30,7 +31,8 @@ interface GSTAnnualViewProps {
  * toggle, reaches every other one so a return can be started for a client the
  * spreadsheet never listed.
  */
-export function GSTAnnualView({ registrations, filings, financialYear, onOpen }: GSTAnnualViewProps) {
+export function GSTAnnualView({ registrations, filings, financialYear, onOpen, compositionOnly = false }: GSTAnnualViewProps) {
+  const visibleReturns = compositionOnly ? ANNUAL_RETURNS.filter(r => r.type === 'GSTR-4') : ANNUAL_RETURNS;
   const period = useMemo(() => annualPeriod(financialYear), [financialYear]);
 
   const filingMap = useMemo(() => {
@@ -59,6 +61,7 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
    * they conflict the fact has to win or the register silently loses data.
    */
   const typesFor = (r: GstRegistration): AnnualReturnType[] => {
+    if (compositionOnly) return ['GSTR-4'];
     const implied = annualReturnsFor(r.filingFrequency);
     const recordedHere = ANNUAL_RETURNS
       .map(a => a.type)
@@ -70,11 +73,12 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
     () => sortByText(
       registrations
         .filter(r => r.status !== 'Cancelled')
+        .filter(r => !compositionOnly || r.filingFrequency === 'Composition')
         .map(r => ({ registration: r, types: typesFor(r) }))
         .filter(row => row.types.length > 0),
       row => row.registration.clientName,
     ),
-    [registrations, filingMap],
+    [registrations, filingMap, compositionOnly],
   );
 
   const recorded = useMemo(
@@ -98,12 +102,12 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
    */
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const pool = (showAll || q) ? candidates : recorded;
+    const pool = (compositionOnly || showAll || q) ? candidates : recorded;
     if (!q) return pool;
     return pool.filter(({ registration: r }) =>
       [r.clientName, r.gstin, r.codeNo, r.pan, r.tradeName]
         .some(v => (v || '').toLowerCase().includes(q)));
-  }, [candidates, recorded, search, showAll]);
+  }, [candidates, recorded, search, showAll, compositionOnly]);
 
   const summary = useMemo(() => {
     let owed = 0, done = 0, overdue = 0;
@@ -121,7 +125,7 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
 
   const controls = (
     <div className="flex flex-col gap-3 border-b border-[#E7EDF4] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="relative w-full sm:w-[280px]">
+      <div className="relative w-full min-w-0 sm:flex-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
           value={search}
@@ -130,7 +134,9 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
           className="w-full rounded-lg border border-[#E7EDF4] bg-white py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
         />
       </div>
-      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E7EDF4] px-3 py-2 text-sm">
+      {compositionOnly ? (
+        <span className="shrink-0 text-sm text-muted-foreground">{candidates.length} composition registrations</span>
+      ) : <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-[#E7EDF4] px-3 py-2 text-sm">
         <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} className="accent-[#1b365d]" />
         <span style={{ color: NAVY }}>
           All registrations
@@ -138,7 +144,7 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
             ({recorded.length} recorded of {candidates.length})
           </span>
         </span>
-      </label>
+      </label>}
     </div>
   );
 
@@ -149,6 +155,8 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
         <div className="px-5 py-16 text-center">
           {search.trim() ? (
             <p className="text-sm text-muted-foreground">No registration matches “{search.trim()}”.</p>
+          ) : compositionOnly ? (
+            <p className="text-sm text-muted-foreground">No composition clients found. Clients with filing frequency set to Composition appear here.</p>
           ) : (
             <>
               <p className="text-sm text-muted-foreground">
@@ -170,7 +178,7 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
       {controls}
       {/* Deadlines, stated once at the top rather than repeated down every row */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-[#E7EDF4] bg-[#FAFBFD] px-5 py-3">
-        {ANNUAL_RETURNS.map(r => {
+        {visibleReturns.map(r => {
           const due = annualDueDate(r.type, financialYear);
           const note = dueNote(due);
           return (
@@ -203,7 +211,7 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
               {registration.responsiblePersonName || 'Unassigned'}
             </p>
             <div className="mt-2.5 space-y-1.5 border-t border-[#F1F4F8] pt-2.5">
-              {ANNUAL_RETURNS.filter(r => types.includes(r.type)).map(r => (
+              {visibleReturns.filter(r => types.includes(r.type)).map(r => (
                 <div key={r.type} className="flex items-center justify-between gap-3">
                   <span className="text-[0.72rem] font-medium" style={{ color: NAVY }}>
                     {r.label}
@@ -227,7 +235,7 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
             <tr className="border-b border-[#E7EDF4] bg-[#F9FAFB]">
               <th className="px-4 py-2.5 text-left text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Client</th>
               <th className="px-2 py-2.5 text-left text-[0.6rem] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Staff</th>
-              {ANNUAL_RETURNS.map(r => (
+              {visibleReturns.map(r => (
                 <th key={r.type} className="px-3 py-2.5 text-center text-[0.6rem] font-semibold uppercase tracking-[0.06em]" style={{ color: NAVY }}>
                   {r.label}
                   <span className="ml-1 font-normal normal-case tracking-normal text-muted-foreground">{r.note}</span>
@@ -249,7 +257,7 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen }:
                 <td className="max-w-[110px] truncate px-2 py-2.5 text-[0.72rem] text-muted-foreground">
                   {registration.responsiblePersonName || '—'}
                 </td>
-                {ANNUAL_RETURNS.map(r => (
+                {visibleReturns.map(r => (
                   <td key={r.type} className="px-3 py-2.5 text-center">
                     {types.includes(r.type)
                       ? <AnnualCell

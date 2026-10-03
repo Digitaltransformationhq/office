@@ -192,6 +192,13 @@ export function GSTFilingModal({
               ))}
             </div>
 
+            {status === 'Discontinued' && (
+              <p className="mt-4 rounded-lg border border-[#E7EDF4] bg-[#F9FAFB] px-3.5 py-3 text-sm text-muted-foreground">
+                Saving moves this client to Non-filers. Their GST registrations stay visible for the
+                discontinued financial year and one additional financial year. Earlier records remain available.
+              </p>
+            )}
+
             {/* The filing date, right where the decision was just made */}
             {status === 'Filed' && (
               <div className="mt-5 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] p-4">

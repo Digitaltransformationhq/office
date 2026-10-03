@@ -46,6 +46,20 @@ read as done with nothing to prove when.
 
 ## Filing frequency
 
+### Discontinued clients
+
+Run `supabase/sql/add-gst-discontinued-client-lifecycle.sql` after the client-type
+and GST register migrations, before deploying the backend that reads this field.
+Saving a Discontinued filing moves the owning client to Non-filers and records
+the filing's financial year. All of that client's GST registrations remain
+visible through one additional financial year: a 2026-27 discontinuation is
+visible in 2027-28, but not 2028-29. Historical years remain accessible in the
+monthly, annual and composition tabs. No filings or clients are deleted.
+
+Repeated saves cannot extend the cutoff. Changing an individual filing status
+does not automatically reactivate the client. The migration also reconciles
+previously saved Discontinued filings.
+
 ### Client service enrollment
 
 Run `supabase/sql/add-client-service-gst-sync.sql` after the GST register schema

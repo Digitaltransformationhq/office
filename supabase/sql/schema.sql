@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS clients (
   -- table is the source of truth.
   gst TEXT,
   selected_services TEXT[],
+  gst_discontinued_fy INTEGER CHECK (gst_discontinued_fy BETWEEN 1900 AND 9998),
   contact TEXT,
   mobile_number TEXT,
   email TEXT,

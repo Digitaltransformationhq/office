@@ -3,6 +3,7 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as kvStore from "./kv_store.tsx";
+import { gstClientVisibleInYear } from './gstLifecycle.ts';
 
 const app = new Hono();
 
@@ -2724,13 +2725,17 @@ app.get('/make-server-0abfa7cf/gst/register', async (c) => {
     if (!financialYear) {
       return c.json({ success: false, error: 'fy query parameter is required' }, 400);
     }
+    if (!/^[0-9]{4}-[0-9]{2}$/.test(financialYear) ||
+        Number(financialYear.slice(5)) !== (Number(financialYear.slice(0, 4)) + 1) % 100) {
+      return c.json({ success: false, error: 'A valid financial year is required' }, 400);
+    }
 
     // A year of filings is roughly 2 returns x 12 months x every registration —
     // several thousand rows — so both lists are paged past the 1000-row cap.
     const [registrations, filings] = await Promise.all([
       selectAll(() => supabase
         .from('client_gst_registrations')
-        .select(`${GST_REGISTRATION_FIELDS}, clients ( id, name, pan, file_number )`)
+        .select(`${GST_REGISTRATION_FIELDS}, clients ( id, name, pan, file_number, gst_discontinued_fy )`)
         .order('code_no', { ascending: true })
         .order('id', { ascending: true })),
       selectAll(() => supabase
@@ -2741,9 +2746,13 @@ app.get('/make-server-0abfa7cf/gst/register', async (c) => {
         .order('id', { ascending: true })),
     ]);
 
+    const visibleRegistrations = registrations.filter(r =>
+      gstClientVisibleInYear(r.clients?.gst_discontinued_fy, financialYear));
+    const visibleIds = new Set(visibleRegistrations.map(r => r.id));
     return c.json({
       success: true,
-      data: { financialYear, registrations, filings },
+      data: { financialYear, registrations: visibleRegistrations,
+        filings: filings.filter(f => visibleIds.has(f.registration_id)) },
     });
   } catch (error) {
     console.log('Error fetching GST register:', error);
@@ -2936,6 +2945,7 @@ app.put('/make-server-0abfa7cf/gst/filings', async (c) => {
     if (error) throw error;
 
     await broadcastChange('gst');
+    if (row.status === 'Discontinued') await broadcastChange('clients');
 
     return c.json({ success: true, data });
   } catch (error) {

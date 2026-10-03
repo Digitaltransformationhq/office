@@ -236,7 +236,7 @@ export const STATUS_META: Record<GstFilingStatus, StatusMeta> = {
     className: 'bg-[#FFEDD5] text-[#9A3412] border-[#FED7AA]',
   },
   'Nil': {
-    code: 'NIL', label: 'Nil return', open: false,
+    code: 'NIL', label: 'Nil return', open: true,
     color: '#64748B',
     className: 'bg-[#E2E8F0] text-[#475569] border-[#CBD5E1]',
   },
@@ -263,8 +263,8 @@ export const STATUS_META: Record<GstFilingStatus, StatusMeta> = {
  * decision to make.
  */
 const GROUPED: { label: string; statuses: GstFilingStatus[] }[] = [
-  { label: 'Completed', statuses: ['Filed', 'Nil'] },
-  { label: 'In progress', statuses: ['Data Received', 'Challan Sent', 'OTP Awaited', 'Message Sent', 'Data Not Provided'] },
+  { label: 'Completed', statuses: ['Filed'] },
+  { label: 'In progress', statuses: ['Data Received', 'Challan Sent', 'OTP Awaited', 'Nil', 'Data Not Provided'] },
   { label: 'Not required', statuses: ['Discontinued', 'Not Applicable'] },
 ];
 
@@ -278,8 +278,8 @@ const GROUPED: { label: string; statuses: GstFilingStatus[] }[] = [
  */
 export const STATUS_GROUPS: { label: string; statuses: GstFilingStatus[] }[] = (() => {
   const placed = new Set(GROUPED.flatMap(g => g.statuses));
-  // Pending represents untouched periods and is not a selectable status.
-  const rest = (Object.keys(STATUS_META) as GstFilingStatus[]).filter(s => s !== 'Pending' && !placed.has(s));
+  // Keep untouched and legacy states readable without offering them as choices.
+  const rest = (Object.keys(STATUS_META) as GstFilingStatus[]).filter(s => s !== 'Pending' && s !== 'Message Sent' && !placed.has(s));
   return rest.length ? [...GROUPED, { label: 'Other', statuses: rest }] : GROUPED;
 })();
 
