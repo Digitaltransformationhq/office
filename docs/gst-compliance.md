@@ -46,6 +46,25 @@ read as done with nothing to prove when.
 
 ## Filing frequency
 
+### Client service enrollment
+
+Run `supabase/sql/add-client-service-gst-sync.sql` after the GST register schema
+and before deploying the updated server and frontend. Service selections are
+stored independently of fee amounts, including zero-fee services.
+
+Selecting GST or GST Annual Return on Add/Edit Client requires a valid GSTIN.
+The database creates the registration in the same transaction as the client save.
+New GST registrations default to Monthly; annual-only services default to Annual.
+Set a different filing frequency in the GST registration when needed. Existing
+registrations, frequencies, statuses and filing history are preserved.
+
+The migration also fills missing registrations for existing clients with positive
+GST fees and a valid GSTIN. Legacy zero-fee selections were never stored; edit
+those clients and select the service again. Clients without a valid GSTIN need
+that information entered before a registration can be created.
+
+Regression check: `node scripts/test-client-gst-sync.mjs <path-to-pglite-package>`.
+
 The sheet's `M /Q` column, widened to the values it actually holds:
 
 | Sheet | Stored           | Returns due                    |

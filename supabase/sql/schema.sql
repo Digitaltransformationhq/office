@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS clients (
   -- because tasks, billing and client search all read it. The registrations
   -- table is the source of truth.
   gst TEXT,
+  selected_services TEXT[],
   contact TEXT,
   mobile_number TEXT,
   email TEXT,

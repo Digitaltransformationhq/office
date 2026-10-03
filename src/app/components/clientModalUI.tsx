@@ -19,6 +19,12 @@ export const FEE_FIELDS: { key: string; label: string }[] = [
 
 export const rupees = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 
+export function gstServiceProblem(form: { selectedServices?: string[]; gstin?: string }): string | null {
+  if (!form.selectedServices?.some(s => s === 'gstFees' || s === 'gstAnnualReturnFees')) return null;
+  return /^[0-9]{2}[A-Z0-9]{10}[0-9A-Z]{3}$/.test((form.gstin || '').replace(/\s+/g, '').toUpperCase())
+    ? null : 'Enter a valid GSTIN in Basic Information for the selected GST service';
+}
+
 export const overlayCls = 'fixed inset-0 z-50 flex items-center justify-center bg-[#0a1728]/60 p-4 backdrop-blur-sm';
 export const panelCls = 'flex max-h-[92vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]';
 
@@ -73,21 +79,19 @@ export function FeeInput({ label, value, onChange }: { label: string; value: num
  * services apply; the amount is only asked for those. Unticking clears the fee,
  * so the total can never include a service that is switched off.
  */
-export function FeeList({ values, onChange }: {
+export function FeeList({ values, selectedServices, onSelectionChange, onChange }: {
   values: Record<string, number>;
+  selectedServices: string[];
+  onSelectionChange: (services: string[]) => void;
   onChange: (key: string, amount: number) => void;
 }) {
-  const [ticked, setTicked] = React.useState<Set<string>>(
-    () => new Set(FEE_FIELDS.filter(f => (values[f.key] || 0) > 0).map(f => f.key)),
-  );
+  const ticked = new Set(selectedServices);
   const inputs = React.useRef<Record<string, HTMLInputElement | null>>({});
 
   const toggle = (key: string, on: boolean) => {
-    setTicked(prev => {
-      const next = new Set(prev);
-      on ? next.add(key) : next.delete(key);
-      return next;
-    });
+    const next = new Set(ticked);
+    on ? next.add(key) : next.delete(key);
+    onSelectionChange([...next]);
     if (on) setTimeout(() => inputs.current[key]?.focus(), 0);
     else onChange(key, 0);
   };

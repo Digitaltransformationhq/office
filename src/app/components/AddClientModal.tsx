@@ -5,7 +5,7 @@ import { useToast } from './Toast';
 import { X, Building2 } from 'lucide-react';
 import {
   NAVY, inputCls, FEE_FIELDS, rupees, Field, SelectField, FeeList, ModalTabs, overlayCls, panelCls,
-  PanField, DuplicateWarning, panProblem, panPayload, type PossibleDuplicate,
+  PanField, DuplicateWarning, panProblem, panPayload, gstServiceProblem, type PossibleDuplicate,
 } from './clientModalUI';
 
 interface AddClientModalProps {
@@ -21,6 +21,7 @@ export function AddClientModal({ onClose, onSuccess, onOpenExisting }: AddClient
   const [activeTab, setActiveTab] = useState<'basic' | 'billing'>('basic');
   const [duplicates, setDuplicates] = useState<PossibleDuplicate[] | null>(null);
   const [formData, setFormData] = useState<any>({
+    selectedServices: [],
     name: '', pan: '', noPan: false, panMissingReason: '', gstin: '', firmName: '', contact: '', email: '', industry: '', status: 'Active',
     itrFees: 0, gstFees: 0, gstAnnualReturnFees: 0, accountingFees: 0, auditFees: 0,
     companyActFees: 0, tdsFees: 0, pfEsicPtLabourFees: 0, consultancyFees: 0,
@@ -31,7 +32,7 @@ export function AddClientModal({ onClose, onSuccess, onOpenExisting }: AddClient
 
   const save = async (confirmNotDuplicate = false) => {
     if (!formData.name) { showError('Client name is required'); setActiveTab('basic'); return; }
-    const problem = panProblem(formData);
+    const problem = panProblem(formData) || gstServiceProblem(formData);
     if (problem) { showError(problem); setActiveTab('basic'); return; }
     setLoading(true);
     try {
@@ -111,7 +112,7 @@ export function AddClientModal({ onClose, onSuccess, onOpenExisting }: AddClient
             ) : (
               <div>
                 <p className="mb-4 text-sm text-muted-foreground">Tick the services this client takes and enter the annual fee for each.</p>
-                <FeeList values={formData} onChange={(key, amount) => set(key, amount)} />
+                <FeeList values={formData} selectedServices={formData.selectedServices} onSelectionChange={selectedServices => setFormData((p: any) => ({ ...p, selectedServices }))} onChange={(key, amount) => set(key, amount)} />
                 <div className="mt-5 flex items-center justify-between rounded-xl border border-[#E7EDF4] bg-[#F9FAFB] px-4 py-3.5">
                   <span className="text-sm font-medium" style={{ color: NAVY }}>Total annual fees</span>
                   <span className="text-xl font-semibold" style={{ color: NAVY }}>{rupees(total)}</span>

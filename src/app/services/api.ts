@@ -116,6 +116,7 @@ function transformClient(client: any) {
     /** The form field is `gstin`; the column is the legacy `gst`. Exposed under
      *  both names so neither side has to remember which it is. */
     gstin: client.gst,
+    selectedServices: client.selected_services,
     itrApplicable: client.itr_applicable !== false,
     /** 'Filing' or 'Non-filer' — on record, but no return is due from this firm. */
     clientType: client.client_type || 'Filing',

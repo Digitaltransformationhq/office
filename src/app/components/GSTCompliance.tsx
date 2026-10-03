@@ -90,7 +90,7 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
 
   useEffect(() => { if (tab === 'annual') loadAnnual(); }, [tab, annualYear]);
 
-  useLiveData(['gst'], () => {
+  useLiveData(['gst', 'clients'], () => {
     load({ silent: true });
     if (tab === 'annual') loadAnnual({ silent: true });
   });

@@ -1,5 +1,14 @@
 # Database Setup Instructions
 
+## Client services and the GST register
+
+Run `supabase/sql/add-client-service-gst-sync.sql` after creating the GST tables
+and before deploying the updated `server` edge function and frontend. This is
+required for both existing databases and fresh installs from `schema.sql`.
+It persists service selections and creates missing GST registrations atomically
+when clients opt into GST. It also backfills clients with GST fees and valid
+GSTINs. See [GST enrollment](gst-compliance.md#client-service-enrollment).
+
 ## Required: Task Status Constraint Update
 
 Before you can use the billing workflow (Pending for Billing → Billed), you MUST run the SQL migration to update the database constraint.

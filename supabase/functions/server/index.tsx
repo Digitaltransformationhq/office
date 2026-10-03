@@ -1631,6 +1631,7 @@ app.get('/make-server-0abfa7cf/clients', async (c) => {
  * `firmName` or `itrFees` column, so editing a client failed outright.
  */
 const CLIENT_COLUMNS: Record<string, string> = {
+  selectedServices: 'selected_services',
   name: 'name',
   firmName: 'firm_name',
   fileNumber: 'file_number',
@@ -1698,6 +1699,25 @@ type IdentityError = { status: 400 | 409; body: Record<string, unknown> };
 
 /** Settles PAN, reason and GSTIN on `row`, or says why the write cannot happen. */
 async function checkClientIdentity(row: Record<string, any>, clientId?: string): Promise<IdentityError | null> {
+  if ('selected_services' in row) {
+    const services = row.selected_services;
+    const allowed = ['itrFees', 'gstFees', 'gstAnnualReturnFees', 'accountingFees', 'auditFees',
+      'companyActFees', 'tdsFees', 'pfEsicPtLabourFees', 'consultancyFees'];
+    if (!Array.isArray(services) || services.some(s => !allowed.includes(s))) {
+      return { status: 400, body: { success: false, error: 'Invalid service selection' } };
+    }
+    if (services.some(s => s === 'gstFees' || s === 'gstAnnualReturnFees')) {
+      let gstin = row.gst;
+      if (gstin === undefined && clientId) {
+        const { data, error } = await supabase.from('clients').select('gst').eq('id', clientId).single();
+        if (error) throw error;
+        gstin = data.gst;
+      }
+      if (!GSTIN_FORMAT.test(gstin || '')) {
+        return { status: 400, body: { success: false, error: 'Enter a valid GSTIN for the selected GST service' } };
+      }
+    }
+  }
   if (row.pan) {
     if (!PAN_FORMAT.test(row.pan)) {
       return { status: 400, body: { success: false, code: 'INVALID_PAN', error: `"${row.pan}" is not a valid PAN. A PAN is 10 characters, like ABCDE1234F.` } };
@@ -4598,7 +4618,5 @@ app.delete('/make-server-0abfa7cf/billing-records/:recordId', async (c) => {
     return c.json({ success: false, error: 'Failed to delete billing record' }, 500);
   }
 });
-
-Deno.serve(app.fetch);
 
 Deno.serve(app.fetch);
