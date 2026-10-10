@@ -32,10 +32,9 @@
  *
  *   'Billed' — the work is done and the invoice is raised.
  *
- *   'Completed' — the work is done and no invoice was ever raised: a bill
- *   withdrawn, or work dropped from the billing queue. Retired as a destination
- *   for new work, but still reached by both of those paths, so it is a live
- *   state and not merely a legacy one. It reads as "Not billed" for that reason.
+ *   'Completed' — the work is done and no invoice is required: a bill was
+ *   withdrawn, work was removed from the billing queue, or an approver selected
+ *   Bill Not Required. The stored value remains compatible with existing rows.
  */
 
 import { isApproverRole } from './roles';
@@ -98,7 +97,7 @@ export const statusColor = (status?: string) =>
 /**
  * What the user actually reads. Both gates display as "Pending for Approval".
  *
- * 'Completed' reads as "Not billed", and that correction matters more than it
+ * 'Completed' reads as "Bill Not Required", and that correction matters more than it
  * looks. It used to render as "Billed", on the reasoning that the board should
  * have one word for finished work — but the two are not the same finish. Every
  * task in this system carrying 'Completed' has NO invoice against it, and every
@@ -112,7 +111,7 @@ export const statusColor = (status?: string) =>
 export const STATUS_LABEL: Record<string, string> = {
   [TASK_STATUS.pendingNewTaskApproval]: 'Pending for Approval',
   [TASK_STATUS.pendingCompletionApproval]: 'Pending for Approval',
-  [TASK_STATUS.completed]: 'Not billed',
+  [TASK_STATUS.completed]: 'Bill Not Required',
 };
 
 export const statusLabel = (status?: string) =>

@@ -44,6 +44,7 @@ interface User {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [activeView, setActiveView] = useState<string>('');
+  const [clientToOpen, setClientToOpen] = useState<string | null>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
@@ -103,6 +104,12 @@ export default function App() {
     if (typeof window !== 'undefined') {
       window.history.pushState({ view }, '');
     }
+  };
+
+  const openClientMaster = (clientId: string) => {
+    if (!canAccessClients(user)) return;
+    setClientToOpen(clientId);
+    navigateTo('clients');
   };
 
   const handleViewChange = (view: string) => {
@@ -237,15 +244,15 @@ export default function App() {
        * the menu does not offer.
        */
       case 'clients':
-        if (canAccessClients(user)) return <ClientManagement user={user} />;
+        if (canAccessClients(user)) return <ClientManagement user={user} clientToOpen={clientToOpen} onClientOpened={() => setClientToOpen(null)} />;
         if (user) setActiveView(user.role);
         return null;
       case 'gst-compliance':
-        if (canAccessGstCompliance(user)) return <GSTCompliance currentUser={user} />;
+        if (canAccessGstCompliance(user)) return <GSTCompliance currentUser={user} onOpenClient={openClientMaster} />;
         if (user) setActiveView(user.role);
         return null;
       case 'income-tax':
-        if (canAccessIncomeTax(user)) return <ITRRegister currentUser={user} />;
+        if (canAccessIncomeTax(user)) return <ITRRegister currentUser={user} onOpenClient={openClientMaster} />;
         if (user) setActiveView(user.role);
         return null;
       case 'salary':

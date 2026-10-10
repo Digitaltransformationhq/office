@@ -3,8 +3,12 @@ import { KPICard } from './KPICard';
 import { tasksAPI, clientsAPI, usersAPI, billingAPI, todosAPI, type Todo } from '../services/api';
 import { useToast } from './Toast';
 import { ClipboardList, Wallet, BarChart3, Download, IndianRupee, Users, TrendingUp, ChevronDown, Receipt, Search, X, Clock, ListChecks, Check } from 'lucide-react';
-import { statusColor, statusLabel, isFinishedTask } from '../utils/taskStatus';
+import { statusColor, statusLabel, isFinishedTask, TASK_STATUS } from '../utils/taskStatus';
 import { sortByText, sortTasks, sortText } from '../utils/sorting';
+import {
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 interface ReportsProps {
   user?: { id: string; name: string; email: string; role: string };
@@ -16,6 +20,25 @@ const NAVY = '#1b365d';
 const inputCls =
   'rounded-lg border border-[#E7EDF4] bg-white px-3 py-2 text-sm text-foreground outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15';
 const thCls = 'px-3 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground';
+
+const TASK_EXPORT_PROGRESS = [
+  { key: 'pending', label: 'Pending', statuses: [TASK_STATUS.pending] },
+  { key: 'in-progress', label: 'In Progress', statuses: [TASK_STATUS.inProgress] },
+  {
+    key: 'pending-approval', label: 'Pending for Approval',
+    statuses: [TASK_STATUS.pendingNewTaskApproval, TASK_STATUS.pendingCompletionApproval],
+  },
+  { key: 'pending-billing', label: 'Pending for Billing', statuses: [TASK_STATUS.pendingForBilling] },
+  { key: 'billed', label: 'Billed', statuses: [TASK_STATUS.billed] },
+  { key: 'not-billed', label: 'Bill Not Required', statuses: [TASK_STATUS.completed] },
+  { key: 'overdue', label: 'Overdue', statuses: [TASK_STATUS.overdue] },
+] as const;
+
+type TaskExportProgressKey = typeof TASK_EXPORT_PROGRESS[number]['key'];
+const TASK_BILLERS = ['Abhishek Patel', 'Brijesh Pitroda'] as const;
+
+const billedByForTask = (task: any, billingRecords: any[]) =>
+  task.billedByName || billingRecords.find(record => record.taskId === task.id)?.billedBy || '';
 
 /**
  * A timestamp as the local calendar date. Not `toISOString().slice(0, 10)`,
@@ -170,11 +193,7 @@ export function Reports({ user }: ReportsProps) {
   };
 
   const generateCSV = (reportType: string): string => {
-    if (reportType === 'tasks') {
-      const headers = 'Client,Task,Category,Status,Assigned To,Target Date,Completion Date\n';
-      const rows = tasks.map(t => `"${t.client}","${t.task}","${t.category || 'N/A'}","${t.status}","${t.assignedTo}","${t.targetDate || 'N/A'}","${t.completionDate || 'N/A'}"`).join('\n');
-      return headers + rows;
-    } else if (reportType === 'billing') {
+    if (reportType === 'billing') {
       const headers = 'Client,ITR Fees,GST Fees,Total Fees,Status\n';
       const rows = clients.map(c => `"${c.name}","${c.itrFees || 0}","${c.gstFees || 0}","${c.totalFees || 0}","${c.status}"`).join('\n');
       return headers + rows;
@@ -200,6 +219,56 @@ export function Reports({ user }: ReportsProps) {
     link.setAttribute('href', url);
     link.setAttribute('download', `${reportType}_report_${new Date().toISOString().split('T')[0]}.csv`);
     link.click();
+  };
+
+  const exportTaskReport = (
+    selected: Set<TaskExportProgressKey>,
+    selectedBillers: Set<string>,
+  ) => {
+    const allowedStatuses = new Set(
+      TASK_EXPORT_PROGRESS
+        .filter(progress => selected.has(progress.key))
+        .flatMap(progress => [...progress.statuses]),
+    );
+    if (selected.size === 0) {
+      showError('Select at least one progress status to export');
+      return false;
+    }
+    if (selected.has('billed') && selectedBillers.size === 0) {
+      showError('Select who billed the tasks');
+      return false;
+    }
+    const selectedTasks = tasks.filter(task => {
+      if (!allowedStatuses.has(task.status)) return false;
+      if (task.status !== TASK_STATUS.billed) return true;
+      return selectedBillers.has(billedByForTask(task, billingRecords));
+    });
+    if (selectedTasks.length === 0) {
+      showError('No tasks match the selected progress statuses');
+      return false;
+    }
+
+    const headers = ['Client', 'Task', 'Category', 'Status', 'Billed By', 'Assigned To', 'Target Date', 'Completion Date'];
+    const rows = selectedTasks.map(task => [
+      task.client,
+      task.task,
+      task.category || 'N/A',
+      statusLabel(task.status),
+      task.status === TASK_STATUS.billed ? billedByForTask(task, billingRecords) || 'Not recorded' : '',
+      task.assignedTo,
+      task.targetDate || 'N/A',
+      task.completionDate || 'N/A',
+    ]);
+    const csv = [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `task-report-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    showSuccess(`Exported ${selectedTasks.length} task${selectedTasks.length === 1 ? '' : 's'}`);
+    return true;
   };
 
   const billingReport = clients.map(client => ({
@@ -295,7 +364,7 @@ export function Reports({ user }: ReportsProps) {
   };
 
   const TABS: { key: typeof activeReport; label: string; icon: React.ReactNode }[] = [
-    { key: 'tasks', label: 'Task Completion', icon: <ClipboardList size={15} /> },
+    { key: 'tasks', label: 'Task Report', icon: <ClipboardList size={15} /> },
     ...(hasBillingAccess ? [{ key: 'billing' as const, label: 'Billing & Revenue', icon: <Wallet size={15} /> }] : []),
     ...(hasBillingAccess ? [{ key: 'billing-records' as const, label: 'Billing Records', icon: <Receipt size={15} /> }] : []),
     { key: 'performance', label: 'Team Performance', icon: <BarChart3 size={15} /> },
@@ -319,33 +388,45 @@ export function Reports({ user }: ReportsProps) {
         <p className="mt-1 text-sm text-muted-foreground">Generate and export comprehensive reports</p>
       </div>
 
-      {/* Tabs + date range */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap gap-2">
+      {/* Report navigation stays together; the period controls form their own
+          row so neither the last tab nor Apply gets stranded by wrapping. */}
+      <div className="space-y-3">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {TABS.map(t => {
             const active = activeReport === t.key;
             return (
               <button
                 key={t.key}
                 onClick={() => setActiveReport(t.key)}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${active ? 'bg-[#1b365d] text-white' : 'border border-[#E7EDF4] bg-white text-[#1b365d] hover:bg-[#F4F6F9]'}`}
+                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${active ? 'bg-[#1b365d] text-white' : 'border border-[#E7EDF4] bg-white text-[#1b365d] hover:bg-[#F4F6F9]'}`}
               >
                 {t.icon} {t.label}
               </button>
             );
           })}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={dateRange.from} onChange={e => setDateRange(p => ({ ...p, from: e.target.value }))} className={inputCls} />
-          <span className="text-sm text-muted-foreground">to</span>
-          <input type="date" value={dateRange.to} onChange={e => setDateRange(p => ({ ...p, to: e.target.value }))} className={inputCls} />
-          <button onClick={loadData} className="rounded-full bg-[#1b365d] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#142a4a]">Apply</button>
+        <div className="flex flex-wrap items-end gap-2 rounded-xl border border-[#E7EDF4] bg-white px-3 py-2.5 sm:justify-end">
+          <span className="mr-auto self-center text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            Report period
+          </span>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.65rem] font-medium text-muted-foreground">From</span>
+            <input type="date" value={dateRange.from} onChange={e => setDateRange(p => ({ ...p, from: e.target.value }))} className={`${inputCls} w-full sm:w-[170px]`} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.65rem] font-medium text-muted-foreground">To</span>
+            <input type="date" value={dateRange.to} onChange={e => setDateRange(p => ({ ...p, to: e.target.value }))} className={`${inputCls} w-full sm:w-[170px]`} />
+          </label>
+          <button onClick={loadData} className="h-[38px] rounded-full bg-[#1b365d] px-5 text-sm font-medium text-white transition-colors hover:bg-[#142a4a]">Apply</button>
         </div>
       </div>
 
-      {/* Task Completion */}
+      {/* Task Report */}
       {activeReport === 'tasks' && (
-        <ReportSection title="Task Completion Report" onExport={() => exportToExcel('tasks')}>
+        <ReportSection
+          title="Task Report"
+          exportControl={<TaskExportMenu tasks={tasks} billingRecords={billingRecords} onExport={exportTaskReport} />}
+        >
           {/* Mobile cards */}
           <div className="space-y-2.5 p-4 md:hidden">
             {tasks.length === 0 ? (
@@ -361,6 +442,9 @@ export function Reports({ user }: ReportsProps) {
                 <CardRow label="Task"><span style={{ color: NAVY }}>{task.task}</span></CardRow>
                 <CardRow label="Category"><Chip>{task.category || '—'}</Chip></CardRow>
                 <CardRow label="Assigned To">{task.assignedTo}</CardRow>
+                {task.status === TASK_STATUS.billed && (
+                  <CardRow label="Billed By">{billedByForTask(task, billingRecords) || 'Not recorded'}</CardRow>
+                )}
                 <CardRow label="Target Date">{task.targetDate ? new Date(task.targetDate).toLocaleDateString('en-IN') : '—'}</CardRow>
               </MobileCard>
             ))}
@@ -370,18 +454,19 @@ export function Reports({ user }: ReportsProps) {
           <table className="w-full min-w-[820px] border-collapse text-[0.8rem]">
             <thead>
               <tr className="border-b border-[#E7EDF4] bg-[#F9FAFB]">
-                {['Client', 'Task', 'Category', 'Status', 'Assigned To', 'Target Date'].map(h => <th key={h} className={thCls}>{h}</th>)}
+                {['Client', 'Task', 'Category', 'Status', 'Billed By', 'Assigned To', 'Target Date'].map(h => <th key={h} className={thCls}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {tasks.length === 0 ? (
-                <tr><td colSpan={6} className="py-14 text-center text-sm text-muted-foreground">No tasks found for the selected period.</td></tr>
+                <tr><td colSpan={7} className="py-14 text-center text-sm text-muted-foreground">No tasks found for the selected period.</td></tr>
               ) : tasks.map((task, i) => (
                 <tr key={i} className="border-b border-[#EFF3F8] transition-colors hover:bg-[#F9FBFD]">
                   <td className="px-3 py-3 font-medium" style={{ color: NAVY }}>{task.client}</td>
                   <td className="px-3 py-3 text-foreground/80">{task.task}</td>
                   <td className="px-3 py-3"><Chip>{task.category || '—'}</Chip></td>
                   <td className="px-3 py-3"><span className={`inline-block rounded-md px-2 py-0.5 text-[0.68rem] font-medium ${statusColor(task.status)}`}>{statusLabel(task.status)}</span></td>
+                  <td className="px-3 py-3 text-muted-foreground">{task.status === TASK_STATUS.billed ? billedByForTask(task, billingRecords) || 'Not recorded' : '—'}</td>
                   <td className="px-3 py-3 text-muted-foreground">{task.assignedTo}</td>
                   <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{task.targetDate ? new Date(task.targetDate).toLocaleDateString('en-IN') : '—'}</td>
                 </tr>
@@ -750,20 +835,130 @@ function FilterSelect({ value, onChange, children }: { value: string; onChange: 
   );
 }
 
-function ReportSection({ title, onExport, children }: { title: string; onExport: () => void; children: React.ReactNode }) {
+function ReportSection({ title, onExport, exportControl, children }: {
+  title: string;
+  onExport?: () => void;
+  exportControl?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
       <div className="flex items-center justify-between gap-3 border-b border-[#E7EDF4] px-5 py-4">
         <h2 className="text-sm font-semibold" style={{ color: NAVY }}>{title}</h2>
-        <button
-          onClick={onExport}
-          className="inline-flex items-center gap-1.5 rounded-full bg-[#1b365d] px-3.5 py-1.5 text-xs font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]"
-        >
-          <Download size={14} /> Export
-        </button>
+        {exportControl || (onExport && (
+          <button
+            onClick={onExport}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#1b365d] px-3.5 py-1.5 text-xs font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]"
+          >
+            <Download size={14} /> Export
+          </button>
+        ))}
       </div>
       {children}
     </section>
+  );
+}
+
+function TaskExportMenu({ tasks, billingRecords, onExport }: {
+  tasks: any[];
+  billingRecords: any[];
+  onExport: (selected: Set<TaskExportProgressKey>, selectedBillers: Set<string>) => boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<TaskExportProgressKey>>(() => new Set());
+  const [selectedBillers, setSelectedBillers] = useState<Set<string>>(() => new Set());
+
+  const toggle = (key: TaskExportProgressKey, checked: boolean) => {
+    setSelected(previous => {
+      const next = new Set(previous);
+      checked ? next.add(key) : next.delete(key);
+      return next;
+    });
+  };
+
+  const toggleBiller = (name: string, checked: boolean) => {
+    setSelectedBillers(previous => {
+      const next = new Set(previous);
+      checked ? next.add(name) : next.delete(name);
+      return next;
+    });
+  };
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button className="inline-flex items-center gap-1.5 rounded-full bg-[#1b365d] px-3.5 py-1.5 text-xs font-medium text-white shadow-[0_8px_20px_-10px_rgba(27,54,93,0.6)] transition-all hover:bg-[#142a4a]">
+          <Download size={14} /> Export <ChevronDown size={13} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64 p-2">
+        <DropdownMenuLabel className="px-2 py-1 text-xs text-muted-foreground">
+          Select progress to export
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {TASK_EXPORT_PROGRESS.map(progress => {
+          const count = tasks.filter(task => progress.statuses.some(status => status === task.status)).length;
+          return (
+            <DropdownMenuCheckboxItem
+              key={progress.key}
+              checked={selected.has(progress.key)}
+              onCheckedChange={checked => toggle(progress.key, checked === true)}
+              onSelect={event => event.preventDefault()}
+            >
+              <span className="flex-1">{progress.label}</span>
+              <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+            </DropdownMenuCheckboxItem>
+          );
+        })}
+        {selected.has('billed') && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="px-2 py-1 text-xs text-muted-foreground">
+              Billed by
+            </DropdownMenuLabel>
+            {TASK_BILLERS.map(name => {
+              const count = tasks.filter(task =>
+                task.status === TASK_STATUS.billed && billedByForTask(task, billingRecords) === name).length;
+              return (
+                <DropdownMenuCheckboxItem
+                  key={name}
+                  checked={selectedBillers.has(name)}
+                  onCheckedChange={checked => toggleBiller(name, checked === true)}
+                  onSelect={event => event.preventDefault()}
+                >
+                  <span className="flex-1">{name}</span>
+                  <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+                </DropdownMenuCheckboxItem>
+              );
+            })}
+          </>
+        )}
+        <DropdownMenuSeparator />
+        <div className="flex items-center justify-between gap-2 px-1 py-1">
+          <button
+            type="button"
+            onClick={() => {
+              const clearing = selected.size === TASK_EXPORT_PROGRESS.length;
+              setSelected(clearing
+                ? new Set()
+                : new Set(TASK_EXPORT_PROGRESS.map(progress => progress.key)));
+              setSelectedBillers(clearing ? new Set() : new Set(TASK_BILLERS));
+            }}
+            className="px-2 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            {selected.size === TASK_EXPORT_PROGRESS.length ? 'Clear all' : 'Select all'}
+          </button>
+          <button
+            type="button"
+            disabled={selected.size === 0}
+            onClick={() => { if (onExport(selected, selectedBillers)) setOpen(false); }}
+            className="rounded-full bg-[#1b365d] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#142a4a] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Export selected
+          </button>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

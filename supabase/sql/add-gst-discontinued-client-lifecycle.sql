@@ -2,6 +2,15 @@
 -- A discontinuation applies to the client, across their GST registrations.
 BEGIN;
 
+-- Keep this migration self-contained for databases created before the
+-- Discontinued status was added. Without this, the filing upsert is rejected by
+-- the old check constraint before the lifecycle trigger can run.
+ALTER TABLE public.gst_filings DROP CONSTRAINT IF EXISTS gst_filings_status_check;
+ALTER TABLE public.gst_filings ADD CONSTRAINT gst_filings_status_check
+  CHECK (status IN ('Pending', 'Message Sent', 'Data Not Provided', 'Data Received',
+                    'OTP Awaited', 'Challan Sent', 'Nil', 'Filed', 'Not Applicable',
+                    'Discontinued'));
+
 ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS gst_discontinued_fy INTEGER
   CHECK (gst_discontinued_fy BETWEEN 1900 AND 9998);
 

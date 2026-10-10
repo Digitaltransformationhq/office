@@ -1,3 +1,4 @@
+import { ClientMasterName } from './ClientMasterName';
 import React, { useMemo, useState } from 'react';
 import type { GstFiling, GstRegistration } from '../services/api';
 import { Search } from 'lucide-react';
@@ -10,6 +11,7 @@ import {
 const NAVY = '#1b365d';
 
 interface GSTAnnualViewProps {
+  onOpenClient: (clientId: string) => void;
   compositionOnly?: boolean;
   registrations: GstRegistration[];
   filings: GstFiling[];
@@ -31,7 +33,7 @@ interface GSTAnnualViewProps {
  * toggle, reaches every other one so a return can be started for a client the
  * spreadsheet never listed.
  */
-export function GSTAnnualView({ registrations, filings, financialYear, onOpen, compositionOnly = false }: GSTAnnualViewProps) {
+export function GSTAnnualView({ registrations, filings, financialYear, onOpen, onOpenClient, compositionOnly = false }: GSTAnnualViewProps) {
   const visibleReturns = compositionOnly ? ANNUAL_RETURNS.filter(r => r.type === 'GSTR-4') : ANNUAL_RETURNS;
   const period = useMemo(() => annualPeriod(financialYear), [financialYear]);
 
@@ -201,9 +203,7 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, c
       <div className="space-y-2.5 p-3 md:hidden">
         {rows.map(({ registration, types }) => (
           <div key={registration.id} className="rounded-xl border border-[#E7EDF4] p-3">
-            <p className="truncate text-[0.85rem] font-medium" style={{ color: NAVY }}>
-              {registration.clientName}
-            </p>
+            <ClientMasterName clientId={registration.clientId} name={registration.clientName} onOpen={onOpenClient} className="truncate text-[0.85rem] font-medium" />
             <p className="mt-0.5 truncate identifier text-[0.72rem] text-muted-foreground/70">
               {registration.codeNo ? `${registration.codeNo} · ` : ''}{registration.gstin}
             </p>
@@ -247,9 +247,7 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, c
             {rows.map(({ registration, types }) => (
               <tr key={registration.id} className="border-b border-[#F1F4F8] hover:bg-[#FAFBFD]">
                 <td className="max-w-[300px] px-4 py-2.5">
-                  <p className="truncate text-[0.84rem] font-medium" style={{ color: NAVY }} title={registration.clientName}>
-                    {registration.clientName}
-                  </p>
+                  <ClientMasterName clientId={registration.clientId} name={registration.clientName} onOpen={onOpenClient} className="truncate text-[0.84rem] font-medium" />
                   <p className="truncate identifier text-[0.72rem] text-muted-foreground/70">
                     {registration.codeNo ? `${registration.codeNo} · ` : ''}{registration.gstin}
                   </p>

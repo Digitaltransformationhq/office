@@ -23,6 +23,8 @@ interface Task {
   changesRequestedAt?: string | null;
   changesRequestedBy?: string;
   changesRequestedNote?: string;
+  billedById?: string | null;
+  billedByName?: string | null;
 }
 
 interface EditTaskModalProps {
@@ -67,6 +69,8 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
     taskDate: task.startDate,
     completionDate: task.targetDate,
     comments: task.comments || '',
+    billedById: task.billedById || '',
+    billedByName: task.billedByName || '',
   });
 
   // A–Z, matching the same picker on the create screen.
@@ -89,8 +93,9 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
    * Only statuses the database actually accepts.
    *
    * 'On Hold' was offered here and is NOT in the tasks_status_check constraint,
-   * so choosing it failed the save outright with a Postgres 23514. 'Completed'
-   * was retired when the lifecycle moved its terminal state to 'Billed'.
+   * so choosing it failed the save outright with a Postgres 23514. The stored
+   * 'Completed' state is exposed as "Bill Not Required" for completed work that
+   * should never enter the billing queue.
    *
    * The two approval gates are left out on purpose: they both read as "Pending
    * for Approval", so a dropdown would show the same label twice, and moving a
@@ -101,15 +106,14 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
     TASK_STATUS.inProgress,
     TASK_STATUS.pendingForBilling,
     TASK_STATUS.billed,
+    TASK_STATUS.completed,
   ];
   /**
    * Whatever the task is now stays selectable, so opening a task that sits at a
    * gate and pressing save does not quietly move it somewhere else.
    *
-   * Deduplicated by LABEL rather than by value: legacy rows still stored as
-   * 'Completed' render as "Billed", so prepending the raw value would list
-   * "Billed" twice — once for the stored value and once for the real terminal
-   * status — with no way to tell them apart.
+   * Deduplicated by LABEL rather than by value so a stored status already
+   * represented by the editable choices is not shown twice.
    */
   const taskStatuses = EDITABLE_STATUSES.some(
     (v) => statusLabel(v) === statusLabel(formData.status),
@@ -193,6 +197,8 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
         startDate: formData.taskDate,
         targetDate: formData.completionDate,
         comments: formData.comments,
+        billedById: formData.status === TASK_STATUS.billed ? formData.billedById : null,
+        billedByName: formData.status === TASK_STATUS.billed ? formData.billedByName : null,
         // Going back up for sign-off answers whatever was asked for, so the
         // reply joins the thread and the server closes the open change request.
         ...(isResubmit && currentUser && resubmitNote.trim()
@@ -253,6 +259,10 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
   const filteredClients = sortByText(clients.filter(client =>
     client.name.toLowerCase().includes(clientSearch.toLowerCase())
   ), c => c.name);
+
+  const billers = ['Abhishek Patel', 'Brijesh Pitroda']
+    .map(name => users.find(user => user.name.trim().toLowerCase() === name.toLowerCase()))
+    .filter(Boolean);
 
   const NAVY = '#1b365d';
   const fieldCls =
@@ -451,7 +461,16 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
               {selectWrap(
                 <select
                   value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  onChange={(e) => {
+                    const status = e.target.value;
+                    setFormData({
+                      ...formData,
+                      status,
+                      ...(status === TASK_STATUS.billed
+                        ? {}
+                        : { billedById: '', billedByName: '' }),
+                    });
+                  }}
                   required
                   disabled={isResubmit}
                   className={fieldCls + ' appearance-none pr-9 disabled:cursor-not-allowed disabled:bg-[#F4F6F9] disabled:text-muted-foreground'}
@@ -467,6 +486,37 @@ export function EditTaskModal({ task, currentUser, onClose, onSuccess }: EditTas
                 </p>
               )}
             </div>
+
+            {formData.status === TASK_STATUS.billed && (
+              <div>
+                <label className={labelCls} style={{ color: NAVY }}>
+                  Billed by <span className="text-[#c0392b]">*</span>
+                </label>
+                {selectWrap(
+                  <select
+                    value={formData.billedById}
+                    onChange={(e) => {
+                      const biller = billers.find(user => user.id === e.target.value);
+                      setFormData({
+                        ...formData,
+                        billedById: biller?.id || '',
+                        billedByName: biller?.name || '',
+                      });
+                    }}
+                    required
+                    className={fieldCls + ' appearance-none pr-9'}
+                  >
+                    <option value="">Select who billed this task</option>
+                    {billers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
+                  </select>
+                )}
+                {billers.length < 2 && (
+                  <p className="mt-1.5 text-xs text-amber-700">
+                    The billing users are still loading or are not active in User Management.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>

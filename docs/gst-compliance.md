@@ -50,6 +50,8 @@ read as done with nothing to prove when.
 
 Run `supabase/sql/add-gst-discontinued-client-lifecycle.sql` after the client-type
 and GST register migrations, before deploying the backend that reads this field.
+The migration also updates older databases so `gst_filings.status` accepts the
+`Discontinued` value; the separate status patch is not required first.
 Saving a Discontinued filing moves the owning client to Non-filers and records
 the filing's financial year. All of that client's GST registrations remain
 visible through one additional financial year: a 2026-27 discontinuation is

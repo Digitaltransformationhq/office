@@ -9,6 +9,7 @@ import {
   financialYearLabel, filterByRange, formatINRCompact, monthOverMonth, pendingBilling, totals,
   type BillingRecord,
 } from '../utils/revenue';
+import { OFFICE_POOL_ID } from '../utils/billDivision';
 
 const NAVY = '#1b365d';
 const thCls = 'px-3 py-2.5 text-left text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground';
@@ -93,13 +94,10 @@ export function RevenueShare({ user }: RevenueShareProps) {
   );
 
   /** Every share line in the period, flattened, with its bill alongside. */
-  const lines = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  const allLines = useMemo(() => {
     const out: Array<{ bill: any; share: BillShare }> = [];
     for (const bill of inRange as any[]) {
       for (const share of (bill.shares || []) as BillShare[]) {
-        if (q && ![bill.clientName, bill.taskName, bill.billNumber, share.name]
-          .some((v: any) => (v || '').toLowerCase().includes(q))) continue;
         out.push({ bill, share });
       }
     }
@@ -109,12 +107,21 @@ export function RevenueShare({ user }: RevenueShareProps) {
       compareText(a.bill.taskName, b.bill.taskName) ||
       compareText(a.bill.clientName, b.bill.clientName) ||
       compareText(a.share.name, b.share.name));
-  }, [inRange, search]);
+  }, [inRange]);
+
+  /** Search narrows only the detail table; it must not change the KPI totals. */
+  const lines = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allLines;
+    return allLines.filter(({ bill, share }) =>
+      [bill.clientName, bill.taskName, bill.billNumber, share.name]
+        .some((v: any) => (v || '').toLowerCase().includes(q)));
+  }, [allLines, search]);
 
   /** Per person, for the summary above the lines. */
   const byPerson = useMemo(() => {
     const map = new Map<string, { name: string; amount: number; bills: number }>();
-    for (const { share } of lines) {
+    for (const { share } of allLines) {
       const row = map.get(share.userId) || { name: share.name, amount: 0, bills: 0 };
       row.amount += Number(share.amount) || 0;
       row.bills += 1;
@@ -123,7 +130,7 @@ export function RevenueShare({ user }: RevenueShareProps) {
     return [...map.entries()]
       .map(([userId, v]) => ({ userId, ...v }))
       .sort((a, b) => b.amount - a.amount);
-  }, [lines]);
+  }, [allLines]);
 
   // The firm's headline figures, moved here from the Partner Dashboard. Same
   // helpers as the Billing page, so the two cannot disagree.
@@ -132,6 +139,8 @@ export function RevenueShare({ user }: RevenueShareProps) {
   const pendingBill = useMemo(() => pendingBilling(tasks), [tasks]);
 
   const shareTotal = byPerson.reduce((s, p) => s + p.amount, 0);
+  const dividedBillCount = (inRange as any[]).filter(b => (b.shares || []).length > 0).length;
+  const peopleSharing = byPerson.filter(p => p.userId !== OFFICE_POOL_ID).length;
   /*
    * Bills carrying no division at all — raised before this existed, or by
    * somebody who found a way past the form.
@@ -240,10 +249,15 @@ export function RevenueShare({ user }: RevenueShareProps) {
           icon={<IndianRupee size={22} />}
           variant="success"
         />
-        <KPICard title="Bills counted" value={lines.length} icon={<Receipt size={22} />} />
         <KPICard
-          title={isAdmin ? 'People sharing' : 'Period'}
-          value={isAdmin ? byPerson.length : rangeLabel}
+          title="Bills in period"
+          value={periodTotals.count}
+          note={`${dividedBillCount} with division`}
+          icon={<Receipt size={22} />}
+        />
+        <KPICard
+          title={isAdmin ? 'Partners/directors sharing' : 'Period'}
+          value={isAdmin ? peopleSharing : rangeLabel}
           icon={<PieChart size={22} />}
         />
       </div>

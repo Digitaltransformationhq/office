@@ -1,3 +1,4 @@
+import { ClientMasterName } from './ClientMasterName';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { gstAPI, type GstFiling, type GstRegistration } from '../services/api';
 import { useToast } from './Toast';
@@ -24,6 +25,7 @@ const W_STAFF = 92;
 const FROZEN = W_CLIENT + W_FREQ + W_STAFF;
 
 interface GSTComplianceProps {
+  onOpenClient: (clientId: string) => void;
   currentUser: { id: string; name: string; role?: string } | null;
 }
 
@@ -40,7 +42,7 @@ interface GSTComplianceProps {
  * straight off the grid is what made the sheet quick to scan, and hiding them
  * behind a click would have traded that away for nothing.
  */
-export function GSTCompliance({ currentUser }: GSTComplianceProps) {
+export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps) {
   const { showError } = useToast();
 
   const [financialYear, setFinancialYear] = useState(financialYearOf());
@@ -328,6 +330,7 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
             </div>
           ) : (
             <GSTAnnualView
+              onOpenClient={onOpenClient}
               key={tab}
               compositionOnly={tab === 'composition'}
               registrations={annual.registrations}
@@ -362,6 +365,7 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
           {/* Phone: one month at a time. See GSTMonthlyMobile for why. */}
           <div className="max-h-[64vh] overflow-auto md:hidden">
             <GSTMonthlyMobile
+              onOpenClient={onOpenClient}
               rows={filtered.map(r => ({
                 registration: r,
                 owed: returnsFor(r.filingFrequency),
@@ -443,9 +447,7 @@ export function GSTCompliance({ currentUser }: GSTComplianceProps) {
                         style={{ width: W_CLIENT, minWidth: W_CLIENT }}
                       >
                         <div className="flex items-center gap-2">
-                          <p className="min-w-0 flex-1 truncate text-[0.82rem] font-medium" style={{ color: NAVY }} title={r.clientName}>
-                            {r.clientName}
-                          </p>
+                          <ClientMasterName clientId={r.clientId} name={r.clientName} onOpen={onOpenClient} className="min-w-0 flex-1 truncate text-[0.82rem] font-medium" />
                           {/* Always visible, however far the grid is scrolled: the
                               point of the badge is to find problem rows without
                               having to scroll back to find them. */}

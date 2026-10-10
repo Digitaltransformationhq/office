@@ -187,6 +187,28 @@ export function GSTFilingModal({
                         onSelect={() => handleStatus(s)}
                       />
                     ))}
+                    {status === 'Filed' && group.statuses.includes('Filed') && (
+                      <div className="flex min-h-[38px] flex-wrap items-center gap-1.5 sm:ml-1">
+                        <label htmlFor="gst-filed-on" className="sr-only">Filed on</label>
+                        <input
+                          id="gst-filed-on"
+                          type="date"
+                          value={filedOn}
+                          onChange={e => setFiledOn(e.target.value)}
+                          max={todayIso}
+                          required
+                          aria-label="Filed on"
+                          className="h-[38px] w-[154px] rounded-lg border border-[#BBF7D0] bg-white px-3 text-xs font-medium text-[#166534] outline-none transition focus:border-[#4EA72E] focus:ring-2 focus:ring-[#4EA72E]/15"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFiledOn(todayIso)}
+                          className="h-[38px] rounded-lg border border-[#BBF7D0] bg-[#F0FDF4] px-3 text-xs font-semibold text-[#166534] transition-colors hover:border-[#86D69A] hover:bg-[#DCFCE7]"
+                        >
+                          Today
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -197,30 +219,6 @@ export function GSTFilingModal({
                 Saving moves this client to Non-filers. Their GST registrations stay visible for the
                 discontinued financial year and one additional financial year. Earlier records remain available.
               </p>
-            )}
-
-            {/* The filing date, right where the decision was just made */}
-            {status === 'Filed' && (
-              <div className="mt-5 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] p-4">
-                <label className="mb-1.5 block text-sm font-medium text-[#166534]">Filed on</label>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <input
-                    type="date"
-                    className={`${inputCls} flex-1 border-[#BBF7D0] bg-white`}
-                    value={filedOn}
-                    onChange={e => setFiledOn(e.target.value)}
-                    max={todayIso}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setFiledOn(todayIso)}
-                    className="shrink-0 rounded-lg border border-[#BBF7D0] bg-white px-3.5 py-2.5 text-sm font-medium text-[#166534] transition-colors hover:bg-[#DCFCE7] sm:py-0"
-                  >
-                    Today
-                  </button>
-                </div>
-              </div>
             )}
 
             {/* Everything used a few times a year */}

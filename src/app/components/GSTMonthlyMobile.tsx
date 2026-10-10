@@ -1,3 +1,4 @@
+import { ClientMasterName } from './ClientMasterName';
 import React from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import type { GstFiling, GstRegistration } from '../services/api';
@@ -9,6 +10,7 @@ type ReturnType_ = 'GSTR-1' | 'GSTR-3B';
 const RETURN_TYPES: ReturnType_[] = ['GSTR-1', 'GSTR-3B'];
 
 interface GSTMonthlyMobileProps {
+  onOpenClient: (clientId: string) => void;
   rows: { registration: GstRegistration; owed: ReturnType_[]; open: number }[];
   months: GstPeriod[];
   monthIndex: number;
@@ -31,7 +33,7 @@ interface GSTMonthlyMobileProps {
  * and one month of two returns fits a narrow screen without compromise.
  */
 export function GSTMonthlyMobile({
-  rows, months, monthIndex, onMonthChange, cellFor, isObligation, isLate, onOpen,
+  rows, months, monthIndex, onMonthChange, cellFor, isObligation, isLate, onOpen, onOpenClient,
 }: GSTMonthlyMobileProps) {
   const month = months[monthIndex];
   if (!month) return null;
@@ -91,9 +93,7 @@ export function GSTMonthlyMobile({
       <div className="space-y-2.5 p-3">
         {rows.map(({ registration, owed }) => (
           <div key={registration.id} className="rounded-xl border border-[#E7EDF4] p-3">
-            <p className="truncate text-[0.85rem] font-medium" style={{ color: NAVY }}>
-              {registration.clientName}
-            </p>
+            <ClientMasterName clientId={registration.clientId} name={registration.clientName} onOpen={onOpenClient} className="truncate text-[0.85rem] font-medium" />
             <p className="mt-0.5 truncate identifier text-[0.72rem] text-muted-foreground/70">
               {registration.codeNo ? `${registration.codeNo} · ` : ''}{registration.gstin}
             </p>

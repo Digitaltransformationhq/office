@@ -654,6 +654,29 @@ app.put('/make-server-0abfa7cf/tasks/:taskId', async (c) => {
     if (body.taxableAmount !== undefined) updates.taxable_amount = body.taxableAmount;
     if (body.billingDescription !== undefined) updates.billing_description = body.billingDescription;
 
+    // A task changed directly to Billed still needs the same attribution as a
+    // billing record. Only the two people responsible for billing may be named;
+    // resolve the name from the user row instead of trusting browser text.
+    if (body.status === 'Billed') {
+      if (!body.billedById) {
+        return c.json({ success: false, error: 'Select who billed this task' }, 400);
+      }
+      const { data: biller } = await supabase
+        .from('users')
+        .select('id, name')
+        .eq('id', body.billedById)
+        .maybeSingle();
+      const allowedBillers = new Set(['abhishek patel', 'brijesh pitroda']);
+      if (!biller || !allowedBillers.has(String(biller.name || '').trim().toLowerCase())) {
+        return c.json({ success: false, error: 'Billed by must be Abhishek Patel or Brijesh Pitroda' }, 400);
+      }
+      updates.billed_by_id = biller.id;
+      updates.billed_by_name = biller.name;
+    } else if (body.status !== undefined) {
+      updates.billed_by_id = null;
+      updates.billed_by_name = null;
+    }
+
     // Approval routing. These were previously accepted from the client and
     // silently discarded, so nothing recorded who a task was routed to or who
     // signed it off — and the completion approval had no one to go back to.
@@ -2950,6 +2973,13 @@ app.put('/make-server-0abfa7cf/gst/filings', async (c) => {
     return c.json({ success: true, data });
   } catch (error) {
     console.log('Error saving GST filing:', error);
+    const databaseError = error as { code?: string; message?: string };
+    if (databaseError.code === '23514' && databaseError.message?.includes('gst_filings_status_check')) {
+      return c.json({
+        success: false,
+        error: 'GST Discontinued status is not configured. Run add-gst-discontinued-client-lifecycle.sql.',
+      }, 500);
+    }
     return c.json({ success: false, error: 'Failed to save filing', details: String(error) }, 500);
   }
 });
@@ -4400,6 +4430,8 @@ app.post('/make-server-0abfa7cf/billing-records', async (c) => {
       .from('tasks')
       .update({ 
         status: 'Billed',
+        billed_by_id: billedById,
+        billed_by_name: billedBy,
         completion_date: new Date().toISOString().split('T')[0],
         updated_at: new Date().toISOString()
       })

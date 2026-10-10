@@ -207,6 +207,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   budgeted_fee DECIMAL(10, 2) DEFAULT 0,
   estimated_hours INTEGER DEFAULT 0,
   comments TEXT,
+  -- Who raised the bill. Also stored on billing records; kept here so tasks
+  -- marked Billed from Edit Task remain attributable in task reports.
+  billed_by_id TEXT,
+  billed_by_name TEXT,
   -- Reassignment. A handover sits at 'Pending Acceptance' until the new
   -- assignee accepts or rejects it; see add-reassignment-columns.sql. Declared
   -- only in an archived one-off before, so this database never had them and
@@ -238,6 +242,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   FOREIGN KEY (assigned_to_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (billed_by_id) REFERENCES users(id) ON DELETE SET NULL,
   -- SET NULL, not CASCADE: losing a partner must not delete the firm's tasks.
   FOREIGN KEY (approver_id) REFERENCES users(id) ON DELETE SET NULL
 );

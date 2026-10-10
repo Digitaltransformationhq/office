@@ -1,3 +1,4 @@
+import { ClientMasterName } from './ClientMasterName';
 import React, { useEffect, useMemo, useState } from 'react';
 import { itrAPI, discussionsAPI, type ItrFiling } from '../services/api';
 import { useToast } from './Toast';
@@ -13,6 +14,7 @@ const NAVY = '#1b365d';
 const PAGE_SIZE = 30;
 
 interface ITRRegisterProps {
+  onOpenClient: (clientId: string) => void;
   currentUser: { id: string; name: string; role?: string } | null;
 }
 
@@ -29,7 +31,7 @@ function defaultItrYear() {
  * the top: one return per client per year. What matters is who is holding
  * things up, so it sorts open work first and can be sliced by staff member.
  */
-export function ITRRegister({ currentUser }: ITRRegisterProps) {
+export function ITRRegister({ currentUser, onOpenClient }: ITRRegisterProps) {
   const { showError } = useToast();
 
   const [financialYear, setFinancialYear] = useState(defaultItrYear());
@@ -206,12 +208,12 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
                     key={f.id}
                     className="flex w-full flex-col gap-2 px-5 py-3 transition-colors hover:bg-[#F7FAFF] sm:flex-row sm:items-center sm:gap-4"
                   >
-                  <button
+                  <div
                     onClick={() => setEditing(f)}
                     className="flex min-w-0 flex-1 flex-col gap-2 text-left sm:flex-row sm:items-center sm:gap-4"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[0.86rem] font-medium" style={{ color: NAVY }}>{f.clientName}</p>
+                      <ClientMasterName clientId={f.clientId} name={f.clientName} onOpen={onOpenClient} className="truncate text-[0.86rem] font-medium" />
                       <p className="truncate identifier text-[0.74rem] text-muted-foreground/75">
                         {f.pan || 'No PAN'}
                         {f.fileNumber && ` · ${f.fileNumber}`}
@@ -219,7 +221,7 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                    <button type="button" aria-label={`Open income tax return for ${f.clientName}`} onClick={event => { event.stopPropagation(); setEditing(f); }} className="flex flex-wrap items-center gap-2 sm:shrink-0">
                       {f.itrForm && (
                         <span className="rounded-md bg-[#F4F6F9] px-2 py-0.5 text-[0.68rem] font-medium text-muted-foreground">
                           {f.itrForm}
@@ -243,8 +245,8 @@ export function ITRRegister({ currentUser }: ITRRegisterProps) {
                           ? (f.filedOn ? formatDate(f.filedOn) : 'no date')
                           : late ? 'past due' : due ? formatDate(due) : '—'}
                       </span>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
 
                     {/* The date is on the face of it, not behind the click.
                         Knowing this client was last spoken to in April is the

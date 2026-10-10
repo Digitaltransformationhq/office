@@ -25,6 +25,8 @@ function transformTask(task: any) {
     billingFees: task.billing_fees,
     taxableAmount: task.taxable_amount,
     billingDescription: task.billing_description,
+    billedById: task.billed_by_id,
+    billedByName: task.billed_by_name,
     /** The approver's intended division of this task's bill, for Accounts to
      *  raise the invoice on. A draft — the binding record is on the bill. */
     billingShares: task.billing_shares || null,

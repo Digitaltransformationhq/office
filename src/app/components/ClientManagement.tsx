@@ -10,6 +10,7 @@ import { useLiveData } from '../hooks/useLiveData';
 import { isApproverRole, normalizeRole } from '../utils/roles';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { exportClientsToExcel } from '../utils/exportClients';
+import { FEE_FIELDS } from './clientModalUI';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from './ui/dropdown-menu';
@@ -52,7 +53,16 @@ function Dash() {
   return <span className="text-slate-300">—</span>;
 }
 
-export function ClientManagement({ user }: { user?: { role?: string } | null }) {
+function servicesFor(client: any): string[] {
+  if (Array.isArray(client.selectedServices)) return client.selectedServices;
+  return FEE_FIELDS.filter(field => Number(client[field.key]) > 0).map(field => field.key);
+}
+
+export function ClientManagement({ user, clientToOpen, onClientOpened }: {
+  user?: { role?: string } | null;
+  clientToOpen?: string | null;
+  onClientOpened?: () => void;
+}) {
   // The whole client book, fees included, in one file: admin, partners and
   // directors only. The desks that can open this page do not get the button.
   const canExport = isApproverRole(user?.role);
@@ -67,6 +77,10 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
   // One filter at a time. "No PAN" sits with the client types because it is
   // read the same way: a slice of the client master to work through.
   const [type, setType] = useState<'all' | 'Filing' | 'Non-filer' | 'no-pan'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive'>('all');
+  const [serviceFilter, setServiceFilter] = useState('all');
+  const [industryFilter, setIndustryFilter] = useState('all');
+  const [attentionFilter, setAttentionFilter] = useState<'all' | 'missing-gstin' | 'missing-contact' | 'missing-email' | 'no-services' | 'no-fees'>('all');
   const [page, setPage] = useState(1);
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
   const [showAdd, setShowAdd] = useState(false);
@@ -91,6 +105,18 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
     }
   };
 
+  useEffect(() => {
+    if (loading || !clientToOpen) return;
+    const client = clients.find(c => String(c.id) === String(clientToOpen));
+    if (client) {
+      setSelected(client);
+      setShowView(true);
+    } else {
+      showError('This client could not be found in Client Master.');
+    }
+    onClientOpened?.();
+  }, [loading, clients, clientToOpen, onClientOpened, showError]);
+
   const toggleCard = (id: string) => setOpenCards(prev => {
     const n = new Set(prev);
     n.has(id) ? n.delete(id) : n.add(id);
@@ -102,6 +128,13 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
     [clients],
   );
   const noPanCount = useMemo(() => clients.filter(c => !c.pan).length, [clients]);
+  const industries = useMemo(
+    () => sortByText(
+      Array.from(new Set(clients.map(c => String(c.industry || '').trim()).filter(Boolean))),
+      industry => industry,
+    ),
+    [clients],
+  );
 
   // A–Z by client name. Paged at twenty-five a screen, an unsorted list means
   // knowing which page a client is on before you can look them up.
@@ -110,23 +143,41 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
     return sortByText(clients.filter(c => {
       if (type === 'no-pan') { if (c.pan) return false; }
       else if (type !== 'all' && (c.clientType || 'Filing') !== type) return false;
+      if (statusFilter !== 'all' && (c.status || 'Active') !== statusFilter) return false;
+      if (industryFilter !== 'all' && c.industry !== industryFilter) return false;
+      const services = servicesFor(c);
+      if (serviceFilter !== 'all' && !services.includes(serviceFilter)) return false;
+      if (attentionFilter === 'missing-gstin' && !(c.gstin || c.gst)) return false;
+      if (attentionFilter === 'missing-contact' && !(c.contact || c.mobileNumber)) return false;
+      if (attentionFilter === 'missing-email' && !(c.email || c.emailId)) return false;
+      if (attentionFilter === 'no-services' && services.length > 0) return false;
+      if (attentionFilter === 'no-fees' && FEE_FIELDS.some(field => Number(c[field.key]) > 0)) return false;
       if (!q) return true;
       return [
         c.name, c.firmName, c.industry, c.pan, c.gstin || c.gst,
         c.contact || c.mobileNumber, c.email || c.emailId, c.fileNumber,
       ].some(v => (v || '').toString().toLowerCase().includes(q));
     }), c => c.name);
-  }, [clients, search, type]);
+  }, [clients, search, type, statusFilter, serviceFilter, industryFilter, attentionFilter]);
 
   // A search that shortens the list must not leave you stranded on page 20.
-  useEffect(() => { setPage(1); }, [search, type]);
+  useEffect(() => { setPage(1); }, [search, type, statusFilter, serviceFilter, industryFilter, attentionFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const paged = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
-  const isFiltered = type !== 'all' || search.trim() !== '';
+  const isFiltered = type !== 'all' || statusFilter !== 'all' || serviceFilter !== 'all'
+    || industryFilter !== 'all' || attentionFilter !== 'all' || search.trim() !== '';
+  const clearFilters = () => {
+    setSearch('');
+    setType('all');
+    setStatusFilter('all');
+    setServiceFilter('all');
+    setIndustryFilter('all');
+    setAttentionFilter('all');
+  };
 
   const openExisting = (clientId: string) => {
     const existing = clients.find(c => c.id === clientId);
@@ -212,28 +263,7 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
               className="w-full rounded-lg border border-[#E7EDF4] bg-white py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
             />
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <div className="flex rounded-lg border border-[#E7EDF4] p-0.5">
-            {([
-              ['all', 'All', null],
-              ['Filing', 'Filing', null],
-              ['Non-filer', 'Non-filers', nonFilerCount],
-              ['no-pan', 'No PAN', noPanCount],
-            ] as const).map(([key, label, count]) => (
-              <button
-                key={key}
-                onClick={() => setType(key)}
-                title={key === 'no-pan' ? 'Clients with no PAN on record' : undefined}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  type === key ? 'text-white' : 'text-muted-foreground hover:bg-[#F4F6F9]'
-                }`}
-                style={type === key ? { backgroundColor: NAVY } : undefined}
-              >
-                {label}
-                {count !== null && <span className={`ml-1 ${type === key ? 'text-white/60' : 'text-muted-foreground/60'}`}>{count}</span>}
-              </button>
-            ))}
-          </div>
+          <div className="flex shrink-0 items-center gap-2">
           {canExport && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -278,13 +308,69 @@ export function ClientManagement({ user }: { user?: { role?: string } | null }) 
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#E7EDF4] bg-[#FAFBFD] px-5 py-3">
+          <span className="mr-0.5 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+            <Filter size={13} /> Filters
+          </span>
+          <div className="flex overflow-x-auto rounded-lg border border-[#E7EDF4] bg-white p-0.5">
+            {([
+              ['all', 'All', null],
+              ['Filing', 'Filing', null],
+              ['Non-filer', 'Non-filers', nonFilerCount],
+              ['no-pan', 'No PAN', noPanCount],
+            ] as const).map(([key, label, count]) => (
+              <button
+                key={key}
+                onClick={() => setType(key)}
+                title={key === 'no-pan' ? 'Clients with no PAN on record' : undefined}
+                className={`shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  type === key ? 'text-white' : 'text-muted-foreground hover:bg-[#F4F6F9]'
+                }`}
+                style={type === key ? { backgroundColor: NAVY } : undefined}
+              >
+                {label}
+                {count !== null && <span className={`ml-1 ${type === key ? 'text-white/60' : 'text-muted-foreground/60'}`}>{count}</span>}
+              </button>
+            ))}
+          </div>
+          <ClientFilterSelect value={statusFilter} onChange={value => setStatusFilter(value as typeof statusFilter)} label="Status">
+            <option value="all">All statuses</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </ClientFilterSelect>
+          <ClientFilterSelect value={serviceFilter} onChange={setServiceFilter} label="Service">
+            <option value="all">All services</option>
+            {FEE_FIELDS.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}
+          </ClientFilterSelect>
+          <ClientFilterSelect value={industryFilter} onChange={setIndustryFilter} label="Industry">
+            <option value="all">All industries</option>
+            {industries.map(industry => <option key={industry} value={industry}>{industry}</option>)}
+          </ClientFilterSelect>
+          <ClientFilterSelect value={attentionFilter} onChange={value => setAttentionFilter(value as typeof attentionFilter)} label="Attention">
+            <option value="all">All records</option>
+            <option value="missing-gstin">Missing GSTIN</option>
+            <option value="missing-contact">Missing phone</option>
+            <option value="missing-email">Missing email</option>
+            <option value="no-services">No services selected</option>
+            <option value="no-fees">No fees entered</option>
+          </ClientFilterSelect>
+          {isFiltered && (
+            <button
+              onClick={clearFilters}
+              className="ml-auto rounded-full border border-[#E7EDF4] bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-[#C7D3E2] hover:text-foreground"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#1b365d] border-t-transparent" />
           </div>
         ) : filtered.length === 0 ? (
           <p className="py-16 text-center text-sm text-muted-foreground">
-            {clients.length === 0 ? 'No clients yet.' : `No client matches “${search.trim()}”.`}
+            {clients.length === 0 ? 'No clients yet.' : 'No clients match the current filters.'}
           </p>
         ) : (
           <>
@@ -521,6 +607,28 @@ function ExportOption({ icon, title, count, note, disabled, onSelect }: {
         <span className="mt-0.5 text-xs leading-snug text-muted-foreground">{note}</span>
       </span>
     </DropdownMenuItem>
+  );
+}
+
+function ClientFilterSelect({ value, onChange, label, children }: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="relative inline-flex items-center">
+      <span className="sr-only">{label}</span>
+      <select
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        aria-label={label}
+        className="h-8 appearance-none rounded-lg border border-[#E7EDF4] bg-white py-1 pl-3 pr-8 text-xs font-medium text-foreground/75 outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-muted-foreground" />
+    </label>
   );
 }
 
