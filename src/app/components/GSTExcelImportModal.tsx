@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, ShieldCheck, Upload, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Copy, FileSpreadsheet, RotateCcw, ShieldCheck, Upload, X } from 'lucide-react';
 import { gstAPI, type GstRegistration } from '../services/api';
 import {
   parseGstWorkbookSheet,
@@ -36,6 +36,19 @@ interface ImportSettings {
   createdByName?: string | null;
 }
 
+interface ImportHistory {
+  importId: string;
+  createdAt: string;
+  createdByName: string | null;
+  financialYear: string;
+  rolledBackAt: string | null;
+  summary: {
+    registrationsUpdated: number;
+    filingsUpdated: number;
+    unmatched: Array<{ gstin: string; rowNumber: number | null }>;
+  } | null;
+}
+
 const localToday = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -62,6 +75,9 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settings, setSettings] = useState<ImportSettings | null>(null);
   const [preserveThrough, setPreserveThrough] = useState(localToday);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [history, setHistory] = useState<ImportHistory[]>([]);
+  const latestActiveImport = history.find(item => !item.rolledBackAt) || null;
 
   useEffect(() => {
     let live = true;
@@ -75,6 +91,19 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
       })
       .catch(e => { if (live) setError(e instanceof Error ? e.message : 'Could not load the Excel sync boundary.'); })
       .finally(() => { if (live) setSettingsLoading(false); });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    gstAPI.getImportHistory()
+      .then(response => {
+        if (!live) return;
+        if (!response.success) throw new Error(response.error || 'Could not load the Excel import history.');
+        setHistory((response.data || []) as ImportHistory[]);
+      })
+      .catch(e => { if (live) setError(e instanceof Error ? e.message : 'Could not load the Excel import history.'); })
+      .finally(() => { if (live) setHistoryLoading(false); });
     return () => { live = false; };
   }, []);
 
@@ -163,6 +192,18 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
       if (!response.success) throw new Error(response.error || 'The workbook could not be imported.');
       const imported = response.data as ImportResult;
       setResult(imported);
+      setHistory(previous => [{
+        importId: imported.importId,
+        createdAt: new Date().toISOString(),
+        createdByName: currentUser?.name || null,
+        financialYear,
+        rolledBackAt: null,
+        summary: {
+          registrationsUpdated: imported.registrationsUpdated,
+          filingsUpdated: imported.filingsUpdated,
+          unmatched: imported.unmatched,
+        },
+      }, ...previous]);
       setSettings({ cutoffDate: imported.cutoffDate, cutoffAt: imported.cutoffAt });
       onImported();
     } catch (e) {
@@ -172,15 +213,17 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
     }
   };
 
-  const rollbackImport = async () => {
-    if (!result || rollingBack) return;
+  const rollbackImport = async (importId: string) => {
+    if (!importId || rollingBack) return;
     if (!window.confirm('Restore the exact GST data from before this Excel import?')) return;
     setRollingBack(true);
     setError('');
     try {
-      const response = await gstAPI.rollbackWorkbookImport(result.importId, currentUser);
+      const response = await gstAPI.rollbackWorkbookImport(importId, currentUser);
       if (!response.success) throw new Error(response.error || 'The import could not be rolled back.');
       setRollbackResult(response.data as RollbackResult);
+      setHistory(previous => previous.map(item =>
+        item.importId === importId ? { ...item, rolledBackAt: new Date().toISOString() } : item));
       onImported();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The import could not be rolled back.');
@@ -239,6 +282,37 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
             </div>
           </div>
 
+          {!result && !rollbackResult && (
+            <div className="mb-4 rounded-xl border border-[#E7D9BA] bg-[#FFFBF2] px-4 py-3">
+              <div className="flex items-start gap-3">
+                <RotateCcw className="mt-0.5 shrink-0 text-[#9A6700]" size={18} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[#6F4E00]">Undo an Excel import</p>
+                  {historyLoading ? (
+                    <p className="mt-1 text-xs text-[#7B6841]">Checking import history…</p>
+                  ) : latestActiveImport ? (
+                    <>
+                      <p className="mt-1 text-xs leading-5 text-[#7B6841]">
+                        Latest: F.Y. {latestActiveImport.financialYear} on {new Date(latestActiveImport.createdAt).toLocaleString('en-IN')}
+                        {latestActiveImport.createdByName ? ` by ${latestActiveImport.createdByName}` : ''}.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => rollbackImport(latestActiveImport.importId)}
+                        disabled={rollingBack}
+                        className="mt-2 rounded-full border border-[#B8860B] px-3 py-1.5 text-xs font-semibold text-[#795800] disabled:opacity-50"
+                      >
+                        {rollingBack ? 'Restoring…' : 'Undo latest import'}
+                      </button>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-xs leading-5 text-[#7B6841]">No active import is available to undo. This button becomes available after the first Excel update.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
@@ -283,13 +357,12 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
                 Eligible records are updated from filled Excel cells, including the annual-return tabs when present. Protected history and blank filing cells are left unchanged, and no records are deleted.
               </div>
 
-              {(unmatchedBeforeImport.length > 0 || preview.warnings.length > 0) && (
+              {unmatchedBeforeImport.length > 0 && <UnmatchedGstins rows={unmatchedBeforeImport} />}
+
+              {preview.warnings.length > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-                  <p className="text-xs font-semibold text-amber-900">Review before importing</p>
+                  <p className="text-xs font-semibold text-amber-900">Other workbook warnings</p>
                   <ul className="mt-2 max-h-32 space-y-1 overflow-auto text-xs text-amber-800">
-                    {unmatchedBeforeImport.slice(0, 12).map(row => (
-                      <li key={`${row.gstin}-${row.rowNumber}`}>Row {row.rowNumber}: GSTIN {row.gstin} is not in the system.</li>
-                    ))}
                     {preview.warnings.slice(0, 12).map((warning, i) => <li key={`${warning}-${i}`}>{warning}</li>)}
                   </ul>
                 </div>
@@ -309,15 +382,13 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
                 Preserved {result.registrationsProtected} existing registrations and {result.filingsProtected} existing filing records through {result.cutoffDate}.
               </p>
               {result.unmatched.length > 0 && (
-                <p className="mt-1 text-xs text-amber-800">
-                  {result.unmatched.length} GSTIN{result.unmatched.length === 1 ? '' : 's'} could not be matched and were skipped.
-                </p>
+                <UnmatchedGstins rows={result.unmatched} />
               )}
               <div className="mt-3 border-t border-green-200 pt-3">
                 <p className="text-xs text-green-800">A complete pre-import backup was saved as {result.importId}.</p>
                 <button
                   type="button"
-                  onClick={rollbackImport}
+                  onClick={() => rollbackImport(result.importId)}
                   disabled={rollingBack}
                   className="mt-2 rounded-full border border-green-700 px-3 py-1.5 text-xs font-semibold text-green-800 disabled:opacity-50"
                 >
@@ -364,6 +435,36 @@ function Metric({ label, value, warning = false }: { label: string; value: numbe
     <div className={`rounded-xl border px-3 py-3 ${warning ? 'border-amber-200 bg-amber-50' : 'border-[#E7EDF4] bg-white'}`}>
       <p className="text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
       <p className={`mt-1 text-xl font-semibold ${warning ? 'text-amber-800' : ''}`} style={warning ? undefined : { color: NAVY }}>{value}</p>
+    </div>
+  );
+}
+
+function UnmatchedGstins({ rows }: { rows: Array<{ gstin: string; rowNumber: number | null }> }) {
+  const copy = () => {
+    const value = rows.map(row => row.gstin).join('\n');
+    void navigator.clipboard?.writeText(value);
+  };
+  return (
+    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold">Unmatched GSTINs — skipped</p>
+          <p className="mt-1 text-xs leading-5 text-amber-800">
+            Add or correct these GSTINs in Client Master, then upload the same workbook again.
+          </p>
+        </div>
+        <button type="button" onClick={copy} className="flex shrink-0 items-center gap-1 rounded-full border border-amber-300 px-2.5 py-1 text-[0.68rem] font-semibold text-amber-900">
+          <Copy size={12} /> Copy
+        </button>
+      </div>
+      <ul className="mt-2 max-h-36 space-y-1 overflow-auto rounded-lg bg-white/60 px-3 py-2 font-mono text-xs">
+        {rows.map(row => (
+          <li key={`${row.gstin}-${row.rowNumber}`} className="flex justify-between gap-3">
+            <span>{row.gstin}</span>
+            <span className="font-sans text-amber-700">{row.rowNumber ? `Excel row ${row.rowNumber}` : 'Annual sheet'}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

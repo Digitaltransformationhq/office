@@ -999,6 +999,8 @@ export const gstAPI = {
 
   getImportSettings: async () => fetchAPI('/gst/import-workbook/settings'),
 
+  getImportHistory: async () => fetchAPI('/gst/import-workbook/history'),
+
   rollbackWorkbookImport: async (importId: string, actor?: { id: string; name: string } | null) =>
     fetchAPI(`/gst/import-workbook/${encodeURIComponent(importId)}/rollback`, {
       method: 'POST',

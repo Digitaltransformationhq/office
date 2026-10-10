@@ -124,7 +124,9 @@ existing `GST Report <FY>.xlsx` workbook. The upload:
 
 A preview shows the number of matched GSTINs and filing records before anything
 is saved. GSTINs that do not exist in Client Master are listed and skipped; add
-or correct those registrations, then upload the same workbook again.
+or correct those registrations, then upload the same workbook again. The full
+unmatched list remains visible after the import and can be copied for manual
+follow-up.
 
 On the first upload, choose the date through which work already maintained in
 the application must be protected. The system stores that boundary permanently.
@@ -137,7 +139,9 @@ Before every import, the server stores an exact backup of each registration and
 filing row that import can change. The import result includes **Undo this
 import**, which restores previous rows and removes only rows created by that
 upload. Imports must be rolled back newest-first so restoring an older snapshot
-cannot erase a later valid upload.
+cannot erase a later valid upload. The latest active backup and **Undo latest
+import** action remain visible whenever the upload dialog is reopened; they are
+not limited to the success message immediately after importing.
 
 The older command-line import remains available for an initial database load:
 

@@ -2940,6 +2940,28 @@ app.get('/make-server-0abfa7cf/gst/import-workbook/settings', async (c) => {
   }
 });
 
+/** Recent import references only; the row snapshots themselves never leave the server. */
+app.get('/make-server-0abfa7cf/gst/import-workbook/history', async (c) => {
+  try {
+    const backups = await kvStore.getByPrefix('gst-import-backup:');
+    const history = backups
+      .map((backup: any) => ({
+        importId: backup.importId,
+        createdAt: backup.createdAt,
+        createdByName: backup.createdByName || null,
+        financialYear: backup.financialYear,
+        rolledBackAt: backup.rolledBackAt || null,
+        summary: backup.summary || null,
+      }))
+      .sort((a: any, b: any) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 10);
+    return c.json({ success: true, data: history });
+  } catch (error) {
+    console.log('Error fetching GST import history:', error);
+    return c.json({ success: false, error: 'Failed to load GST import history' }, 500);
+  }
+});
+
 app.put('/make-server-0abfa7cf/gst/import-workbook', async (c) => {
   try {
     const body = await c.req.json();
@@ -3141,6 +3163,14 @@ app.put('/make-server-0abfa7cf/gst/import-workbook', async (c) => {
       createdByName: body.updatedByName || null,
       financialYear,
       settingsBefore: previousImportSettings || null,
+      summary: {
+        registrationsUpdated: registrationUpdates.length,
+        registrationsProtected,
+        filingsUpdated: filingRows.length,
+        filingsProtected,
+        unmatched,
+        skippedFilings,
+      },
       clientChanges: clientChanges.map((before: any) => ({ id: before.id, before })),
       registrationChanges: registrationUpdates.map(change => ({ id: change.id, before: change.before })),
       filingChanges,
