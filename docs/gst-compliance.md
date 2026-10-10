@@ -108,6 +108,39 @@ none.
 
 ## Importing the spreadsheet
 
+### Upload from the GST Compliance screen
+
+Use **Update from Excel** on the monthly GST Compliance tab and choose the
+existing `GST Report <FY>.xlsx` workbook. The upload:
+
+- selects the worksheet matching the financial year currently open;
+- matches registrations only by GSTIN;
+- updates registration details and every filled GSTR-1 / GSTR-3B cell;
+- also imports `GSTR-9 & 9C` and `Annual Return Composition` when those tabs are
+  present in the workbook;
+- updates existing filing rows in place, so uploading the workbook again does
+  not create duplicates; and
+- leaves blank cells unchanged and never deletes records.
+
+A preview shows the number of matched GSTINs and filing records before anything
+is saved. GSTINs that do not exist in Client Master are listed and skipped; add
+or correct those registrations, then upload the same workbook again.
+
+On the first upload, choose the date through which work already maintained in
+the application must be protected. The system stores that boundary permanently.
+Registration and filing rows last changed on or before it are never overwritten
+by Excel. Blank/missing rows and rows created after the boundary remain managed
+by later Excel uploads. Subsequent uploads reuse the original boundary and
+cannot move it forward over historical work.
+
+Before every import, the server stores an exact backup of each registration and
+filing row that import can change. The import result includes **Undo this
+import**, which restores previous rows and removes only rows created by that
+upload. Imports must be rolled back newest-first so restoring an older snapshot
+cannot erase a later valid upload.
+
+The older command-line import remains available for an initial database load:
+
 ```bash
 # 1. Create the tables (Supabase SQL editor)
 supabase/sql/add-gst-compliance-register.sql

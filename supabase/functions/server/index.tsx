@@ -2921,6 +2921,365 @@ app.put('/make-server-0abfa7cf/gst/registrations/:id', async (c) => {
 });
 
 /**
+ * Refresh the GST register from the office workbook in one request.
+ *
+ * The browser parses the XLSX and sends only the recognised registration fields
+ * and non-blank filing cells. GSTIN is the sole match key: similar party names
+ * are never enough evidence to attach statutory records to a client. Existing
+ * rows are updated in place and blank sheet cells do not delete app data.
+ */
+const GST_IMPORT_SETTINGS_KEY = 'settings:gst-excel-import';
+
+app.get('/make-server-0abfa7cf/gst/import-workbook/settings', async (c) => {
+  try {
+    const settings = await kvStore.get(GST_IMPORT_SETTINGS_KEY);
+    return c.json({ success: true, data: settings || null });
+  } catch (error) {
+    console.log('Error fetching GST import settings:', error);
+    return c.json({ success: false, error: 'Failed to load GST import settings' }, 500);
+  }
+});
+
+app.put('/make-server-0abfa7cf/gst/import-workbook', async (c) => {
+  try {
+    const body = await c.req.json();
+    const financialYear = String(body.financialYear || '');
+    const registrationInputs = Array.isArray(body.registrations) ? body.registrations : [];
+    const filingInputs = Array.isArray(body.filings) ? body.filings : [];
+
+    if (!/^[0-9]{4}-[0-9]{2}$/.test(financialYear) ||
+        Number(financialYear.slice(5)) !== (Number(financialYear.slice(0, 4)) + 1) % 100) {
+      return c.json({ success: false, error: 'A valid financial year is required' }, 400);
+    }
+    if (registrationInputs.length > 2000 || filingInputs.length > 10000) {
+      return c.json({ success: false, error: 'The workbook is larger than the GST import limit' }, 400);
+    }
+
+    // The first upload establishes the boundary between records already
+    // maintained in the app and records Excel is allowed to own. The timestamp
+    // is persisted and reused forever: choosing a later date on a later upload
+    // must never widen the overwrite window over historical work.
+    const previousImportSettings = await kvStore.get(GST_IMPORT_SETTINGS_KEY);
+    let importSettings = previousImportSettings;
+    if (!importSettings) {
+      const preserveThrough = String(body.preserveThrough || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(preserveThrough)) {
+        return c.json({ success: false, error: 'Choose the date through which system records must be preserved' }, 400);
+      }
+      const indiaDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date());
+      if (preserveThrough > indiaDate) {
+        return c.json({ success: false, error: 'The preservation date cannot be in the future' }, 400);
+      }
+      const cutoffAt = preserveThrough === indiaDate
+        ? new Date().toISOString()
+        : new Date(`${preserveThrough}T23:59:59.999+05:30`).toISOString();
+      importSettings = {
+        cutoffDate: preserveThrough,
+        cutoffAt,
+        createdAt: new Date().toISOString(),
+        createdById: body.updatedById || null,
+        createdByName: body.updatedByName || null,
+      };
+    }
+    const cutoffAt = String(importSettings.cutoffAt || '');
+    const cutoffMs = Date.parse(cutoffAt);
+    if (!Number.isFinite(cutoffMs)) throw new Error('GST Excel import cutoff is invalid');
+
+    const gstins = [...new Set([...registrationInputs, ...filingInputs]
+      .map((r: any) => String(r.gstin || '').trim().toUpperCase())
+      .filter(Boolean))];
+    if (!gstins.length) return c.json({ success: false, error: 'No GSTIN rows were supplied' }, 400);
+
+    const existing = await selectAll(() => supabase
+      .from('client_gst_registrations')
+      .select('*')
+      .in('gstin', gstins)
+      .order('id', { ascending: true }));
+    const registrationByGstin = new Map(existing.map((r: any) => [String(r.gstin).toUpperCase(), r]));
+
+    // Responsible staff in the workbook are often recorded by first name. A
+    // unique full-name or first-name match is used; ambiguous names stay text
+    // only instead of being silently assigned to the wrong person.
+    const { data: users, error: usersError } = await supabase.from('users').select('id, name');
+    if (usersError) throw usersError;
+    const people = (users || []).map((u: any) => ({
+      id: u.id,
+      name: String(u.name || '').trim(),
+      lower: String(u.name || '').trim().toLowerCase(),
+      first: String(u.name || '').trim().split(/\s+/)[0].toLowerCase(),
+    }));
+    const staffId = (name: string) => {
+      const needle = String(name || '').trim().toLowerCase();
+      if (!needle) return null;
+      const exact = people.filter((u: any) => u.lower === needle);
+      if (exact.length === 1) return exact[0].id;
+      const first = people.filter((u: any) => u.first === needle);
+      return first.length === 1 ? first[0].id : null;
+    };
+
+    const unmatched: Array<{ gstin: string; rowNumber: number | null }> = gstins
+      .filter(gstin => !registrationByGstin.has(gstin))
+      .map(gstin => {
+        const source = [...registrationInputs, ...filingInputs]
+          .find((r: any) => String(r.gstin || '').trim().toUpperCase() === gstin);
+        return { gstin, rowNumber: Number(source?.rowNumber) || null };
+      });
+    const registrationUpdates: Array<{ id: string; row: Record<string, any>; before: any }> = [];
+    let registrationsProtected = 0;
+    for (const input of registrationInputs) {
+      const gstin = String(input.gstin || '').trim().toUpperCase();
+      const match: any = registrationByGstin.get(gstin);
+      if (!match) {
+        continue;
+      }
+      const lastChanged = Date.parse(String(match.updated_at || ''));
+      if (!Number.isFinite(lastChanged) || lastChanged <= cutoffMs) {
+        registrationsProtected++;
+        continue;
+      }
+      const row = pickColumns(input, GST_REGISTRATION_COLUMNS);
+      delete row.gstin;
+      delete row.client_id;
+      if (input.responsiblePersonName !== undefined) {
+        row.responsible_person_id = staffId(input.responsiblePersonName);
+      }
+      row.updated_at = new Date().toISOString();
+      registrationUpdates.push({ id: match.id, row, before: match });
+    }
+
+    const validStatuses = new Set([
+      'Pending', 'Message Sent', 'Data Not Provided', 'Data Received', 'OTP Awaited',
+      'Challan Sent', 'Nil', 'Filed', 'Not Applicable', 'Discontinued',
+    ]);
+    const fyStart = Number(financialYear.slice(0, 4));
+    const annualFinancialYear = `${fyStart - 1}-${String(fyStart % 100).padStart(2, '0')}`;
+    const acceptedFinancialYears = new Set([financialYear, annualFinancialYear]);
+    const matchedRegistrationIds = [...registrationByGstin.values()].map((r: any) => r.id);
+    const existingFilings = matchedRegistrationIds.length
+      ? await selectAll(() => supabase
+        .from('gst_filings')
+        .select('*')
+        .in('registration_id', matchedRegistrationIds)
+        .in('financial_year', [...acceptedFinancialYears])
+        .order('id', { ascending: true }))
+      : [];
+    const existingFilingByKey = new Map(existingFilings.map((row: any) => [
+      `${row.registration_id}|${row.return_type}|${row.period_key}`,
+      row,
+    ]));
+    const filingRows: any[] = [];
+    let skippedFilings = 0;
+    let filingsProtected = 0;
+    for (const input of filingInputs) {
+      const gstin = String(input.gstin || '').trim().toUpperCase();
+      const match: any = registrationByGstin.get(gstin);
+      if (!match) { skippedFilings++; continue; }
+      if (!['GSTR-1', 'GSTR-3B', 'GSTR-4', 'GSTR-9', 'GSTR-9C'].includes(input.returnType) || !validStatuses.has(input.status)) {
+        return c.json({ success: false, error: `Invalid filing value on workbook row ${input.rowNumber || '?'}` }, 400);
+      }
+      const filingYear = String(input.financialYear || '');
+      if (!acceptedFinancialYears.has(filingYear) ||
+          !/^[0-9]{4}-[0-9]{2}$/.test(filingYear) ||
+          Number(filingYear.slice(5)) !== (Number(filingYear.slice(0, 4)) + 1) % 100 ||
+          !/^\d{4}-\d{2}$/.test(String(input.periodKey || ''))) {
+        return c.json({ success: false, error: `Invalid filing period on workbook row ${input.rowNumber || '?'}` }, 400);
+      }
+      if (input.status === 'Filed' && !/^\d{4}-\d{2}-\d{2}$/.test(String(input.filedOn || ''))) {
+        return c.json({ success: false, error: `A filed date is missing on workbook row ${input.rowNumber || '?'}` }, 400);
+      }
+
+      const existingFiling: any = existingFilingByKey.get(`${match.id}|${input.returnType}|${input.periodKey}`);
+      if (existingFiling) {
+        const lastChanged = Date.parse(String(existingFiling.updated_at || ''));
+        if (!Number.isFinite(lastChanged) || lastChanged <= cutoffMs) {
+          filingsProtected++;
+          continue;
+        }
+      }
+
+      const row = pickColumns(input, GST_FILING_COLUMNS);
+      row.id = `gstfil:${gstin}:${input.returnType}:${input.periodKey}`;
+      row.registration_id = match.id;
+      row.return_type = input.returnType;
+      row.financial_year = filingYear;
+      row.period_key = input.periodKey;
+      row.filed_on = input.status === 'Filed' ? input.filedOn : null;
+      row.updated_by_id = body.updatedById || null;
+      row.updated_by_name = body.updatedByName || null;
+      row.updated_at = new Date().toISOString();
+      filingRows.push(row);
+    }
+
+    // Snapshot the exact rows this import can touch before changing any of
+    // them. A null `before` means the import created that filing, so rollback
+    // deletes it; otherwise rollback upserts the complete previous row.
+    const importId = `gst-import-${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const filingChanges = filingRows.map(row => ({
+      id: row.id,
+      before: existingFilingByKey.get(`${row.registration_id}|${row.return_type}|${row.period_key}`) || null,
+    }));
+    const discontinuedRegistrationIds = new Set(filingRows
+      .filter(row => row.status === 'Discontinued')
+      .map(row => row.registration_id));
+    const affectedClientIds = [...new Set([...registrationByGstin.values()]
+      .filter((registration: any) => discontinuedRegistrationIds.has(registration.id))
+      .map((registration: any) => registration.client_id)
+      .filter(Boolean))];
+    const clientChanges = affectedClientIds.length
+      ? await selectAll(() => supabase
+        .from('clients')
+        .select('*')
+        .in('id', affectedClientIds)
+        .order('id', { ascending: true }))
+      : [];
+    const backup = {
+      importId,
+      createdAt: new Date().toISOString(),
+      createdById: body.updatedById || null,
+      createdByName: body.updatedByName || null,
+      financialYear,
+      settingsBefore: previousImportSettings || null,
+      clientChanges: clientChanges.map((before: any) => ({ id: before.id, before })),
+      registrationChanges: registrationUpdates.map(change => ({ id: change.id, before: change.before })),
+      filingChanges,
+      rolledBackAt: null,
+      rolledBackById: null,
+      rolledBackByName: null,
+    };
+    await kvStore.set(`gst-import-backup:${importId}`, backup);
+    if (!previousImportSettings) await kvStore.set(GST_IMPORT_SETTINGS_KEY, importSettings);
+
+    for (const change of registrationUpdates) {
+      const { error } = await supabase
+        .from('client_gst_registrations')
+        .update(change.row)
+        .eq('id', change.id);
+      if (error) throw error;
+    }
+
+    for (let start = 0; start < filingRows.length; start += 500) {
+      const { error } = await supabase
+        .from('gst_filings')
+        .upsert(filingRows.slice(start, start + 500), { onConflict: 'registration_id,return_type,period_key' });
+      if (error) throw error;
+    }
+
+    await broadcastChange('gst');
+    if (filingRows.some(r => r.status === 'Discontinued')) await broadcastChange('clients');
+    return c.json({
+      success: true,
+      data: {
+        importId,
+        registrationsUpdated: registrationUpdates.length,
+        registrationsProtected,
+        filingsUpdated: filingRows.length,
+        filingsProtected,
+        unmatched,
+        skippedFilings,
+        cutoffDate: importSettings.cutoffDate,
+        cutoffAt: importSettings.cutoffAt,
+      },
+    });
+  } catch (error) {
+    console.log('Error importing GST workbook:', error);
+    return c.json({ success: false, error: 'Failed to import the GST workbook', details: String(error) }, 500);
+  }
+});
+
+/** Restore the exact database state captured immediately before one import. */
+app.post('/make-server-0abfa7cf/gst/import-workbook/:importId/rollback', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const importId = c.req.param('importId');
+    if (!/^gst-import-[0-9]+_[a-z0-9]+$/.test(importId)) {
+      return c.json({ success: false, error: 'Invalid GST import reference' }, 400);
+    }
+    const key = `gst-import-backup:${importId}`;
+    const backup = await kvStore.get(key);
+    if (!backup) return c.json({ success: false, error: 'GST import backup was not found' }, 404);
+    if (backup.rolledBackAt) {
+      return c.json({ success: false, error: `This import was already rolled back on ${backup.rolledBackAt}` }, 409);
+    }
+    const activeBackups = await kvStore.getByPrefix('gst-import-backup:');
+    const laterImport = activeBackups.find((item: any) =>
+      !item.rolledBackAt && item.importId !== importId && item.createdAt > backup.createdAt);
+    if (laterImport) {
+      return c.json({
+        success: false,
+        error: `Roll back the later GST import ${laterImport.importId} first`,
+      }, 409);
+    }
+
+    const registrationRows = (backup.registrationChanges || [])
+      .map((change: any) => change.before)
+      .filter(Boolean);
+    const clientRows = (backup.clientChanges || [])
+      .map((change: any) => change.before)
+      .filter(Boolean);
+    const filingRows = (backup.filingChanges || [])
+      .map((change: any) => change.before)
+      .filter(Boolean);
+    const insertedFilingIds = (backup.filingChanges || [])
+      .filter((change: any) => !change.before)
+      .map((change: any) => change.id);
+
+    for (let start = 0; start < registrationRows.length; start += 250) {
+      const { error } = await supabase
+        .from('client_gst_registrations')
+        .upsert(registrationRows.slice(start, start + 250), { onConflict: 'id' });
+      if (error) throw error;
+    }
+    for (let start = 0; start < filingRows.length; start += 500) {
+      const { error } = await supabase
+        .from('gst_filings')
+        .upsert(filingRows.slice(start, start + 500), { onConflict: 'id' });
+      if (error) throw error;
+    }
+    for (let start = 0; start < insertedFilingIds.length; start += 500) {
+      const { error } = await supabase
+        .from('gst_filings')
+        .delete()
+        .in('id', insertedFilingIds.slice(start, start + 500));
+      if (error) throw error;
+    }
+    // Filing upserts can fire the Discontinued lifecycle trigger. Restore the
+    // owning client afterwards so rollback wins over that side effect too.
+    for (let start = 0; start < clientRows.length; start += 250) {
+      const { error } = await supabase
+        .from('clients')
+        .upsert(clientRows.slice(start, start + 250), { onConflict: 'id' });
+      if (error) throw error;
+    }
+
+    if (backup.settingsBefore) await kvStore.set(GST_IMPORT_SETTINGS_KEY, backup.settingsBefore);
+    else await kvStore.del(GST_IMPORT_SETTINGS_KEY);
+
+    backup.rolledBackAt = new Date().toISOString();
+    backup.rolledBackById = body.updatedById || null;
+    backup.rolledBackByName = body.updatedByName || null;
+    await kvStore.set(key, backup);
+    await broadcastChange('gst');
+    await broadcastChange('clients');
+
+    return c.json({
+      success: true,
+      data: {
+        importId,
+        clientsRestored: clientRows.length,
+        registrationsRestored: registrationRows.length,
+        filingsRestored: filingRows.length,
+        filingsRemoved: insertedFilingIds.length,
+      },
+    });
+  } catch (error) {
+    console.log('Error rolling back GST workbook import:', error);
+    return c.json({ success: false, error: 'Failed to roll back the GST workbook import', details: String(error) }, 500);
+  }
+});
+
+/**
  * Set the state of one cell of the register.
  *
  * Upsert rather than update, because most cells have no row yet: the import only

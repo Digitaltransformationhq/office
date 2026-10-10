@@ -982,6 +982,30 @@ export const gstAPI = {
   },
 
   /**
+   * Bulk refresh from the office GST workbook. The workbook is parsed in the
+   * browser; the server performs the authoritative GSTIN match and upsert.
+   */
+  importWorkbook: async (payload: {
+    financialYear: string;
+    registrations: Array<Record<string, unknown>>;
+    filings: Array<Record<string, unknown>>;
+    preserveThrough: string;
+    updatedById?: string;
+    updatedByName?: string;
+  }) => fetchAPI('/gst/import-workbook', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }),
+
+  getImportSettings: async () => fetchAPI('/gst/import-workbook/settings'),
+
+  rollbackWorkbookImport: async (importId: string, actor?: { id: string; name: string } | null) =>
+    fetchAPI(`/gst/import-workbook/${encodeURIComponent(importId)}/rollback`, {
+      method: 'POST',
+      body: JSON.stringify({ updatedById: actor?.id, updatedByName: actor?.name }),
+    }),
+
+  /**
    * Set the state of one cell. Upsert: most periods have no row until someone
    * first touches them, so this creates as often as it updates.
    */

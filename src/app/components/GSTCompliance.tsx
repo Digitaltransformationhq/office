@@ -4,9 +4,10 @@ import { gstAPI, type GstFiling, type GstRegistration } from '../services/api';
 import { useToast } from './Toast';
 import { useLiveData } from '../hooks/useLiveData';
 import { GSTFilingModal } from './GSTFilingModal';
+import { GSTExcelImportModal } from './GSTExcelImportModal';
 import { GSTAnnualView } from './GSTAnnualView';
 import { GSTMonthlyMobile } from './GSTMonthlyMobile';
-import { Search, AlertTriangle, CheckCircle2, Clock, ChevronDown } from 'lucide-react';
+import { Search, AlertTriangle, CheckCircle2, Clock, ChevronDown, Upload } from 'lucide-react';
 import { sortByText, sortText } from '../utils/sorting';
 import {
   STATUS_META, EMPTY_STATUS, financialYearOf, fyMonths, dueDateFor, isOverdue,
@@ -55,6 +56,7 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
   const [person, setPerson] = useState('all');
   const [frequency, setFrequency] = useState('all');
   const [onlyOpen, setOnlyOpen] = useState(false);
+  const [importingExcel, setImportingExcel] = useState(false);
 
   const [editing, setEditing] = useState<{
     registration: GstRegistration; period: GstPeriod;
@@ -257,17 +259,29 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
               : 'GSTR-9, GSTR-9C and GSTR-4 — the returns for a whole year'}
           </p>
         </div>
-        <SelectShell className="self-start font-medium">
-          <select
-            value={tab === 'monthly' ? financialYear : annualYear}
-            onChange={e => (tab === 'monthly' ? setFinancialYear : setAnnualYear)(e.target.value)}
-            className={selectCls}
-            style={{ color: NAVY }}
-            aria-label={tab === 'monthly' ? 'Financial year' : 'Financial year the annual return reports on'}
-          >
-            {availableYears.map(y => <option key={y} value={y}>F.Y. {y}</option>)}
-          </select>
-        </SelectShell>
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          {tab === 'monthly' && (
+            <button
+              type="button"
+              onClick={() => setImportingExcel(true)}
+              className="flex items-center gap-2 rounded-full border border-[#CBD8E6] bg-white px-4 py-2 text-sm font-medium transition hover:bg-[#F4F7FB]"
+              style={{ color: NAVY }}
+            >
+              <Upload size={15} /> Update from Excel
+            </button>
+          )}
+          <SelectShell className="font-medium">
+            <select
+              value={tab === 'monthly' ? financialYear : annualYear}
+              onChange={e => (tab === 'monthly' ? setFinancialYear : setAnnualYear)(e.target.value)}
+              className={selectCls}
+              style={{ color: NAVY }}
+              aria-label={tab === 'monthly' ? 'Financial year' : 'Financial year the annual return reports on'}
+            >
+              {availableYears.map(y => <option key={y} value={y}>F.Y. {y}</option>)}
+            </select>
+          </SelectShell>
+        </div>
       </div>
 
       {/* Monthly / annual */}
@@ -534,6 +548,15 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
           currentUser={currentUser}
           onClose={() => setEditing(null)}
           onSaved={applySaved}
+        />
+      )}
+      {importingExcel && (
+        <GSTExcelImportModal
+          financialYear={financialYear}
+          registrations={registrations}
+          currentUser={currentUser}
+          onClose={() => setImportingExcel(false)}
+          onImported={() => load({ silent: true })}
         />
       )}
     </div>
