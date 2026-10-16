@@ -33,6 +33,7 @@ import { viewForType, typeFromUrl, NOTIF_PARAM } from './utils/notifications';
 import { canAccessClients, canAccessGstCompliance, canAccessIncomeTax } from './utils/roles';
 import { isApproverRole } from './utils/roles';
 import { RevenueShare } from './components/RevenueShare';
+import { ClientApprovalQueue } from './components/ClientApprovalQueue';
 
 interface User {
   id: string;
@@ -255,30 +256,19 @@ export default function App() {
         if (canAccessIncomeTax(user)) return <ITRRegister currentUser={user} onOpenClient={openClientMaster} />;
         if (user) setActiveView(user.role);
         return null;
+      case 'approvals':
+        if (user && isApproverRole(user.role)) return <ClientApprovalQueue />;
+        if (user) setActiveView(user.role);
+        return null;
       case 'salary':
       case 'leave':
-      case 'approvals':
-        /**
-         * Parked. Both screens are built and working — see LeaveManagement and
-         * ApprovalQueue — but are switched off for now. The sidebar shows them
-         * dimmed and marked "soon"; this turns away anyone arriving by a stale
-         * link or a typed view.
-         *
-         * To re-enable: remove the id from COMING_SOON in Sidebar.tsx and
-         * restore the two cases below.
-         */
+        /** Parked sections remain dimmed in the sidebar and reject stale links. */
         if (user) setActiveView(user.role);
         return null;
       // case 'leave':
       //   return user
       //     ? <LeaveManagement userId={user.id} userName={user.name} userRole={user.role} />
       //     : null;
-      // case 'approvals':
-      //   if (user && ['team-leader', 'admin', 'partner'].includes(user.role)) {
-      //     return <ApprovalQueue userId={user.id} userName={user.name} userRole={user.role} />;
-      //   }
-      //   if (user) setActiveView(user.role);
-      //   return null;
       case 'login-history':
         // Admin only. The per-user panel this replaces lived in Settings and
         // only ever showed you your own sign-ins, which audits nothing.

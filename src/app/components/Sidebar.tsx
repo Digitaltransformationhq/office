@@ -67,7 +67,7 @@ type MenuItem = { label: string; id: string };
  *
  * To bring one back: delete it from this set. Nothing else needs changing.
  */
-const COMING_SOON = new Set(['leave', 'approvals', 'salary']);
+const COMING_SOON = new Set(['leave', 'salary']);
 
 export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen, onMobileClose }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -111,6 +111,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Team', id: 'team' },
       ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
+      { label: 'Approvals', id: 'approvals' },
       { label: 'Billing', id: 'billing' },
       { label: 'Salary', id: 'salary' },
       { label: 'Announcements', id: 'announcements' },
@@ -124,6 +125,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Team', id: 'team' },
       ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
+      { label: 'Approvals', id: 'approvals' },
       { label: 'Billing', id: 'billing' },
       { label: 'Salary', id: 'salary' },
       { label: 'Calendar', id: 'calendar' },
@@ -144,7 +146,6 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Accounts', id: 'billing' },
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Announcements', id: 'announcements' },
-      { label: 'Approvals', id: 'approvals' },
       { label: 'Leave', id: 'leave' },
     ],
     'team-member': [

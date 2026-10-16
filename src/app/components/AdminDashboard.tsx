@@ -486,6 +486,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
       {showEditClient && selectedClient && (
         <EditClientModal
           client={selectedClient}
+          adminDirectSave={true}
           onClose={() => {
             setShowEditClient(false);
             setSelectedClient(null);

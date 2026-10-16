@@ -4,13 +4,14 @@ import { AddClientModal } from './AddClientModal';
 import { EditClientModal } from './EditClientModal';
 import { ViewClientModal } from './ViewClientModal';
 import { useToast } from './Toast';
-import { Building2, Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil, Download, Filter, Users, Trash2 } from 'lucide-react';
+import { Building2, Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil, Download, Filter, Users, Trash2, CircleSlash2 } from 'lucide-react';
 import { sortByText } from '../utils/sorting';
 import { useLiveData } from '../hooks/useLiveData';
 import { isApproverRole, normalizeRole } from '../utils/roles';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { exportClientsToExcel } from '../utils/exportClients';
 import { FEE_FIELDS } from './clientModalUI';
+import { DiscontinueClientServicesModal } from './DiscontinueClientServicesModal';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from './ui/dropdown-menu';
@@ -54,8 +55,11 @@ function Dash() {
 }
 
 function servicesFor(client: any): string[] {
-  if (Array.isArray(client.selectedServices)) return client.selectedServices;
-  return FEE_FIELDS.filter(field => Number(client[field.key]) > 0).map(field => field.key);
+  const services = Array.isArray(client.selectedServices)
+    ? client.selectedServices
+    : FEE_FIELDS.filter(field => Number(client[field.key]) > 0).map(field => field.key);
+  const stopped = new Set(client.discontinuedServices || []);
+  return services.filter((service: string) => !stopped.has(service));
 }
 
 export function ClientManagement({ user, clientToOpen, onClientOpened }: {
@@ -86,6 +90,7 @@ export function ClientManagement({ user, clientToOpen, onClientOpened }: {
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showView, setShowView] = useState(false);
+  const [discontinueTarget, setDiscontinueTarget] = useState<any>(null);
   const [selected, setSelected] = useState<any>(null);
   const { showError, showSuccess } = useToast();
 
@@ -409,6 +414,7 @@ export function ClientManagement({ user, clientToOpen, onClientOpened }: {
                         <CardRow label="Contact">{client.contact || client.mobileNumber || <Dash />}</CardRow>
                         <div className="flex items-center justify-end gap-2 py-2.5">
                           {canDelete && <button onClick={() => openDelete(client)} className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">Delete</button>}
+                          <button onClick={() => setDiscontinueTarget(client)} className="rounded-full border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50">Discontinue service</button>
                           <button onClick={() => openEdit(client)} className="rounded-full border border-[#E7EDF4] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#F4F6F9]" style={{ color: NAVY }}>Edit</button>
                           <button onClick={() => openView(client)} className="rounded-full bg-[#1b365d] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#142a4a]">View</button>
                         </div>
@@ -486,6 +492,7 @@ export function ClientManagement({ user, clientToOpen, onClientOpened }: {
                               touch, where there is no hover to reveal them. */}
                           <div className="flex items-center justify-end gap-1 opacity-60 transition-opacity group-hover:opacity-100">
                             <IconBtn label="Edit client" onClick={() => openEdit(client)}><Pencil size={14} /></IconBtn>
+                            <IconBtn label="Discontinue client service" onClick={() => setDiscontinueTarget(client)}><CircleSlash2 size={14} className="text-amber-700" /></IconBtn>
                             <IconBtn label="View client" onClick={() => openView(client)}><Eye size={14} /></IconBtn>
                             {canDelete && <IconBtn label="Delete client" onClick={() => openDelete(client)}><Trash2 size={14} className="text-red-600" /></IconBtn>}
                           </div>
@@ -518,6 +525,13 @@ export function ClientManagement({ user, clientToOpen, onClientOpened }: {
       </section>
 
       {showAdd && <AddClientModal onClose={() => setShowAdd(false)} onSuccess={() => { load(); setShowAdd(false); }} onOpenExisting={openExisting} />}
+      {discontinueTarget && (
+        <DiscontinueClientServicesModal
+          client={discontinueTarget}
+          onClose={() => setDiscontinueTarget(null)}
+          onSuccess={() => load()}
+        />
+      )}
       <Dialog open={canDelete && !!deleteTarget} onOpenChange={open => {
         if (!open && !deleting) { setDeleteTarget(null); setDeletePassword(''); }
       }}>
@@ -551,6 +565,7 @@ export function ClientManagement({ user, clientToOpen, onClientOpened }: {
       {showEdit && selected && (
         <EditClientModal
           client={selected}
+          adminDirectSave={normalizeRole(user?.role) === 'admin'}
           onClose={() => { setShowEdit(false); setSelected(null); }}
           onSuccess={() => { load(); setShowEdit(false); setSelected(null); }}
           onOpenExisting={openExisting}

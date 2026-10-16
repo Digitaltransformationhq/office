@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChangePassword } from './ChangePassword';
+import { ApprovalRoutingSettings } from './ApprovalRoutingSettings';
 
 interface SettingsProps {
   user: {
@@ -58,6 +59,7 @@ export function Settings({ user }: SettingsProps) {
 
         {/* Change password */}
         <ChangePassword userEmail={user.email} />
+        {user.role === 'admin' && <ApprovalRoutingSettings />}
       </div>
     </div>
   );

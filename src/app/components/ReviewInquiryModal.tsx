@@ -68,10 +68,14 @@ export function ReviewInquiryModal({ inquiry, reviewerId, reviewerName, onClose,
         status: 'Active',
         itrFees: 0, gstFees: 0, gstAnnualReturnFees: 0, accountingFees: 0, auditFees: 0,
         companyActFees: 0, tdsFees: 0, pfEsicPtLabourFees: 0, consultancyFees: 0, totalFees: 0,
+        approvalContext: { inquiryId: inquiry.id },
       };
 
       const clientResponse = await clientsAPI.create(clientData);
-      if (clientResponse.success) {
+      if (clientResponse.success && clientResponse.pendingApproval) {
+        showSuccess(`Inquiry approved. Client addition sent to ${clientResponse.data?.approver_name || 'the assigned approver'}.`);
+        onSuccess();
+      } else if (clientResponse.success) {
         showSuccess(`Inquiry approved! ${editedInquiry.clientName} added to client master.`);
         setShowTaskCreation(true);
       } else {

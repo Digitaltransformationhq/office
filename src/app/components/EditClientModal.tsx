@@ -12,11 +12,13 @@ interface EditClientModalProps {
   client: any;
   onClose: () => void;
   onSuccess: () => void;
+  /** Active admins save edits directly; every other role submits for approval. */
+  adminDirectSave?: boolean;
   /** Open a client that already exists, when this edit turns out to describe them. */
   onOpenExisting?: (clientId: string) => void;
 }
 
-export function EditClientModal({ client, onClose, onSuccess, onOpenExisting }: EditClientModalProps) {
+export function EditClientModal({ client, onClose, onSuccess, onOpenExisting, adminDirectSave = false }: EditClientModalProps) {
   const [loading, setLoading] = useState(false);
   const { showSuccess, showError } = useToast();
   const [activeTab, setActiveTab] = useState<'basic' | 'billing'>('basic');
@@ -55,7 +57,12 @@ export function EditClientModal({ client, onClose, onSuccess, onOpenExisting }: 
     try {
       const { noPan, ...fields } = formData;
       const response = await clientsAPI.update(client.id, { ...fields, ...panPayload(formData), totalFees: total, confirmNotDuplicate });
-      if (response.success) { showSuccess('Client updated successfully!'); onSuccess(); onClose(); return; }
+      if (response.success) {
+        showSuccess(response.pendingApproval
+          ? `Sent to ${response.data?.approver_name || 'the assigned approver'} for approval.`
+          : 'Client updated successfully!');
+        onSuccess(); onClose(); return;
+      }
       if (response.code === 'POSSIBLE_DUPLICATE') { setDuplicates(response.duplicates || []); setActiveTab('basic'); return; }
       // A PAN that already belongs to someone else usually means this record is
       // that client's duplicate — worth saying so, not just refusing.
@@ -141,7 +148,9 @@ export function EditClientModal({ client, onClose, onSuccess, onOpenExisting }: 
 
           <div className="flex gap-3 border-t border-[#E7EDF4] px-6 py-4">
             <Button type="button" variant="secondary" onClick={onClose} className="flex-1" disabled={loading}>Cancel</Button>
-            <Button type="submit" className="flex-1" disabled={loading || !!duplicates}>{loading ? 'Updating…' : 'Update Client'}</Button>
+            <Button type="submit" className="flex-1" disabled={loading || !!duplicates}>
+              {loading ? (adminDirectSave ? 'Updating…' : 'Submitting…') : (adminDirectSave ? 'Update Client' : 'Submit Update for Approval')}
+            </Button>
           </div>
         </form>
       </div>

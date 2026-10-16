@@ -3,7 +3,7 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as kvStore from "./kv_store.tsx";
-import { gstClientVisibleInYear } from './gstLifecycle.ts';
+import { carryForwardDiscontinuedFilings, gstClientVisibleInYear, gstFinancialYearMonths } from './gstLifecycle.ts';
 
 const app = new Hono();
 
@@ -1656,6 +1656,8 @@ app.get('/make-server-0abfa7cf/clients', async (c) => {
  */
 const CLIENT_COLUMNS: Record<string, string> = {
   selectedServices: 'selected_services',
+  discontinuedServices: 'discontinued_services',
+  serviceDiscontinuedAt: 'service_discontinued_at',
   name: 'name',
   firmName: 'firm_name',
   fileNumber: 'file_number',
@@ -1723,11 +1725,11 @@ type IdentityError = { status: 400 | 409; body: Record<string, unknown> };
 
 /** Settles PAN, reason and GSTIN on `row`, or says why the write cannot happen. */
 async function checkClientIdentity(row: Record<string, any>, clientId?: string): Promise<IdentityError | null> {
+  const allowedServices = ['itrFees', 'gstFees', 'gstAnnualReturnFees', 'accountingFees', 'auditFees',
+    'companyActFees', 'tdsFees', 'pfEsicPtLabourFees', 'consultancyFees'];
   if ('selected_services' in row) {
     const services = row.selected_services;
-    const allowed = ['itrFees', 'gstFees', 'gstAnnualReturnFees', 'accountingFees', 'auditFees',
-      'companyActFees', 'tdsFees', 'pfEsicPtLabourFees', 'consultancyFees'];
-    if (!Array.isArray(services) || services.some(s => !allowed.includes(s))) {
+    if (!Array.isArray(services) || services.some(s => !allowedServices.includes(s))) {
       return { status: 400, body: { success: false, error: 'Invalid service selection' } };
     }
     if (services.some(s => s === 'gstFees' || s === 'gstAnnualReturnFees')) {
@@ -1741,6 +1743,10 @@ async function checkClientIdentity(row: Record<string, any>, clientId?: string):
         return { status: 400, body: { success: false, error: 'Enter a valid GSTIN for the selected GST service' } };
       }
     }
+  }
+  if ('discontinued_services' in row &&
+      (!Array.isArray(row.discontinued_services) || row.discontinued_services.some((s: any) => !allowedServices.includes(s)))) {
+    return { status: 400, body: { success: false, error: 'Invalid discontinued service selection' } };
   }
   if (row.pan) {
     if (!PAN_FORMAT.test(row.pan)) {
@@ -1890,9 +1896,188 @@ const duplicateWarning = (duplicates: unknown[]) => ({
   duplicates,
 });
 
+const CLIENT_APPROVAL_ACTIONS = ['client.create', 'client.update'];
+
+/** Read an active user from the database; browser-supplied names and roles are never trusted. */
+async function activeActor(actorId: unknown) {
+  if (!actorId || typeof actorId !== 'string') return null;
+  const { data } = await supabase.from('users').select('id, name, role, status')
+    .eq('id', actorId).eq('status', 'Active').maybeSingle();
+  return data || null;
+}
+
+async function clientApprovalRule(actionKey: string) {
+  const { data, error } = await supabase.from('approval_routing_rules').select('*')
+    .eq('action_key', actionKey).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function queueClientApproval(actionKey: string, row: Record<string, any>, actor: any, options: {
+  entityId?: string | null;
+  baseUpdatedAt?: string | null;
+  previousPayload?: Record<string, any> | null;
+  context?: Record<string, any> | null;
+}) {
+  // Admins maintain the client master and may correct existing records
+  // immediately. New clients still follow the configured approval route.
+  if (actionKey === 'client.update' && isAdminRole(actor?.role)) return { bypass: true };
+
+  const rule = await clientApprovalRule(actionKey);
+  if (!rule) {
+    return { error: { status: 503, body: { success: false, code: 'APPROVALS_NOT_CONFIGURED', error: 'Client approvals are not configured. Ask an admin to run the approval migration.' } } };
+  }
+  if (!rule.enabled) return { bypass: true };
+  if (!rule.approver_id) {
+    return { error: { status: 409, body: { success: false, code: 'APPROVER_REQUIRED', error: 'No approver is assigned for this client action. Ask an admin to choose one in Settings.' } } };
+  }
+  const approver = await activeActor(rule.approver_id);
+  if (!approver || !isPrivileged(approver.role)) {
+    return { error: { status: 409, body: { success: false, code: 'APPROVER_UNAVAILABLE', error: 'The assigned approver is inactive or no longer has approval access. Ask an admin to update the route.' } } };
+  }
+
+  const request = {
+    id: `approval:${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+    action_key: actionKey,
+    entity_type: 'client',
+    entity_id: options.entityId || null,
+    entity_name: row.name || 'Client',
+    payload: row,
+    previous_payload: options.previousPayload || null,
+    approval_context: options.context || null,
+    base_updated_at: options.baseUpdatedAt || null,
+    requested_by_id: actor.id,
+    requested_by_name: actor.name,
+    approver_id: approver.id,
+    approver_name: approver.name,
+    status: 'Pending',
+  };
+  const { data, error } = await supabase.from('approval_requests').insert([request]).select().single();
+  if (error) throw error;
+  await notifyUser(approver.id, 'client-approval', 'Client change awaiting your approval',
+    `${actor.name} requested: ${actionKey === 'client.create' ? 'add' : 'update'} ${request.entity_name}`);
+  await broadcastChange('client-approvals');
+  return { data };
+}
+
+// Admin-owned routing. Each action is independent, so changing the approver for
+// client edits does not unexpectedly move new-client approvals as well.
+app.get('/make-server-0abfa7cf/approval-settings', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor || !isAdminRole(actor.role)) return c.json({ success: false, error: 'Only an active admin can manage approval routing' }, 403);
+    const { data, error } = await supabase.from('approval_routing_rules').select('*').order('label');
+    if (error) throw error;
+    return c.json({ success: true, data: data || [] });
+  } catch (error) {
+    return c.json({ success: false, error: 'Failed to load approval settings', details: String(error) }, 500);
+  }
+});
+
+app.put('/make-server-0abfa7cf/approval-settings/:actionKey', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor || !isAdminRole(actor.role)) return c.json({ success: false, error: 'Only an active admin can manage approval routing' }, 403);
+    const actionKey = decodeURIComponent(c.req.param('actionKey'));
+    if (!CLIENT_APPROVAL_ACTIONS.includes(actionKey)) return c.json({ success: false, error: 'Unknown approval action' }, 400);
+    const body = await c.req.json();
+    let approver: any = null;
+    if (body.enabled !== false) {
+      approver = await activeActor(body.approverId);
+      if (!approver || !isPrivileged(approver.role)) {
+        return c.json({ success: false, error: 'Choose an active admin, partner or director as approver' }, 400);
+      }
+    } else if (body.approverId) {
+      approver = await activeActor(body.approverId);
+    }
+    const label = actionKey === 'client.create' ? 'Add a client' : 'Update client details';
+    const row = {
+      action_key: actionKey, label, enabled: body.enabled !== false,
+      approver_id: approver?.id || body.approverId || null,
+      approver_name: approver?.name || null,
+      updated_by_id: actor.id, updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase.from('approval_routing_rules').upsert(row).select().single();
+    if (error) throw error;
+    await broadcastChange('approval-settings');
+    return c.json({ success: true, data });
+  } catch (error) {
+    return c.json({ success: false, error: 'Failed to save approval settings', details: String(error) }, 500);
+  }
+});
+
+app.get('/make-server-0abfa7cf/client-approvals', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor || !isPrivileged(actor.role)) return c.json({ success: false, error: 'Approval access is required' }, 403);
+    let query = supabase.from('approval_requests').select('*').eq('entity_type', 'client')
+      .eq('status', c.req.query('status') || 'Pending').order('requested_at', { ascending: true });
+    if (!isAdminRole(actor.role)) query = query.eq('approver_id', actor.id);
+    const { data, error } = await query;
+    if (error) throw error;
+    return c.json({ success: true, data: data || [] });
+  } catch (error) {
+    return c.json({ success: false, error: 'Failed to load client approvals', details: String(error) }, 500);
+  }
+});
+
+app.post('/make-server-0abfa7cf/client-approvals/:requestId/decision', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor || !isPrivileged(actor.role)) return c.json({ success: false, error: 'Approval access is required' }, 403);
+    const body = await c.req.json();
+    if (!['Approved', 'Rejected'].includes(body.decision)) return c.json({ success: false, error: 'Decision must be Approved or Rejected' }, 400);
+    const { data: request, error: requestError } = await supabase.from('approval_requests').select('*')
+      .eq('id', c.req.param('requestId')).maybeSingle();
+    if (requestError) throw requestError;
+    if (!request) return c.json({ success: false, error: 'Approval request not found' }, 404);
+    if (request.status !== 'Pending') return c.json({ success: false, error: `This request is already ${request.status.toLowerCase()}` }, 409);
+    if (!isAdminRole(actor.role) && request.approver_id !== actor.id) return c.json({ success: false, error: 'This request is assigned to another approver' }, 403);
+
+    if (body.decision === 'Approved') {
+      const row = { ...(request.payload || {}) };
+      const invalid = await checkClientIdentity(row, request.action_key === 'client.update' ? request.entity_id : undefined);
+      if (invalid) return c.json(invalid.body, invalid.status);
+      if (request.action_key === 'client.create') {
+        const { error } = await supabase.from('clients').insert([row]);
+        if (error) throw error;
+        if (request.approval_context?.inquiryId) {
+          await supabase.from('client_inquiries').update({
+            status: 'Converted to Client', reviewed_by: actor.name, reviewed_by_id: actor.id,
+          }).eq('id', request.approval_context.inquiryId);
+        }
+      } else {
+        const { data: current, error: currentError } = await supabase.from('clients').select('updated_at')
+          .eq('id', request.entity_id).maybeSingle();
+        if (currentError) throw currentError;
+        if (!current) return c.json({ success: false, error: 'The client no longer exists' }, 409);
+        if (request.base_updated_at && current.updated_at !== request.base_updated_at) {
+          return c.json({ success: false, code: 'STALE_APPROVAL', error: 'The client changed after this request was submitted. Reject it and ask for a fresh update.' }, 409);
+        }
+        const { error } = await supabase.from('clients').update(row).eq('id', request.entity_id);
+        if (error) throw error;
+      }
+    }
+
+    const { data, error } = await supabase.from('approval_requests').update({
+      status: body.decision, reviewed_by_id: actor.id, reviewed_by_name: actor.name,
+      review_note: String(body.note || '').trim() || null, reviewed_at: new Date().toISOString(),
+    }).eq('id', request.id).eq('status', 'Pending').select().single();
+    if (error) throw error;
+    await notifyUser(request.requested_by_id, 'client-approval', `Client change ${body.decision.toLowerCase()}`,
+      `${request.entity_name}${body.note ? ` — ${String(body.note).trim()}` : ''}`);
+    await Promise.all([broadcastChange('client-approvals'), broadcastChange('clients')]);
+    return c.json({ success: true, data });
+  } catch (error) {
+    return c.json({ success: false, error: 'Failed to review client change', details: String(error) }, 500);
+  }
+});
+
 app.post('/make-server-0abfa7cf/clients', async (c) => {
   try {
     const body = await c.req.json();
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor) return c.json({ success: false, error: 'Sign in again before adding a client' }, 401);
     if (!body.name) {
       return c.json({ success: false, error: 'Client name is required' }, 400);
     }
@@ -1910,8 +2095,17 @@ app.post('/make-server-0abfa7cf/clients', async (c) => {
     row.id = `client:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     row.status = row.status || 'Active';
 
+    const queued = await queueClientApproval('client.create', row, actor, { context: body.approvalContext });
+    if (queued.error) return c.json(queued.error.body, queued.error.status);
+    if (!queued.bypass) return c.json({ success: true, pendingApproval: true, data: queued.data });
+
     const { data, error } = await supabase.from('clients').insert([row]).select().single();
     if (error) throw error;
+
+    if (body.approvalContext?.inquiryId) {
+      await supabase.from('client_inquiries').update({ status: 'Converted to Client' })
+        .eq('id', body.approvalContext.inquiryId);
+    }
 
     await broadcastChange('clients');
 
@@ -1960,10 +2154,12 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
   try {
     const clientId = c.req.param('clientId');
     const body = await c.req.json();
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor) return c.json({ success: false, error: 'Sign in again before updating a client' }, 401);
     const row = toClientRow(body);
 
     const { data: current, error: currentError } = await supabase
-      .from('clients').select('name, pan, gst, contact, mobile_number, email, email_id').eq('id', clientId).maybeSingle();
+      .from('clients').select('*').eq('id', clientId).maybeSingle();
     if (currentError) throw currentError;
     if (!current) return c.json({ success: false, error: 'Client not found' }, 404);
 
@@ -1984,6 +2180,12 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
       const duplicates = await findPossibleDuplicates(merged, clientId);
       if (duplicates.length) return c.json(duplicateWarning(duplicates), 409);
     }
+
+    const queued = await queueClientApproval('client.update', row, actor, {
+      entityId: clientId, baseUpdatedAt: current.updated_at, previousPayload: current,
+    });
+    if (queued.error) return c.json(queued.error.body, queued.error.status);
+    if (!queued.bypass) return c.json({ success: true, pendingApproval: true, data: queued.data });
 
     const { data, error } = await supabase
       .from('clients')
@@ -2755,10 +2957,11 @@ app.get('/make-server-0abfa7cf/gst/register', async (c) => {
 
     // A year of filings is roughly 2 returns x 12 months x every registration —
     // several thousand rows — so both lists are paged past the 1000-row cap.
-    const [registrations, filings] = await Promise.all([
+    const lastMonth = gstFinancialYearMonths(financialYear).at(-1)?.key || financialYear;
+    const [registrations, filings, monthlyHistory] = await Promise.all([
       selectAll(() => supabase
         .from('client_gst_registrations')
-        .select(`${GST_REGISTRATION_FIELDS}, clients ( id, name, pan, file_number, gst_discontinued_fy )`)
+        .select(`${GST_REGISTRATION_FIELDS}, clients ( id, name, pan, file_number, gst_discontinued_fy, selected_services, discontinued_services, service_discontinued_at )`)
         .order('code_no', { ascending: true })
         .order('id', { ascending: true })),
       selectAll(() => supabase
@@ -2767,15 +2970,31 @@ app.get('/make-server-0abfa7cf/gst/register', async (c) => {
         .eq('financial_year', financialYear)
         .order('period_key', { ascending: true })
         .order('id', { ascending: true })),
+      // A Discontinued status can begin in an earlier year. Read only the two
+      // monthly return streams up to this register's last month so the latest
+      // explicit status can be carried forward (or stopped) correctly.
+      selectAll(() => supabase
+        .from('gst_filings')
+        .select('*')
+        .in('return_type', ['GSTR-1', 'GSTR-3B'])
+        .lte('period_key', lastMonth)
+        .order('period_key', { ascending: true })
+        .order('id', { ascending: true })),
     ]);
 
     const visibleRegistrations = registrations.filter(r =>
       gstClientVisibleInYear(r.clients?.gst_discontinued_fy, financialYear));
     const visibleIds = new Set(visibleRegistrations.map(r => r.id));
+    const visibleFilings = filings.filter(f => visibleIds.has(f.registration_id));
+    const history = monthlyHistory.filter(f => visibleIds.has(f.registration_id));
     return c.json({
       success: true,
       data: { financialYear, registrations: visibleRegistrations,
-        filings: filings.filter(f => visibleIds.has(f.registration_id)) },
+        filings: carryForwardDiscontinuedFilings(
+          financialYear,
+          visibleRegistrations.map(r => r.id),
+          [...visibleFilings.filter(f => f.return_type !== 'GSTR-1' && f.return_type !== 'GSTR-3B'), ...history],
+        ) },
     });
   } catch (error) {
     console.log('Error fetching GST register:', error);

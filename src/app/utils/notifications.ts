@@ -17,6 +17,7 @@ const VIEW_BY_TYPE: Record<string, string> = {
   task_acceptance: 'task-mis',
   task_rejection: 'task-mis',
   announcement: 'announcements',
+  'client-approval': 'approvals',
 };
 
 /** The view a notification opens, or null for an unrecognized type. */

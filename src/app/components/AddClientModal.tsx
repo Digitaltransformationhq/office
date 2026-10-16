@@ -38,7 +38,12 @@ export function AddClientModal({ onClose, onSuccess, onOpenExisting }: AddClient
     try {
       const { noPan, ...fields } = formData;
       const response = await clientsAPI.create({ ...fields, ...panPayload(formData), totalFees: total, confirmNotDuplicate });
-      if (response.success) { showSuccess('Client created successfully!'); onSuccess(); onClose(); return; }
+      if (response.success) {
+        showSuccess(response.pendingApproval
+          ? `Sent to ${response.data?.approver_name || 'the assigned approver'} for approval.`
+          : 'Client created successfully!');
+        onSuccess(); onClose(); return;
+      }
       if (response.code === 'POSSIBLE_DUPLICATE') { setDuplicates(response.duplicates || []); setActiveTab('basic'); return; }
       if ((response.code === 'PAN_EXISTS' || response.code === 'GSTIN_EXISTS') && onOpenExisting && response.existingClientId) {
         showError(`${response.error}. Opening that client instead.`);
@@ -123,7 +128,7 @@ export function AddClientModal({ onClose, onSuccess, onOpenExisting }: AddClient
 
           <div className="flex gap-3 border-t border-[#E7EDF4] px-6 py-4">
             <Button type="button" variant="secondary" onClick={onClose} className="flex-1" disabled={loading}>Cancel</Button>
-            <Button type="submit" className="flex-1" disabled={loading || !!duplicates}>{loading ? 'Creating…' : 'Create Client'}</Button>
+            <Button type="submit" className="flex-1" disabled={loading || !!duplicates}>{loading ? 'Submitting…' : 'Submit for Approval'}</Button>
           </div>
         </form>
       </div>

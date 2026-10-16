@@ -62,6 +62,11 @@ Repeated saves cannot extend the cutoff. Changing an individual filing status
 does not automatically reactivate the client. The migration also reconciles
 previously saved Discontinued filings.
 
+Within the monthly register, Discontinued carries forward into every empty later
+month for the same GST registration and return type. Saving any other status in
+a later month stops that carry-forward from that month onward, so the team does
+not need to mark every month separately.
+
 ### Client service enrollment
 
 Run `supabase/sql/add-client-service-gst-sync.sql` after the GST register schema

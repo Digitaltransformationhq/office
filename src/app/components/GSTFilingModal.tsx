@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Button } from './Button';
 import { useToast } from './Toast';
 import { X, Check, ChevronDown, AlertTriangle, CalendarCheck } from 'lucide-react';
-import { gstAPI, type GstFiling, type GstFilingStatus, type GstRegistration } from '../services/api';
-import { NAVY, inputCls, overlayCls, panelCls } from './clientModalUI';
+import { clientsAPI, gstAPI, type GstFiling, type GstFilingStatus, type GstRegistration } from '../services/api';
+import { FEE_FIELDS, NAVY, inputCls, overlayCls, panelCls } from './clientModalUI';
 import {
   STATUS_META, STATUS_GROUPS, ANNUAL_RETURNS, annualDueDate, dueDateFor, dueNote,
   formatDate, today, type AnnualReturnType, type GstPeriod,
@@ -17,7 +17,7 @@ interface GSTFilingModalProps {
   financialYear: string;
   /** The existing row, or null when nobody has touched this period yet. */
   filing: GstFiling | null;
-  currentUser: { id: string; name: string } | null;
+  currentUser: { id: string; name: string; role?: string } | null;
   onClose: () => void;
   onSaved: (filing: GstFiling) => void;
 }
@@ -42,6 +42,11 @@ export function GSTFilingModal({
   const [dataReceivedOn, setDataReceivedOn] = useState(filing?.dataReceivedOn || '');
   const [arn, setArn] = useState(filing?.arn || '');
   const [remarks, setRemarks] = useState(filing?.remarks || '');
+  const defaultDiscontinuedService = returnType === 'GSTR-9' || returnType === 'GSTR-9C'
+    ? 'gstAnnualReturnFees' : 'gstFees';
+  const [discontinuedServices, setDiscontinuedServices] = useState<string[]>(
+    filing?.status === 'Discontinued' ? [defaultDiscontinuedService] : [],
+  );
 
   // Open already if there is something in there to see — folding away a filled
   // field hides information rather than saving space.
@@ -72,6 +77,9 @@ export function GSTFilingModal({
 
   const handleStatus = (next: GstFilingStatus) => {
     setStatus(next);
+    if (next === 'Discontinued' && discontinuedServices.length === 0) {
+      setDiscontinuedServices([defaultDiscontinuedService]);
+    }
     // Filing is nearly always recorded on the day it happened, so the date fills
     // itself in and stays editable for the times it was not.
     if (next === 'Filed' && !filedOn) setFiledOn(todayIso);
@@ -85,6 +93,10 @@ export function GSTFilingModal({
     // clear message instead of a constraint violation surfacing as a 500.
     if (status === 'Filed' && !filedOn) {
       showError('A filing date is required to mark this as filed');
+      return;
+    }
+    if (status === 'Discontinued' && discontinuedServices.length === 0) {
+      showError('Choose at least one service to discontinue');
       return;
     }
 
@@ -109,7 +121,34 @@ export function GSTFilingModal({
       });
 
       if (response.success && response.data) {
-        showSuccess(`${returnType} · ${period.label} — ${STATUS_META[status].label.toLowerCase()}`);
+        let serviceResult: any = null;
+        if (status === 'Discontinued') {
+          const merged = [...new Set([...(registration.discontinuedServices || []), ...discontinuedServices])];
+          const now = new Date().toISOString();
+          const dates = { ...(registration.serviceDiscontinuedAt || {}) };
+          discontinuedServices.forEach(key => { if (!dates[key]) dates[key] = now; });
+          serviceResult = await clientsAPI.update(registration.clientId, {
+            discontinuedServices: merged,
+            serviceDiscontinuedAt: dates,
+          });
+        } else if (filing?.status === 'Discontinued') {
+          // Changing a carried/saved discontinued GST cell is also the explicit
+          // reactivation point for that GST service.
+          const remaining = (registration.discontinuedServices || []).filter(key => key !== defaultDiscontinuedService);
+          const dates = { ...(registration.serviceDiscontinuedAt || {}) };
+          delete dates[defaultDiscontinuedService];
+          serviceResult = await clientsAPI.update(registration.clientId, {
+            discontinuedServices: remaining,
+            serviceDiscontinuedAt: dates,
+          });
+        }
+        if (serviceResult && !serviceResult.success) {
+          showError(`GST status was saved, but the client service could not be updated: ${serviceResult.error || 'unknown error'}`);
+        } else {
+          showSuccess(serviceResult?.pendingApproval
+            ? `${returnType} marked discontinued; service change sent for approval.`
+            : `${returnType} · ${period.label} — ${STATUS_META[status].label.toLowerCase()}`);
+        }
         onSaved(response.data);
         onClose();
       } else {
@@ -215,10 +254,22 @@ export function GSTFilingModal({
             </div>
 
             {status === 'Discontinued' && (
-              <p className="mt-4 rounded-lg border border-[#E7EDF4] bg-[#F9FAFB] px-3.5 py-3 text-sm text-muted-foreground">
-                Saving moves this client to Non-filers. Their GST registrations stay visible for the
-                discontinued financial year and one additional financial year. Earlier records remain available.
-              </p>
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/50 px-3.5 py-3">
+                <p className="text-sm font-medium text-amber-900">Which service is being discontinued?</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {FEE_FIELDS.filter(service => {
+                    const configured = registration.selectedServices || [];
+                    return configured.length === 0 || configured.includes(service.key) || service.key === defaultDiscontinuedService;
+                  }).map(service => (
+                    <label key={service.key} className="flex cursor-pointer items-center gap-2 rounded-md bg-white px-2.5 py-2 text-sm">
+                      <input type="checkbox" checked={discontinuedServices.includes(service.key)} onChange={e => setDiscontinuedServices(current =>
+                        e.target.checked ? [...new Set([...current, service.key])] : current.filter(key => key !== service.key))} />
+                      {service.label}
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">The GST status carries into following months until another status is saved.</p>
+              </div>
             )}
 
             {/* Everything used a few times a year */}

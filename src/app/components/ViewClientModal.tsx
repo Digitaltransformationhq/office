@@ -104,7 +104,10 @@ export function ViewClientModal({ client, onClose, onEdit }: ViewClientModalProp
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {FEE_FIELDS.map(f => (
                   <div key={f.key} className="rounded-xl border border-[#E7EDF4] p-3.5">
-                    <p className="text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">{f.label}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">{f.label}</p>
+                      {(client.discontinuedServices || []).includes(f.key) && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[0.58rem] font-semibold text-amber-700">Discontinued</span>}
+                    </div>
                     <p className="mt-1 text-[0.95rem] font-semibold" style={{ color: NAVY }}>{rupees(client[f.key] || 0)}</p>
                   </div>
                 ))}

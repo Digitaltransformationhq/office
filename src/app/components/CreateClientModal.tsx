@@ -18,6 +18,7 @@ interface CreateClientModalProps {
 export function CreateClientModal({ onClose, onClientCreated }: CreateClientModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ message: string; existingName?: string } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<PossibleDuplicate[] | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -47,7 +48,9 @@ export function CreateClientModal({ onClose, onClientCreated }: CreateClientModa
         status: 'Active',
         confirmNotDuplicate,
       });
-      if (response.success) {
+      if (response.success && response.pendingApproval) {
+        setNotice(`Client addition sent to ${response.data?.approver_name || 'the assigned approver'}. You can use the client in a task after approval.`);
+      } else if (response.success) {
         onClientCreated(formData.name);
         onClose();
       } else if (response.code === 'POSSIBLE_DUPLICATE') {
@@ -102,6 +105,9 @@ export function CreateClientModal({ onClose, onClientCreated }: CreateClientModa
                 </button>
               )}
             </div>
+          )}
+          {notice && (
+            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">{notice}</div>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
@@ -158,8 +164,8 @@ export function CreateClientModal({ onClose, onClientCreated }: CreateClientModa
             />
 
             <div className="flex gap-3 pt-4">
-              <Button type="submit" disabled={loading || !!duplicates} className="flex-1">
-                {loading ? 'Creating...' : 'Create Client'}
+              <Button type="submit" disabled={loading || !!duplicates || !!notice} className="flex-1">
+                {notice ? 'Submitted' : loading ? 'Submitting...' : 'Submit for Approval'}
               </Button>
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
                 Cancel

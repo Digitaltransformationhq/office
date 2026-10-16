@@ -83,7 +83,7 @@ export function ReviewInquiryModalEnhanced({ inquiry, reviewerId, reviewerName, 
     setLoading(true);
     try {
       const updateResponse = await inquiriesAPI.updateStatus(inquiry.id, {
-        status: 'Converted to Client', reviewedBy: reviewerName, reviewedById: reviewerId,
+        status: 'Approved', reviewedBy: reviewerName, reviewedById: reviewerId,
       });
       if (!updateResponse.success) throw new Error(updateResponse.error || 'Failed to update inquiry status');
 
@@ -92,9 +92,13 @@ export function ReviewInquiryModalEnhanced({ inquiry, reviewerId, reviewerName, 
         email: editedInquiry.email, industry: editedInquiry.workType, status: 'Active',
         itrFees: 0, gstFees: 0, gstAnnualReturnFees: 0, accountingFees: 0, auditFees: 0,
         companyActFees: 0, tdsFees: 0, pfEsicPtLabourFees: 0, consultancyFees: 0, totalFees: 0,
+        approvalContext: { inquiryId: inquiry.id },
       };
       const clientResponse = await clientsAPI.create(clientData);
-      if (clientResponse.success) {
+      if (clientResponse.success && clientResponse.pendingApproval) {
+        showSuccess(`Inquiry approved. Client addition sent to ${clientResponse.data?.approver_name || 'the assigned approver'}.`);
+        onSuccess();
+      } else if (clientResponse.success) {
         showSuccess(`Inquiry approved! ${editedInquiry.clientName} added to client master.`);
         setShowTaskCreation(true);
       } else {
