@@ -663,7 +663,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
           currentUser={user}
           onClose={() => setShowCreateTask(false)}
           onTaskCreated={() => {
-            showSuccess('Task submitted for Partner approval!');
+            showSuccess('Task created and assigned!');
             setShowCreateTask(false);
             loadMyTasks({ silent: true });
           }}

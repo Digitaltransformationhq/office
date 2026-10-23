@@ -540,7 +540,9 @@ app.post('/make-server-0abfa7cf/tasks', async (c) => {
       assigned_to: body.assignedTo,
       assigned_to_id: body.assignedToId,
       priority: body.priority,
-      status: body.status || 'Pending',
+      // A new assignment can start immediately. Approval happens only after
+      // the assignee submits the finished work.
+      status: 'Pending',
       start_date: body.startDate,
       target_date: body.targetDate,
       completion_date: body.completionDate || null,
@@ -578,17 +580,7 @@ app.post('/make-server-0abfa7cf/tasks', async (c) => {
     console.log('Task created successfully:', data);
 
     const newLabel = taskLabel(body);
-    if (task.status === 'Pending Approval') {
-      // Needs sign-off before work starts. The assignee is told nothing yet —
-      // it may never be approved — but the approver has to know it is waiting,
-      // which is exactly what used to be missing: a task could sit in the queue
-      // with nobody aware of it.
-      if (task.approver_id) {
-        await notifyUser(task.approver_id, 'task', 'Task awaiting your approval', newLabel);
-      } else {
-        await notifyRoles(['partner', 'admin'], 'task', 'Task awaiting approval', newLabel);
-      }
-    } else if (body.assignedToId) {
+    if (body.assignedToId) {
       await notifyUser(body.assignedToId, 'assignment', 'New task assigned', newLabel);
     }
 
@@ -1645,6 +1637,60 @@ app.get('/make-server-0abfa7cf/clients', async (c) => {
   }
 });
 
+// ============================================
+// ACCOUNTING CONTROL
+// ============================================
+
+app.get('/make-server-0abfa7cf/accounting-control', async (c) => {
+  try {
+    const financialYear = c.req.query('financialYear') || '2026-27';
+    const { data, error } = await supabase
+      .from('accounting_control_items')
+      .select('*, clients!accounting_control_items_client_id_fkey(selected_services, discontinued_services, status)')
+      .eq('financial_year', financialYear)
+      .order('particulars', { ascending: true });
+    if (error) throw error;
+    const visible = (data || []).filter((item: any) => {
+      // Unattached rows are the legacy spreadsheet records whose client-master
+      // match is ambiguous. Keep them visible until a person links them.
+      if (!item.client_id) return true;
+      const services = item.clients?.selected_services || [];
+      const stopped = item.clients?.discontinued_services || [];
+      return item.clients?.status !== 'Inactive' &&
+        services.includes('accountingFees') && !stopped.includes('accountingFees');
+    }).map(({ clients: _clients, ...item }: any) => item);
+    return c.json({ success: true, data: visible });
+  } catch (error) {
+    console.log('Error fetching accounting control:', error);
+    return c.json({ success: false, error: 'Failed to fetch accounting control' }, 500);
+  }
+});
+
+app.put('/make-server-0abfa7cf/accounting-control/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+    for (const field of ['sales', 'purchase', 'bank', 'suspense']) {
+      if (body[field] !== undefined) updates[field] = Boolean(body[field]);
+    }
+    if (body.remarks !== undefined) updates.remarks = String(body.remarks || '').trim();
+
+    const { data, error } = await supabase
+      .from('accounting_control_items')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    await broadcastChange('accounting');
+    return c.json({ success: true, data });
+  } catch (error) {
+    console.log('Error updating accounting control:', error);
+    return c.json({ success: false, error: 'Failed to update accounting control' }, 500);
+  }
+});
+
 /**
  * The client form's field names, mapped to their columns.
  *
@@ -1654,6 +1700,15 @@ app.get('/make-server-0abfa7cf/clients', async (c) => {
  * update endpoint passed the request body straight to Postgres, which has no
  * `firmName` or `itrFees` column, so editing a client failed outright.
  */
+const CLIENT_SERVICE_KEYS = ['itrFees', 'gstFees', 'gstAnnualReturnFees', 'accountingFees', 'auditFees',
+  'companyActFees', 'tdsFees', 'pfEsicPtLabourFees', 'consultancyFees'] as const;
+
+const CLIENT_SERVICE_COLUMNS: Record<string, string> = {
+  itrFees: 'itr_fees', gstFees: 'gst_fees', gstAnnualReturnFees: 'gst_annual_return_fees',
+  accountingFees: 'accounting_fees', auditFees: 'audit_fees', companyActFees: 'company_act_fees',
+  tdsFees: 'tds_fees', pfEsicPtLabourFees: 'pf_esic_pt_labour_fees', consultancyFees: 'consultancy_fees',
+};
+
 const CLIENT_COLUMNS: Record<string, string> = {
   selectedServices: 'selected_services',
   discontinuedServices: 'discontinued_services',
@@ -1725,8 +1780,7 @@ type IdentityError = { status: 400 | 409; body: Record<string, unknown> };
 
 /** Settles PAN, reason and GSTIN on `row`, or says why the write cannot happen. */
 async function checkClientIdentity(row: Record<string, any>, clientId?: string): Promise<IdentityError | null> {
-  const allowedServices = ['itrFees', 'gstFees', 'gstAnnualReturnFees', 'accountingFees', 'auditFees',
-    'companyActFees', 'tdsFees', 'pfEsicPtLabourFees', 'consultancyFees'];
+  const allowedServices = [...CLIENT_SERVICE_KEYS];
   if ('selected_services' in row) {
     const services = row.selected_services;
     if (!Array.isArray(services) || services.some(s => !allowedServices.includes(s))) {
@@ -1896,7 +1950,42 @@ const duplicateWarning = (duplicates: unknown[]) => ({
   duplicates,
 });
 
-const CLIENT_APPROVAL_ACTIONS = ['client.create', 'client.update'];
+const CLIENT_APPROVAL_ACTIONS = ['client.create', 'client.update', 'client.services'];
+
+function sameServices(a: unknown, b: unknown) {
+  const left = Array.isArray(a) ? [...new Set(a)].sort() : [];
+  const right = Array.isArray(b) ? [...new Set(b)].sort() : [];
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/** Every newly selected service needs an agreed annual fee before approval. */
+function missingServiceFees(row: Record<string, any>, previousServices: string[] = []) {
+  const selected: string[] = Array.isArray(row.selected_services) ? row.selected_services : [];
+  const before = new Set(previousServices);
+  return selected.filter(key => !before.has(key) && !(Number(row[CLIENT_SERVICE_COLUMNS[key]]) > 0));
+}
+
+/** Preserve discontinuation history while making selected_services the live membership. */
+function applyServiceLifecycle(row: Record<string, any>, current: Record<string, any>) {
+  const before = new Set<string>(current.selected_services || []);
+  const after = new Set<string>(row.selected_services || []);
+  const stopped = new Set<string>(current.discontinued_services || []);
+  const dates = { ...(current.service_discontinued_at || {}) };
+  const now = new Date().toISOString();
+
+  for (const key of before) {
+    if (!after.has(key)) {
+      stopped.add(key);
+      if (!dates[key]) dates[key] = now;
+    }
+  }
+  for (const key of after) {
+    stopped.delete(key);
+    delete dates[key];
+  }
+  row.discontinued_services = [...stopped].sort();
+  row.service_discontinued_at = dates;
+}
 
 /** Read an active user from the database; browser-supplied names and roles are never trusted. */
 async function activeActor(actorId: unknown) {
@@ -1954,8 +2043,10 @@ async function queueClientApproval(actionKey: string, row: Record<string, any>, 
   };
   const { data, error } = await supabase.from('approval_requests').insert([request]).select().single();
   if (error) throw error;
+  const requestedAction = actionKey === 'client.create' ? 'add'
+    : actionKey === 'client.services' ? 'change services for' : 'update';
   await notifyUser(approver.id, 'client-approval', 'Client change awaiting your approval',
-    `${actor.name} requested: ${actionKey === 'client.create' ? 'add' : 'update'} ${request.entity_name}`);
+    `${actor.name} requested: ${requestedAction} ${request.entity_name}`);
   await broadcastChange('client-approvals');
   return { data };
 }
@@ -1990,7 +2081,8 @@ app.put('/make-server-0abfa7cf/approval-settings/:actionKey', async (c) => {
     } else if (body.approverId) {
       approver = await activeActor(body.approverId);
     }
-    const label = actionKey === 'client.create' ? 'Add a client' : 'Update client details';
+    const label = actionKey === 'client.create' ? 'Add a client'
+      : actionKey === 'client.services' ? 'Change client services' : 'Update client details';
     const row = {
       action_key: actionKey, label, enabled: body.enabled !== false,
       approver_id: approver?.id || body.approverId || null,
@@ -2036,7 +2128,8 @@ app.post('/make-server-0abfa7cf/client-approvals/:requestId/decision', async (c)
 
     if (body.decision === 'Approved') {
       const row = { ...(request.payload || {}) };
-      const invalid = await checkClientIdentity(row, request.action_key === 'client.update' ? request.entity_id : undefined);
+      const isExistingClient = request.action_key === 'client.update' || request.action_key === 'client.services';
+      const invalid = await checkClientIdentity(row, isExistingClient ? request.entity_id : undefined);
       if (invalid) return c.json(invalid.body, invalid.status);
       if (request.action_key === 'client.create') {
         const { error } = await supabase.from('clients').insert([row]);
@@ -2066,7 +2159,10 @@ app.post('/make-server-0abfa7cf/client-approvals/:requestId/decision', async (c)
     if (error) throw error;
     await notifyUser(request.requested_by_id, 'client-approval', `Client change ${body.decision.toLowerCase()}`,
       `${request.entity_name}${body.note ? ` — ${String(body.note).trim()}` : ''}`);
-    await Promise.all([broadcastChange('client-approvals'), broadcastChange('clients')]);
+    const topics = request.action_key === 'client.services'
+      ? ['client-approvals', 'clients', 'accounting', 'gst', 'itr', 'billing']
+      : ['client-approvals', 'clients'];
+    await Promise.all(topics.map(broadcastChange));
     return c.json({ success: true, data });
   } catch (error) {
     return c.json({ success: false, error: 'Failed to review client change', details: String(error) }, 500);
@@ -2083,6 +2179,12 @@ app.post('/make-server-0abfa7cf/clients', async (c) => {
     }
 
     const row = toClientRow(body);
+
+    const missingFees = missingServiceFees(row);
+    if (missingFees.length) {
+      return c.json({ success: false, code: 'SERVICE_FEE_REQUIRED',
+        error: 'Enter an annual fee greater than zero for every selected service', services: missingFees }, 400);
+    }
 
     const invalid = await checkClientIdentity(row);
     if (invalid) return c.json(invalid.body, invalid.status);
@@ -2163,6 +2265,22 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
     if (currentError) throw currentError;
     if (!current) return c.json({ success: false, error: 'Client not found' }, 404);
 
+    const selectedServicesChanged = 'selected_services' in row &&
+      !sameServices(row.selected_services, current.selected_services);
+    const discontinuationChanged = 'discontinued_services' in row &&
+      !sameServices(row.discontinued_services, current.discontinued_services);
+    const serviceChanged = selectedServicesChanged || discontinuationChanged;
+    if (serviceChanged) {
+      if (selectedServicesChanged) {
+        const missingFees = missingServiceFees(row, current.selected_services || []);
+        if (missingFees.length) {
+          return c.json({ success: false, code: 'SERVICE_FEE_REQUIRED',
+            error: 'Enter an annual fee greater than zero for every newly selected service', services: missingFees }, 400);
+        }
+        applyServiceLifecycle(row, current);
+      }
+    }
+
     const invalid = await checkClientIdentity(row, clientId);
     if (invalid) return c.json(invalid.body, invalid.status);
 
@@ -2181,7 +2299,7 @@ app.put('/make-server-0abfa7cf/clients/:clientId', async (c) => {
       if (duplicates.length) return c.json(duplicateWarning(duplicates), 409);
     }
 
-    const queued = await queueClientApproval('client.update', row, actor, {
+    const queued = await queueClientApproval(serviceChanged ? 'client.services' : 'client.update', row, actor, {
       entityId: clientId, baseUpdatedAt: current.updated_at, previousPayload: current,
     });
     if (queued.error) return c.json(queued.error.body, queued.error.status);
@@ -2659,13 +2777,51 @@ app.get('/make-server-0abfa7cf/itr/register', async (c) => {
       return c.json({ success: false, error: 'fy query parameter is required' }, 400);
     }
 
-    const data = await selectAll(() => supabase
-      .from('itr_filings')
-      .select('*, clients ( id, name, pan, file_number, client_type )')
-      .eq('financial_year', financialYear)
-      .order('id', { ascending: true }));
+    const [stored, clients] = await Promise.all([
+      selectAll(() => supabase
+        .from('itr_filings')
+        .select('*, clients ( id, name, pan, file_number, client_type )')
+        .eq('financial_year', financialYear)
+        .order('id', { ascending: true })),
+      selectAll(() => supabase
+        .from('clients')
+        .select('id, name, pan, file_number, client_type, status, selected_services, discontinued_services')
+        .order('name', { ascending: true })
+        .order('id', { ascending: true })),
+    ]);
 
-    return c.json({ success: true, data: { financialYear, filings: data } });
+    const activeClients = clients.filter((client: any) =>
+      client.status !== 'Inactive' &&
+      (client.selected_services || []).includes('itrFees') &&
+      !(client.discontinued_services || []).includes('itrFees'));
+    const activeIds = new Set(activeClients.map((client: any) => client.id));
+    const filingByClient = new Map(stored
+      .filter((filing: any) => activeIds.has(filing.client_id))
+      .map((filing: any) => [filing.client_id, filing]));
+
+    // A service selection is enough to belong in the register. The row remains
+    // virtual until someone records work, then the existing upsert persists it.
+    for (const client of activeClients) {
+      if (filingByClient.has(client.id)) continue;
+      filingByClient.set(client.id, {
+        id: `itrfil:${String(client.id).replace(/^client:pan:/, '')}:${financialYear}`,
+        client_id: client.id,
+        financial_year: financialYear,
+        status: 'Pending',
+        billing_status: 'Not Ready',
+        is_audit: false,
+        business_income: false,
+        cpc: false,
+        itr_v: false,
+        computation: false,
+        financial_statement: false,
+        challan: false,
+        return_count: 0,
+        clients: client,
+      });
+    }
+
+    return c.json({ success: true, data: { financialYear, filings: [...filingByClient.values()] } });
   } catch (error) {
     console.log('Error fetching ITR register:', error);
     return c.json({ success: false, error: 'Failed to fetch the ITR register', details: String(error) }, 500);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { tasksAPI } from '../services/api';
 import { sortTasks } from '../utils/sorting';
-import { X, Building2, Pencil } from 'lucide-react';
+import { X, Building2, Pencil, Check } from 'lucide-react';
 import { NAVY, rupees, FEE_FIELDS, ModalTabs, overlayCls, panelCls } from './clientModalUI';
 import { statusColor, statusLabel } from '../utils/taskStatus';
 
@@ -70,7 +70,7 @@ export function ViewClientModal({ client, onClose, onEdit }: ViewClientModalProp
         </div>
 
         <ModalTabs
-          tabs={[{ key: 'details', label: 'Client Details' }, { key: 'billing', label: 'Billing & Fees' }, { key: 'tasks', label: `Tasks (${clientTasks.length})` }]}
+          tabs={[{ key: 'details', label: 'Client Details' }, { key: 'billing', label: 'Services & Fees' }, { key: 'tasks', label: `Tasks (${clientTasks.length})` }]}
           active={activeTab}
           onChange={setActiveTab}
         />
@@ -98,19 +98,43 @@ export function ViewClientModal({ client, onClose, onEdit }: ViewClientModalProp
             </div>
           )}
 
-          {/* Billing */}
+          {/* Services and fees */}
           {activeTab === 'billing' && (
             <div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {FEE_FIELDS.map(f => (
-                  <div key={f.key} className="rounded-xl border border-[#E7EDF4] p-3.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">{f.label}</p>
-                      {(client.discontinuedServices || []).includes(f.key) && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[0.58rem] font-semibold text-amber-700">Discontinued</span>}
+                {FEE_FIELDS.map(f => {
+                  const selected = Array.isArray(client.selectedServices)
+                    ? client.selectedServices.includes(f.key)
+                    : Number(client[f.key]) > 0;
+                  const discontinued = (client.discontinuedServices || []).includes(f.key);
+                  const active = selected && !discontinued;
+                  return (
+                    <div
+                      key={f.key}
+                      className={`rounded-xl border p-3.5 transition-colors ${
+                        active
+                          ? 'border-[#9FB7D4] bg-[#EEF4FB] shadow-sm'
+                          : discontinued
+                            ? 'border-amber-200 bg-amber-50/60'
+                            : 'border-[#E7EDF4] bg-[#F8FAFC] opacity-55'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={`text-[0.62rem] font-semibold uppercase tracking-[0.08em] ${active ? 'text-[#1b365d]' : 'text-muted-foreground'}`}>{f.label}</p>
+                        {active ? (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b365d] text-white" title="Selected service">
+                            <Check size={12} strokeWidth={3} />
+                          </span>
+                        ) : discontinued ? (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[0.58rem] font-semibold text-amber-700">Discontinued</span>
+                        ) : (
+                          <span className="text-[0.58rem] font-medium text-slate-400">Not selected</span>
+                        )}
+                      </div>
+                      <p className={`mt-1 text-[0.95rem] font-semibold ${active ? 'text-[#1b365d]' : 'text-slate-500'}`}>{rupees(client[f.key] || 0)}</p>
                     </div>
-                    <p className="mt-1 text-[0.95rem] font-semibold" style={{ color: NAVY }}>{rupees(client[f.key] || 0)}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="mt-4 flex items-center justify-between rounded-xl border p-4" style={{ borderColor: 'rgba(27,54,93,0.2)', backgroundColor: 'rgba(27,54,93,0.04)' }}>
                 <span className="text-sm font-medium" style={{ color: NAVY }}>Total annual fees</span>

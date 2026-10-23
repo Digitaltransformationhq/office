@@ -3,7 +3,7 @@ import { Button } from './Button';
 import { tasksAPI, usersAPI, clientsAPI } from '../services/api';
 import { CreateClientModal } from './CreateClientModal';
 import { TASK_STATUS } from '../utils/taskStatus';
-import { X, ClipboardList, ChevronDown, Plus, Info, Search } from 'lucide-react';
+import { X, ClipboardList, ChevronDown, Plus, Search } from 'lucide-react';
 import { isApproverRole, roleLabel } from '../utils/roles';
 import { sortByText, sortText } from '../utils/sorting';
 
@@ -27,8 +27,6 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [approvers, setApprovers] = useState<any[]>([]);
-  /** Partner level signs tasks off, so their own need no approval gate. */
-  const isApprover = isApproverRole(currentUserRole);
   const [clients, setClients] = useState<any[]>([]);
   const [showCreateClient, setShowCreateClient] = useState(false);
 
@@ -114,11 +112,8 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
       }
 
       /**
-       * A partner, admin or director creating a task is the authority on it, so
-       * it starts at 'Pending' and needs no sign-off. Anyone else is proposing
-       * work, so it starts at the approval gate. Either way the approver is the
-       * person named on the form — they are who the completion approval goes to
-       * when the work is finished and the fee has to be set.
+       * Every assigned task can begin immediately. The person named here is the
+       * completion approver, used after the work is done when the fee is set.
        */
       const chosenApprover = approvers.find(u => u.id === formData.approverId);
       const approverId = formData.approverId;
@@ -131,7 +126,9 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
         assignedTo: selectedUser.name,
         assignedToId: formData.assignedToId,
         priority: formData.priority,
-        status: isApprover ? TASK_STATUS.pending : TASK_STATUS.pendingNewTaskApproval,
+        // Assignment itself authorizes the assignee to begin. The selected
+        // approver is used later, after the finished work is submitted.
+        status: TASK_STATUS.pending,
         startDate: formData.taskDate,
         targetDate: formData.completionDate,
         comments: formData.comments,
@@ -154,9 +151,7 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
         return;
       }
 
-      const message = isApprover
-        ? `Task "${formData.taskName}" assigned to ${selectedUser.name}. ${approverName} will sign it off.`
-        : `Task "${formData.taskName}" sent to ${approverName} for approval`;
+      const message = `Task "${formData.taskName}" assigned to ${selectedUser.name}. ${approverName} will sign it off when the work is done.`;
 
       alert(message);
       onTaskCreated();
@@ -197,7 +192,6 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
     client.name.toLowerCase().includes(clientSearch.toLowerCase())
   ), c => c.name);
 
-  const isStaffUser = currentUserRole === 'team-member' || currentUserRole === 'Staff' || currentUserRole === 'Team Member';
   const partners = filteredUsers.filter(u => isApproverRole(u.role));
   const accountants = filteredUsers.filter(u => u.role === 'team-leader' || u.role === 'Accounts' || u.role === 'Team Leader');
   const staff = filteredUsers.filter(u => u.role === 'team-member' || u.role === 'Staff' || u.role === 'Team Member');
@@ -343,14 +337,13 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
               completion approval — where the fee and the division are set — a
               person to go back to.
               
-              Partners and directors see it too. Their own work still starts at
-              'Pending' rather than at a gate, so this is not asking them for
-              permission; it is asking who signs the work off at the end, and
-              they are simply defaulted to themselves.
+              This is not asking for permission to begin. It records who signs
+              the work off at the end; partner-level creators are simply
+              defaulted to themselves.
             */}
             <Field
               label="Approver"
-              hint={isApprover ? 'Who signs this off when the work is done' : 'Who this is sent to for approval'}
+              hint="Who signs this off when the work is done"
               required
             >
               <SelectField
@@ -385,14 +378,6 @@ export function CreateTaskModal({ onClose, onTaskCreated, currentUserRole, curre
               />
             </Field>
 
-            {isStaffUser && (
-              <div className="flex gap-2.5 rounded-xl border border-[#E7EDF4] bg-[#F9FAFB] p-3.5">
-                <Info size={18} className="mt-0.5 shrink-0 text-muted-foreground" />
-                <p className="text-xs text-muted-foreground">
-                  This task will be sent to a Partner for approval before it is assigned.
-                </p>
-              </div>
-            )}
           </div>
 
           <div className="flex gap-3 border-t border-[#E7EDF4] px-6 py-4">

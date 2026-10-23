@@ -4,7 +4,7 @@ import {
   BarChart3, Settings as SettingsIcon, Building2, Calendar, Megaphone,
   FolderOpen, ClipboardCheck, CalendarDays, FileText, CalendarClock,
   MessageCircle, HelpCircle, Database, Menu, ReceiptText, Landmark, Banknote,
-  X, type LucideIcon,
+  X, Calculator, type LucideIcon,
 } from 'lucide-react';
 import {
   normalizeRole, roleLabel, isApproverRole,
@@ -38,6 +38,7 @@ const ICONS: Record<string, LucideIcon> = {
   clients: Building2,
   'gst-compliance': ReceiptText,
   'income-tax': Landmark,
+  accounting: Calculator,
   salary: Banknote,
   inquiries: Inbox,
   billing: Wallet,
@@ -111,7 +112,8 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Team', id: 'team' },
       ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
-      { label: 'Approvals', id: 'approvals' },
+      { label: 'Core Approvals', id: 'approvals' },
+      { label: 'Accounting', id: 'accounting' },
       { label: 'Billing', id: 'billing' },
       { label: 'Salary', id: 'salary' },
       { label: 'Announcements', id: 'announcements' },
@@ -125,7 +127,8 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Team', id: 'team' },
       ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
-      { label: 'Approvals', id: 'approvals' },
+      { label: 'Core Approvals', id: 'approvals' },
+      { label: 'Accounting', id: 'accounting' },
       { label: 'Billing', id: 'billing' },
       { label: 'Salary', id: 'salary' },
       { label: 'Calendar', id: 'calendar' },
@@ -141,6 +144,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
       ...deskItems,
+      { label: 'Accounting', id: 'accounting' },
       // Labelled Accounts rather than Billing: for this desk it is not one
       // function among many, it is the job. Same screen either way.
       { label: 'Accounts', id: 'billing' },

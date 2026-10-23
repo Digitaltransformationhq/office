@@ -67,7 +67,11 @@ export function ClientApprovalQueue() {
               <div className="flex flex-col gap-2 border-b border-[#E7EDF4] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold" style={{ color: NAVY }}>{item.entity_name}</p>
-                  <p className="text-xs text-muted-foreground">{item.action_key === 'client.create' ? 'New client' : 'Client details update'} requested by {item.requested_by_name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {item.action_key === 'client.create' ? 'New client'
+                      : item.action_key === 'client.services' ? 'Service and annual-fee change'
+                      : 'Client details update'} requested by {item.requested_by_name}
+                  </p>
                 </div>
                 <span className="text-xs text-muted-foreground">{new Date(item.requested_at).toLocaleString('en-IN')}</span>
               </div>

@@ -1,8 +1,10 @@
 import { ClientMasterName } from './ClientMasterName';
 import React, { useMemo, useState } from 'react';
 import type { GstFiling, GstRegistration } from '../services/api';
-import { Search } from 'lucide-react';
-import { sortByText } from '../utils/sorting';
+import { Search, ChevronDown, Download } from 'lucide-react';
+import { sortByText, sortText } from '../utils/sorting';
+import { exportGstAnnualToExcel } from '../utils/exportGst';
+import { useToast } from './Toast';
 import {
   ANNUAL_RETURNS, STATUS_META, EMPTY_STATUS, annualDueDate, annualPeriod,
   annualReturnsFor, dueNote, formatDate, isOverdue, type AnnualReturnType, type GstPeriod,
@@ -34,6 +36,7 @@ interface GSTAnnualViewProps {
  * spreadsheet never listed.
  */
 export function GSTAnnualView({ registrations, filings, financialYear, onOpen, onOpenClient, compositionOnly = false }: GSTAnnualViewProps) {
+  const { showError } = useToast();
   const visibleReturns = compositionOnly ? ANNUAL_RETURNS.filter(r => r.type === 'GSTR-4') : ANNUAL_RETURNS;
   const period = useMemo(() => annualPeriod(financialYear), [financialYear]);
 
@@ -50,6 +53,9 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, o
 
   const [search, setSearch] = useState('');
   const [showAll, setShowAll] = useState(false);
+  const [person, setPerson] = useState('all');
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   /**
    * Which annual returns to show for a registration: those its frequency
@@ -75,7 +81,11 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, o
     () => sortByText(
       registrations
         .filter(r => r.status !== 'Cancelled')
-        .filter(r => !compositionOnly || r.filingFrequency === 'Composition')
+        .filter(r => {
+          const service = compositionOnly ? 'gstFees' : 'gstAnnualReturnFees';
+          return r.selectedServices.includes(service) && !r.discontinuedServices.includes(service);
+        })
+        .filter(r => compositionOnly ? r.filingFrequency === 'Composition' : r.filingFrequency !== 'Composition')
         .map(r => ({ registration: r, types: typesFor(r) }))
         .filter(row => row.types.length > 0),
       row => row.registration.clientName,
@@ -86,6 +96,13 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, o
   const recorded = useMemo(
     () => candidates.filter(row => row.types.some(t => cellFor(row.registration.id, t))),
     [candidates, filingMap],
+  );
+
+  const people = useMemo(
+    () => sortText([...new Set(candidates
+      .map(row => row.registration.responsiblePersonName)
+      .filter(Boolean) as string[])]),
+    [candidates],
   );
 
   /*
@@ -105,11 +122,15 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, o
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const pool = (compositionOnly || showAll || q) ? candidates : recorded;
-    if (!q) return pool;
-    return pool.filter(({ registration: r }) =>
-      [r.clientName, r.gstin, r.codeNo, r.pan, r.tradeName]
-        .some(v => (v || '').toLowerCase().includes(q)));
-  }, [candidates, recorded, search, showAll, compositionOnly]);
+    return pool.filter(({ registration: r, types }) => {
+      if (compositionOnly && person !== 'all' && r.responsiblePersonName !== person) return false;
+      if (compositionOnly && onlyOpen && !types.some(t =>
+        STATUS_META[cellFor(r.id, t)?.status || EMPTY_STATUS].open)) return false;
+      if (q && ![r.clientName, r.gstin, r.codeNo, r.pan, r.tradeName]
+        .some(v => (v || '').toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [candidates, recorded, search, showAll, compositionOnly, person, onlyOpen, filingMap]);
 
   const summary = useMemo(() => {
     let owed = 0, done = 0, overdue = 0;
@@ -125,8 +146,26 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, o
     return { owed, done, overdue };
   }, [recorded, filingMap, financialYear]);
 
+  const exportRows = async () => {
+    if (rows.length === 0 || exporting) return;
+    try {
+      setExporting(true);
+      await exportGstAnnualToExcel({
+        rows,
+        filings,
+        returnTypes: visibleReturns.map(r => r.type),
+        financialYear,
+        compositionOnly,
+      });
+    } catch {
+      showError('Failed to export the GST returns');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const controls = (
-    <div className="flex flex-col gap-3 border-b border-[#E7EDF4] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 border-b border-[#E7EDF4] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="relative w-full min-w-0 sm:flex-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -137,16 +176,41 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, o
         />
       </div>
       {compositionOnly ? (
-        <span className="shrink-0 text-sm text-muted-foreground">{candidates.length} composition registrations</span>
-      ) : <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-[#E7EDF4] px-3 py-2 text-sm">
-        <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} className="accent-[#1b365d]" />
-        <span style={{ color: NAVY }}>
-          All registrations
-          <span className="ml-1.5 text-xs text-muted-foreground">
-            ({recorded.length} recorded of {candidates.length})
+        <div className="grid shrink-0 grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+          <div className="relative col-span-2 sm:col-span-1">
+            <select
+              value={person}
+              onChange={e => setPerson(e.target.value)}
+              aria-label="Responsible staff"
+              className="w-full appearance-none rounded-lg border border-[#E7EDF4] bg-white py-2 pl-3 pr-9 text-sm outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/15"
+              style={{ color: NAVY }}
+            >
+              <option value="all">Everyone</option>
+              {people.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E7EDF4] px-3 py-2 text-sm">
+            <input type="checkbox" checked={onlyOpen} onChange={e => setOnlyOpen(e.target.checked)} className="accent-[#1b365d]" />
+            <span className="whitespace-nowrap" style={{ color: NAVY }}>Outstanding only</span>
+          </label>
+          <span className="col-span-2 text-right text-xs text-muted-foreground sm:col-span-1">
+            {rows.length} of {candidates.length}
           </span>
-        </span>
-      </label>}
+          <ExportButton onClick={exportRows} disabled={rows.length === 0 || exporting} exporting={exporting} />
+        </div>
+      ) : <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E7EDF4] px-3 py-2 text-sm">
+          <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} className="accent-[#1b365d]" />
+          <span style={{ color: NAVY }}>
+            All registrations
+            <span className="ml-1.5 text-xs text-muted-foreground">
+              ({recorded.length} recorded of {candidates.length})
+            </span>
+          </span>
+        </label>
+        <ExportButton onClick={exportRows} disabled={rows.length === 0 || exporting} exporting={exporting} />
+      </div>}
     </div>
   );
 
@@ -157,6 +221,8 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, o
         <div className="px-5 py-16 text-center">
           {search.trim() ? (
             <p className="text-sm text-muted-foreground">No registration matches “{search.trim()}”.</p>
+          ) : compositionOnly && (person !== 'all' || onlyOpen) ? (
+            <p className="text-sm text-muted-foreground">No composition registrations match these filters.</p>
           ) : compositionOnly ? (
             <p className="text-sm text-muted-foreground">No composition clients found. Clients with filing frequency set to Composition appear here.</p>
           ) : (
@@ -274,6 +340,22 @@ export function GSTAnnualView({ registrations, filings, financialYear, onOpen, o
         </table>
       </div>
     </div>
+  );
+}
+
+function ExportButton({ onClick, disabled, exporting }: {
+  onClick: () => void; disabled: boolean; exporting: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#CBD8E6] bg-white px-3 py-2 text-sm font-medium transition hover:bg-[#F4F7FB] disabled:cursor-not-allowed disabled:opacity-50"
+      style={{ color: NAVY }}
+    >
+      <Download size={15} /> {exporting ? 'Exporting…' : 'Export Excel'}
+    </button>
   );
 }
 

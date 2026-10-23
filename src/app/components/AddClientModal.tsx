@@ -34,6 +34,13 @@ export function AddClientModal({ onClose, onSuccess, onOpenExisting }: AddClient
     if (!formData.name) { showError('Client name is required'); setActiveTab('basic'); return; }
     const problem = panProblem(formData) || gstServiceProblem(formData);
     if (problem) { showError(problem); setActiveTab('basic'); return; }
+    const missingFee = FEE_FIELDS.find(field =>
+      formData.selectedServices.includes(field.key) && Number(formData[field.key]) <= 0);
+    if (missingFee) {
+      showError(`Enter the annual fee for ${missingFee.label} before requesting approval.`);
+      setActiveTab('billing');
+      return;
+    }
     setLoading(true);
     try {
       const { noPan, ...fields } = formData;
@@ -80,7 +87,7 @@ export function AddClientModal({ onClose, onSuccess, onOpenExisting }: AddClient
           </button>
         </div>
 
-        <ModalTabs tabs={[{ key: 'basic', label: 'Basic Information' }, { key: 'billing', label: 'Billing & Fees' }]} active={activeTab} onChange={setActiveTab} />
+        <ModalTabs tabs={[{ key: 'basic', label: 'Basic Information' }, { key: 'billing', label: 'Services & Fees' }]} active={activeTab} onChange={setActiveTab} />
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -118,6 +125,11 @@ export function AddClientModal({ onClose, onSuccess, onOpenExisting }: AddClient
               <div>
                 <p className="mb-4 text-sm text-muted-foreground">Tick the services this client takes and enter the annual fee for each.</p>
                 <FeeList values={formData} selectedServices={formData.selectedServices} onSelectionChange={selectedServices => setFormData((p: any) => ({ ...p, selectedServices }))} onChange={(key, amount) => set(key, amount)} />
+                {formData.selectedServices.length > 0 && (
+                  <p className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    The services and annual fees will take effect after Brijesh Pitroda approves the client.
+                  </p>
+                )}
                 <div className="mt-5 flex items-center justify-between rounded-xl border border-[#E7EDF4] bg-[#F9FAFB] px-4 py-3.5">
                   <span className="text-sm font-medium" style={{ color: NAVY }}>Total annual fees</span>
                   <span className="text-xl font-semibold" style={{ color: NAVY }}>{rupees(total)}</span>

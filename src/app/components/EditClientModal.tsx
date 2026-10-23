@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Button } from './Button';
 import { clientsAPI } from '../services/api';
 import { useToast } from './Toast';
@@ -23,8 +23,10 @@ export function EditClientModal({ client, onClose, onSuccess, onOpenExisting, ad
   const { showSuccess, showError } = useToast();
   const [activeTab, setActiveTab] = useState<'basic' | 'billing'>('basic');
   const [duplicates, setDuplicates] = useState<PossibleDuplicate[] | null>(null);
+  const initialServices = useMemo(() => client.selectedServices ??
+    FEE_FIELDS.filter(f => Number(client[f.key]) > 0).map(f => f.key), [client]);
   const [formData, setFormData] = useState<any>({
-    selectedServices: client.selectedServices ?? FEE_FIELDS.filter(f => Number(client[f.key]) > 0).map(f => f.key),
+    selectedServices: initialServices,
     name: client.name || '',
     pan: client.pan || '',
     noPan: !client.pan,
@@ -48,11 +50,29 @@ export function EditClientModal({ client, onClose, onSuccess, onOpenExisting, ad
 
   const set = (field: string, value: string | number) => setFormData((p: any) => ({ ...p, [field]: value }));
   const total = FEE_FIELDS.reduce((s, f) => s + (formData[f.key] || 0), 0);
+  const serviceChanges = useMemo(() => {
+    const before = new Set<string>(initialServices);
+    const after = new Set<string>(formData.selectedServices || []);
+    return {
+      added: FEE_FIELDS.filter(field => after.has(field.key) && !before.has(field.key)),
+      removed: FEE_FIELDS.filter(field => before.has(field.key) && !after.has(field.key)),
+    };
+  }, [initialServices, formData.selectedServices]);
+  const hasServiceChanges = serviceChanges.added.length > 0 || serviceChanges.removed.length > 0;
 
   const save = async (confirmNotDuplicate = false) => {
     if (!formData.name) { showError('Client name is required'); setActiveTab('basic'); return; }
     const problem = panProblem(formData) || gstServiceProblem(formData);
     if (problem) { showError(problem); setActiveTab('basic'); return; }
+    const missingFee = serviceChanges.added.find(field => Number(formData[field.key]) <= 0);
+    if (missingFee) {
+      showError(`Enter the annual fee for ${missingFee.label} before requesting approval.`);
+      setActiveTab('billing');
+      return;
+    }
+    if (serviceChanges.removed.length && !window.confirm(
+      `${serviceChanges.removed.map(field => field.label).join(', ')} will be removed from its service section after Brijesh Pitroda approves this change. Continue?`,
+    )) return;
     setLoading(true);
     try {
       const { noPan, ...fields } = formData;
@@ -99,7 +119,7 @@ export function EditClientModal({ client, onClose, onSuccess, onOpenExisting, ad
           </button>
         </div>
 
-        <ModalTabs tabs={[{ key: 'basic', label: 'Basic Information' }, { key: 'billing', label: 'Billing & Fees' }]} active={activeTab} onChange={setActiveTab} />
+        <ModalTabs tabs={[{ key: 'basic', label: 'Basic Information' }, { key: 'billing', label: 'Services & Fees' }]} active={activeTab} onChange={setActiveTab} />
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -138,6 +158,17 @@ export function EditClientModal({ client, onClose, onSuccess, onOpenExisting, ad
               <div>
                 <p className="mb-4 text-sm text-muted-foreground">Tick the services this client takes and enter the annual fee for each.</p>
                 <FeeList values={formData} selectedServices={formData.selectedServices} onSelectionChange={selectedServices => setFormData((p: any) => ({ ...p, selectedServices }))} onChange={(key, amount) => set(key, amount)} />
+                {hasServiceChanges && (
+                  <div className="mt-4 space-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <p className="font-semibold">Approval required from Brijesh Pitroda</p>
+                    {serviceChanges.added.length > 0 && (
+                      <p>Adding: {serviceChanges.added.map(field => field.label).join(', ')}. Enter each annual fee; the client appears in those sections only after approval.</p>
+                    )}
+                    {serviceChanges.removed.length > 0 && (
+                      <p>Removing: {serviceChanges.removed.map(field => field.label).join(', ')}. The client disappears from those sections only after approval.</p>
+                    )}
+                  </div>
+                )}
                 <div className="mt-5 flex items-center justify-between rounded-xl border border-[#E7EDF4] bg-[#F9FAFB] px-4 py-3.5">
                   <span className="text-sm font-medium" style={{ color: NAVY }}>Total annual fees</span>
                   <span className="text-xl font-semibold" style={{ color: NAVY }}>{rupees(total)}</span>
@@ -149,7 +180,8 @@ export function EditClientModal({ client, onClose, onSuccess, onOpenExisting, ad
           <div className="flex gap-3 border-t border-[#E7EDF4] px-6 py-4">
             <Button type="button" variant="secondary" onClick={onClose} className="flex-1" disabled={loading}>Cancel</Button>
             <Button type="submit" className="flex-1" disabled={loading || !!duplicates}>
-              {loading ? (adminDirectSave ? 'Updating…' : 'Submitting…') : (adminDirectSave ? 'Update Client' : 'Submit Update for Approval')}
+              {loading ? (hasServiceChanges ? 'Sending for approval…' : adminDirectSave ? 'Updating…' : 'Submitting…')
+                : hasServiceChanges ? 'Send Service Change for Approval' : adminDirectSave ? 'Update Client' : 'Submit Update for Approval'}
             </Button>
           </div>
         </form>

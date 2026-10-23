@@ -36,6 +36,8 @@ export type ChangeTopic =
   | 'gst'
   // The ITR register.
   | 'itr'
+  // The accounting control list.
+  | 'accounting'
   // The client discussion log.
   | 'discussions';
 

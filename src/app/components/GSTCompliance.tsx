@@ -7,8 +7,9 @@ import { GSTFilingModal } from './GSTFilingModal';
 import { GSTExcelImportModal } from './GSTExcelImportModal';
 import { GSTAnnualView } from './GSTAnnualView';
 import { GSTMonthlyMobile } from './GSTMonthlyMobile';
-import { Search, AlertTriangle, CheckCircle2, Clock, ChevronDown, Upload } from 'lucide-react';
+import { Search, AlertTriangle, CheckCircle2, Clock, ChevronDown, Upload, Download } from 'lucide-react';
 import { sortByText, sortText } from '../utils/sorting';
+import { exportGstMonthlyToExcel } from '../utils/exportGst';
 import {
   STATUS_META, EMPTY_STATUS, financialYearOf, fyMonths, dueDateFor, isOverdue,
   returnsFor, shortDate, today, type AnnualReturnType, type GstPeriod,
@@ -57,6 +58,7 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
   const [frequency, setFrequency] = useState('all');
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [importingExcel, setImportingExcel] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [editing, setEditing] = useState<{
     registration: GstRegistration; period: GstPeriod;
@@ -200,6 +202,10 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
     const q = search.trim().toLowerCase();
     return sortByText(registrations.filter(r => {
       if (r.status === 'Cancelled') return false;
+      if (!r.selectedServices.includes('gstFees') || r.discontinuedServices.includes('gstFees')) return false;
+      // Composition work has its own tab. Keeping those registrations here
+      // produced empty monthly rows because they do not file GSTR-1 or GSTR-3B.
+      if (r.filingFrequency === 'Composition') return false;
       if (person !== 'all' && r.responsiblePersonName !== person) return false;
       if (frequency !== 'all' && r.filingFrequency !== frequency) return false;
       if (q && ![r.clientName, r.gstin, r.codeNo, r.pan, r.tradeName]
@@ -244,6 +250,23 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
     };
     if (saved.financialYear === financialYear) setFilings(merge);
     if (saved.financialYear === annualYear) setAnnual(a => ({ ...a, filings: merge(a.filings) }));
+  };
+
+  const exportMonthly = async () => {
+    if (filtered.length === 0 || exporting) return;
+    try {
+      setExporting(true);
+      await exportGstMonthlyToExcel({
+        registrations: filtered,
+        filings,
+        months,
+        financialYear,
+      });
+    } catch {
+      showError('Failed to export the GST register');
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -327,13 +350,22 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
               {people.map(p => <option key={p} value={p}>{p}</option>)}
             </Select>
             <Select value={frequency} onChange={setFrequency} label="All frequencies">
-              {['Monthly', 'Quarterly', 'Composition', 'Annual', 'Irregular', 'Not Applicable']
+              {['Monthly', 'Quarterly', 'Annual', 'Irregular', 'Not Applicable']
                 .map(f => <option key={f} value={f}>{f}</option>)}
             </Select>
             <label className="col-span-2 flex cursor-pointer items-center gap-2 rounded-lg border border-[#E7EDF4] px-3 py-2 text-sm sm:col-span-1">
               <input type="checkbox" checked={onlyOpen} onChange={e => setOnlyOpen(e.target.checked)} className="accent-[#1b365d]" />
               <span style={{ color: NAVY }}>Outstanding only</span>
             </label>
+            <button
+              type="button"
+              onClick={exportMonthly}
+              disabled={filtered.length === 0 || exporting}
+              className="col-span-2 inline-flex items-center justify-center gap-2 rounded-lg border border-[#CBD8E6] bg-white px-3 py-2 text-sm font-medium transition hover:bg-[#F4F7FB] disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1"
+              style={{ color: NAVY }}
+            >
+              <Download size={15} /> {exporting ? 'Exporting…' : 'Export Excel'}
+            </button>
           </div>
         </div>
 
@@ -442,8 +474,8 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
                   {months.map((m, i) => RETURN_TYPES.map((rt, j) => (
                     <th
                       key={`${m.key}-${rt}`}
-                      className={`sticky z-30 border-b border-[#E7EDF4] pb-1 text-center text-[0.56rem] font-medium text-muted-foreground ${j === 1 ? 'border-r' : ''} ${i % 2 ? 'bg-[#F4F7FB]' : 'bg-[#F9FAFB]'}`}
-                      style={{ top: 30, width: 52, minWidth: 52 }}
+                      className={`sticky z-30 border-b border-[#E7EDF4] px-1 py-2 text-center align-middle text-[0.56rem] font-medium leading-none text-muted-foreground ${j === 1 ? 'border-r' : ''} ${i % 2 ? 'bg-[#F4F7FB]' : 'bg-[#F9FAFB]'}`}
+                      style={{ top: 30, width: 52, minWidth: 52, height: 30 }}
                     >
                       {rt === 'GSTR-1' ? 'R1' : '3B'}
                     </th>

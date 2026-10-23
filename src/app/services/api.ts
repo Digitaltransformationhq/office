@@ -829,6 +829,58 @@ export const discussionsAPI = {
 };
 
 // ============================================
+// ACCOUNTING CONTROL
+// ============================================
+
+export interface AccountingControlItem {
+  id: string;
+  financialYear: string;
+  particulars: number;
+  accountType: string;
+  reviewFrequency: string;
+  partyName: string;
+  responsiblePerson: string;
+  sales: boolean;
+  purchase: boolean;
+  bank: boolean;
+  suspense: boolean;
+  remarks: string;
+  updatedAt: string;
+}
+
+function transformAccountingItem(row: any): AccountingControlItem {
+  return {
+    id: String(row.id),
+    financialYear: row.financial_year,
+    particulars: Number(row.particulars),
+    accountType: row.account_type,
+    reviewFrequency: row.review_frequency,
+    partyName: row.party_name,
+    responsiblePerson: row.responsible_person,
+    sales: Boolean(row.sales),
+    purchase: Boolean(row.purchase),
+    bank: Boolean(row.bank),
+    suspense: Boolean(row.suspense),
+    remarks: row.remarks || '',
+    updatedAt: row.updated_at,
+  };
+}
+
+export const accountingAPI = {
+  getAll: async (financialYear = '2026-27') => {
+    const result = await fetchAPI(`/accounting-control?financialYear=${encodeURIComponent(financialYear)}`);
+    return { ...result, data: (result.data || []).map(transformAccountingItem) as AccountingControlItem[] };
+  },
+  update: async (id: string, updates: Partial<Pick<AccountingControlItem, 'sales' | 'purchase' | 'bank' | 'suspense' | 'remarks'>>) => {
+    const result = await fetchAPI(`/accounting-control/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+    return { ...result, data: result.data ? transformAccountingItem(result.data) : null };
+  },
+};
+
+// ============================================
 // GST COMPLIANCE REGISTER
 // ============================================
 // See docs/gst-compliance.md.
