@@ -844,6 +844,7 @@ export interface AccountingControlItem {
   purchase: boolean;
   bank: boolean;
   suspense: boolean;
+  monthlyChecks: Record<string, Partial<Record<'sales' | 'purchase' | 'bank' | 'suspense', boolean>>>;
   remarks: string;
   updatedAt: string;
 }
@@ -861,6 +862,7 @@ function transformAccountingItem(row: any): AccountingControlItem {
     purchase: Boolean(row.purchase),
     bank: Boolean(row.bank),
     suspense: Boolean(row.suspense),
+    monthlyChecks: row.monthly_checks || {},
     remarks: row.remarks || '',
     updatedAt: row.updated_at,
   };
@@ -875,6 +877,18 @@ export const accountingAPI = {
     const result = await fetchAPI(`/accounting-control/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
+    });
+    return { ...result, data: result.data ? transformAccountingItem(result.data) : null };
+  },
+  updateMonth: async (
+    id: string,
+    month: string,
+    field: 'sales' | 'purchase' | 'bank' | 'suspense',
+    value: boolean,
+  ) => {
+    const result = await fetchAPI(`/accounting-control/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ month, field, value }),
     });
     return { ...result, data: result.data ? transformAccountingItem(result.data) : null };
   },

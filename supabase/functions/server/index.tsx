@@ -1676,6 +1676,44 @@ app.put('/make-server-0abfa7cf/accounting-control/:id', async (c) => {
     }
     if (body.remarks !== undefined) updates.remarks = String(body.remarks || '').trim();
 
+    if (body.month !== undefined || body.field !== undefined || body.value !== undefined) {
+      const month = String(body.month || '');
+      const field = String(body.field || '');
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || !['sales', 'purchase', 'bank', 'suspense'].includes(field)) {
+        return c.json({ success: false, error: 'Invalid accounting month update' }, 400);
+      }
+
+      const { data: current, error: currentError } = await supabase
+        .from('accounting_control_items')
+        .select('financial_year')
+        .eq('id', id)
+        .single();
+      if (currentError) throw currentError;
+
+      const [startYearText, endYearText] = String(current.financial_year || '').split('-');
+      const startYear = Number(startYearText);
+      const endYear = endYearText?.length === 2
+        ? Number(`${String(startYear).slice(0, 2)}${endYearText}`)
+        : Number(endYearText);
+      const allowedMonths = new Set([
+        ...Array.from({ length: 9 }, (_, index) => `${startYear}-${String(index + 4).padStart(2, '0')}`),
+        ...Array.from({ length: 3 }, (_, index) => `${endYear}-${String(index + 1).padStart(2, '0')}`),
+      ]);
+      if (!allowedMonths.has(month)) {
+        return c.json({ success: false, error: 'Month is outside this financial year' }, 400);
+      }
+
+      const { data, error } = await supabase.rpc('set_accounting_monthly_check', {
+        p_item_id: Number(id),
+        p_month: month,
+        p_field: field,
+        p_value: Boolean(body.value),
+      });
+      if (error) throw error;
+      await broadcastChange('accounting');
+      return c.json({ success: true, data: Array.isArray(data) ? data[0] : data });
+    }
+
     const { data, error } = await supabase
       .from('accounting_control_items')
       .update(updates)

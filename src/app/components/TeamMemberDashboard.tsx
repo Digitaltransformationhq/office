@@ -523,7 +523,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
         {/* ── Active tasks ── */}
         <Card>
           <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2.5">
                 <CardTitle>{VIEWS[view].label}</CardTitle>
                 <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
@@ -540,7 +540,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                 )}
               </div>
 
-              <div className="relative w-full sm:w-72">
+              <div className="relative w-full">
                 <Search
                   aria-hidden="true"
                   size={16}

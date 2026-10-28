@@ -8,6 +8,28 @@ import { sortText } from '../utils/sorting';
 const NAVY = '#1b365d';
 const PAGE_SIZE = 25;
 type TickField = 'sales' | 'purchase' | 'bank' | 'suspense';
+const TICK_FIELDS: TickField[] = ['sales', 'purchase', 'bank', 'suspense'];
+const FINANCIAL_YEAR = '2026-27';
+const ACCOUNTING_MONTHS = [
+  { key: '2026-04', short: 'Apr', label: 'April 2026' },
+  { key: '2026-05', short: 'May', label: 'May 2026' },
+  { key: '2026-06', short: 'Jun', label: 'June 2026' },
+  { key: '2026-07', short: 'Jul', label: 'July 2026' },
+  { key: '2026-08', short: 'Aug', label: 'August 2026' },
+  { key: '2026-09', short: 'Sep', label: 'September 2026' },
+  { key: '2026-10', short: 'Oct', label: 'October 2026' },
+  { key: '2026-11', short: 'Nov', label: 'November 2026' },
+  { key: '2026-12', short: 'Dec', label: 'December 2026' },
+  { key: '2027-01', short: 'Jan', label: 'January 2027' },
+  { key: '2027-02', short: 'Feb', label: 'February 2027' },
+  { key: '2027-03', short: 'Mar', label: 'March 2027' },
+] as const;
+
+const currentAccountingMonth = () => {
+  const now = new Date();
+  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return ACCOUNTING_MONTHS.some(month => month.key === key) ? key : ACCOUNTING_MONTHS[0].key;
+};
 
 export function Accounting() {
   const { showError } = useToast();
@@ -17,6 +39,7 @@ export function Accounting() {
   const [person, setPerson] = useState('all');
   const [type, setType] = useState('all');
   const [review, setReview] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState(currentAccountingMonth);
   const [page, setPage] = useState(1);
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [remarksDrafts, setRemarksDrafts] = useState<Record<string, string>>({});
@@ -24,7 +47,7 @@ export function Accounting() {
   const load = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
       if (!silent) setLoading(true);
-      const response = await accountingAPI.getAll('2026-27');
+      const response = await accountingAPI.getAll(FINANCIAL_YEAR);
       if (!response.success) throw new Error(response.error || 'Could not load accounting records.');
       setItems(response.data || []);
     } catch (error) {
@@ -63,7 +86,14 @@ export function Accounting() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageStart = (page - 1) * PAGE_SIZE;
   const rows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
-  const completed = items.filter(item => item.sales && item.purchase && item.bank && item.suspense).length;
+  const completed = items.filter(item =>
+    ACCOUNTING_MONTHS.every(month => TICK_FIELDS.every(field => Boolean(item.monthlyChecks[month.key]?.[field])))
+  ).length;
+  const selectedMonthInfo = ACCOUNTING_MONTHS.find(month => month.key === selectedMonth)!;
+  const selectedMonthChecks = items.reduce(
+    (total, item) => total + TICK_FIELDS.filter(field => Boolean(item.monthlyChecks[selectedMonth]?.[field])).length,
+    0,
+  );
 
   const markSaving = (key: string, active: boolean) => {
     setSaving(previous => {
@@ -74,16 +104,22 @@ export function Accounting() {
   };
 
   const updateTick = async (item: AccountingControlItem, field: TickField, value: boolean) => {
-    const key = `${item.id}:${field}`;
+    const key = `${item.id}:${selectedMonth}`;
     if (saving.has(key)) return;
-    setItems(previous => previous.map(row => row.id === item.id ? { ...row, [field]: value } : row));
+    setItems(previous => previous.map(row => row.id === item.id ? {
+      ...row,
+      monthlyChecks: {
+        ...row.monthlyChecks,
+        [selectedMonth]: { ...(row.monthlyChecks[selectedMonth] || {}), [field]: value },
+      },
+    } : row));
     markSaving(key, true);
     try {
-      const response = await accountingAPI.update(item.id, { [field]: value });
+      const response = await accountingAPI.updateMonth(item.id, selectedMonth, field, value);
       if (!response.success || !response.data) throw new Error(response.error || 'Could not save this tick.');
       setItems(previous => previous.map(row => row.id === item.id ? response.data! : row));
     } catch (error) {
-      setItems(previous => previous.map(row => row.id === item.id ? { ...row, [field]: item[field] } : row));
+      setItems(previous => previous.map(row => row.id === item.id ? item : row));
       showError(error instanceof Error ? error.message : 'Could not save this tick.');
     } finally {
       markSaving(key, false);
@@ -119,7 +155,7 @@ export function Accounting() {
           <p className="mt-0.5 text-sm text-muted-foreground">Accounting control list for client books</p>
         </div>
         <span className="rounded-lg border border-[#E7EDF4] bg-white px-3.5 py-2 text-sm font-medium" style={{ color: NAVY }}>
-          F.Y. 2026-27
+          F.Y. {FINANCIAL_YEAR}
         </span>
       </div>
 
@@ -145,6 +181,36 @@ export function Accounting() {
             <FilterSelect value={person} onChange={setPerson} label="Everyone" options={people} />
             <FilterSelect value={type} onChange={setType} label="All types" options={types} />
             <FilterSelect value={review} onChange={setReview} label="All reviews" options={reviews} />
+          </div>
+        </div>
+
+        <div className="border-b border-[#E7EDF4] bg-[#FAFBFD] px-5 py-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Work month</p>
+              <p className="text-xs font-medium" style={{ color: NAVY }}>{selectedMonthInfo.label}</p>
+            </div>
+            <span className="text-right text-xs text-muted-foreground">
+              {selectedMonthChecks} of {items.length * TICK_FIELDS.length} checks complete
+            </span>
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Accounting month">
+            {ACCOUNTING_MONTHS.map(month => (
+              <button
+                key={month.key}
+                type="button"
+                role="tab"
+                aria-selected={selectedMonth === month.key}
+                onClick={() => setSelectedMonth(month.key)}
+                className={`min-w-[58px] flex-1 rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${
+                  selectedMonth === month.key
+                    ? 'border-[#1b365d] bg-[#1b365d] text-white shadow-sm'
+                    : 'border-[#DDE5EE] bg-white text-muted-foreground hover:border-[#1b365d]/40 hover:text-[#1b365d]'
+                }`}
+              >
+                {month.short}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -179,24 +245,27 @@ export function Accounting() {
                     <Cell>{item.reviewFrequency}</Cell>
                     <Cell className="font-medium" style={{ color: NAVY }}>{item.partyName}</Cell>
                     <Cell>{item.responsiblePerson}</Cell>
-                    {(['sales', 'purchase', 'bank', 'suspense'] as TickField[]).map(field => (
-                      <td key={field} className="w-[66px] border-b border-[#F1F4F8] px-1 py-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => updateTick(item, field, !item[field])}
-                          disabled={saving.has(`${item.id}:${field}`)}
-                          aria-label={`${item[field] ? 'Clear' : 'Tick'} ${field} for ${item.partyName}`}
-                          aria-pressed={item[field]}
-                          className={`mx-auto flex h-6 w-6 items-center justify-center rounded border transition disabled:opacity-50 ${
-                            item[field]
-                              ? 'border-green-300 bg-green-100 text-green-700'
-                              : 'border-[#D8E0EA] bg-white text-transparent hover:border-[#1b365d]/50'
-                          }`}
-                        >
-                          <Check size={14} strokeWidth={3} />
-                        </button>
-                      </td>
-                    ))}
+                    {TICK_FIELDS.map(field => {
+                      const checked = Boolean(item.monthlyChecks[selectedMonth]?.[field]);
+                      return (
+                        <td key={field} className="w-[66px] border-b border-[#F1F4F8] px-1 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => updateTick(item, field, !checked)}
+                            disabled={saving.has(`${item.id}:${selectedMonth}`)}
+                            aria-label={`${checked ? 'Clear' : 'Tick'} ${field} for ${item.partyName}, ${selectedMonthInfo.label}`}
+                            aria-pressed={checked}
+                            className={`mx-auto flex h-6 w-6 items-center justify-center rounded border transition disabled:opacity-50 ${
+                              checked
+                                ? 'border-green-300 bg-green-100 text-green-700'
+                                : 'border-[#D8E0EA] bg-white text-transparent hover:border-[#1b365d]/50'
+                            }`}
+                          >
+                            <Check size={14} strokeWidth={3} />
+                          </button>
+                        </td>
+                      );
+                    })}
                     <td className="min-w-[240px] border-b border-[#F1F4F8] px-2 py-1.5">
                       <input
                         value={remarksDrafts[item.id] ?? item.remarks}
