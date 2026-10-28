@@ -2028,7 +2028,7 @@ function applyServiceLifecycle(row: Record<string, any>, current: Record<string,
 /** Read an active user from the database; browser-supplied names and roles are never trusted. */
 async function activeActor(actorId: unknown) {
   if (!actorId || typeof actorId !== 'string') return null;
-  const { data } = await supabase.from('users').select('id, name, role, status')
+  const { data } = await supabase.from('users').select('id, name, email, role, status')
     .eq('id', actorId).eq('status', 'Active').maybeSingle();
   return data || null;
 }
@@ -4571,6 +4571,124 @@ app.get('/make-server-0abfa7cf/attendance/user/:userId', async (c) => {
 // ============================================
 // DOCUMENTS
 // ============================================
+
+const DOCS_MANAGER_EMAIL = 'caoffice.sahaj@gmail.com';
+
+app.get('/make-server-0abfa7cf/document-movements', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor || String(actor.email || '').toLowerCase() !== DOCS_MANAGER_EMAIL) {
+      return c.json({ success: false, error: 'Docs Manager is available only to Rajesh Panchal' }, 403);
+    }
+
+    const { data, error } = await supabase
+      .from('document_movements')
+      .select('*')
+      .order('recorded_at', { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    return c.json({ success: true, data: data || [] });
+  } catch (error) {
+    console.log('Error fetching document movements:', error);
+    return c.json({ success: false, error: 'Failed to fetch document movements' }, 500);
+  }
+});
+
+app.get('/make-server-0abfa7cf/document-movements/client/:clientId', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor || String(actor.email || '').toLowerCase() !== DOCS_MANAGER_EMAIL) {
+      return c.json({ success: false, error: 'Docs Manager is available only to Rajesh Panchal' }, 403);
+    }
+
+    const { data, error } = await supabase
+      .from('document_movements')
+      .select('*')
+      .eq('client_id', c.req.param('clientId'))
+      .order('recorded_at', { ascending: false });
+    if (error) throw error;
+    return c.json({ success: true, data: data || [] });
+  } catch (error) {
+    console.log('Error fetching client document history:', error);
+    return c.json({ success: false, error: 'Failed to fetch client document history' }, 500);
+  }
+});
+
+app.post('/make-server-0abfa7cf/document-movements', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor || String(actor.email || '').toLowerCase() !== DOCS_MANAGER_EMAIL) {
+      return c.json({ success: false, error: 'Docs Manager is available only to Rajesh Panchal' }, 403);
+    }
+
+    const body = await c.req.json();
+    const clientId = String(body.clientId || '');
+    const direction = String(body.direction || '').toUpperCase();
+    let documentType = String(body.documentType || '').trim();
+    const transferMethod = String(body.transferMethod || '').trim();
+    const details = String(body.details || '').trim();
+    const sourceInId = body.sourceInId == null || body.sourceInId === '' ? null : Number(body.sourceInId);
+    if (!clientId || !['IN', 'OUT'].includes(direction) || !transferMethod || (sourceInId == null && !documentType)) {
+      return c.json({ success: false, error: 'Client, direction, document type and transfer method are required' }, 400);
+    }
+    if (sourceInId !== null && (direction !== 'OUT' || !Number.isSafeInteger(sourceInId))) {
+      return c.json({ success: false, error: 'Invalid source document' }, 400);
+    }
+
+    const { data: client, error: clientError } = await supabase
+      .from('clients')
+      .select('id, name')
+      .eq('id', clientId)
+      .single();
+    if (clientError || !client) return c.json({ success: false, error: 'Client not found' }, 404);
+
+    if (sourceInId !== null) {
+      const { data: source, error: sourceError } = await supabase
+        .from('document_movements')
+        .select('id, client_id, direction, document_type')
+        .eq('id', sourceInId)
+        .eq('client_id', client.id)
+        .eq('direction', 'IN')
+        .maybeSingle();
+      if (sourceError) throw sourceError;
+      if (!source) return c.json({ success: false, error: 'The selected incoming document was not found' }, 404);
+
+      const { data: existingOut, error: existingOutError } = await supabase
+        .from('document_movements')
+        .select('id')
+        .eq('source_in_id', sourceInId)
+        .maybeSingle();
+      if (existingOutError) throw existingOutError;
+      if (existingOut) return c.json({ success: false, error: 'This document has already been marked out' }, 409);
+      documentType = source.document_type;
+    }
+
+    const { data, error } = await supabase
+      .from('document_movements')
+      .insert({
+        client_id: client.id,
+        client_name: client.name,
+        direction,
+        document_type: documentType,
+        transfer_method: transferMethod,
+        details,
+        source_in_id: sourceInId,
+        recorded_by_id: actor.id,
+        recorded_by_name: actor.name,
+      })
+      .select()
+      .single();
+    if (error?.code === '23505' && sourceInId !== null) {
+      return c.json({ success: false, error: 'This document has already been marked out' }, 409);
+    }
+    if (error) throw error;
+    await broadcastChange('document-movements');
+    return c.json({ success: true, data }, 201);
+  } catch (error) {
+    console.log('Error recording document movement:', error);
+    return c.json({ success: false, error: 'Failed to record document movement' }, 500);
+  }
+});
 
 // Upload document
 app.post('/make-server-0abfa7cf/documents', async (c) => {

@@ -38,6 +38,8 @@ export type ChangeTopic =
   | 'itr'
   // The accounting control list.
   | 'accounting'
+  // Rajesh Panchal's client document In/Out register.
+  | 'document-movements'
   // The client discussion log.
   | 'discussions';
 

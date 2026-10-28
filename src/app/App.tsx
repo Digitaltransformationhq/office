@@ -35,6 +35,7 @@ import { canAccessClients, canAccessGstCompliance, canAccessIncomeTax } from './
 import { isApproverRole } from './utils/roles';
 import { RevenueShare } from './components/RevenueShare';
 import { ClientApprovalQueue } from './components/ClientApprovalQueue';
+import { DocumentMovementManager } from './components/DocumentMovementManager';
 
 interface User {
   id: string;
@@ -259,6 +260,12 @@ export default function App() {
         return null;
       case 'accounting':
         if (user && (isApproverRole(user.role) || user.role === 'team-leader')) return <Accounting />;
+        if (user) setActiveView(user.role);
+        return null;
+      case 'docs-manager':
+        if (user?.email.trim().toLowerCase() === 'caoffice.sahaj@gmail.com') {
+          return <DocumentMovementManager user={user} />;
+        }
         if (user) setActiveView(user.role);
         return null;
       case 'approvals':

@@ -425,6 +425,74 @@ export const clientsAPI = {
   },
 };
 
+// ============================================
+// DOCUMENT MOVEMENT REGISTER
+// ============================================
+
+export interface DocumentMovement {
+  id: string;
+  clientId: string;
+  clientName: string;
+  direction: 'IN' | 'OUT';
+  documentType: string;
+  transferMethod: string;
+  details: string;
+  recordedById: string;
+  recordedByName: string;
+  recordedAt: string;
+  sourceInId: string | null;
+}
+
+function transformDocumentMovement(row: any): DocumentMovement {
+  return {
+    id: String(row.id),
+    clientId: row.client_id || '',
+    clientName: row.client_name,
+    direction: row.direction,
+    documentType: row.document_type,
+    transferMethod: row.transfer_method,
+    details: row.details || '',
+    recordedById: row.recorded_by_id || '',
+    recordedByName: row.recorded_by_name,
+    recordedAt: row.recorded_at,
+    sourceInId: row.source_in_id == null ? null : String(row.source_in_id),
+  };
+}
+
+export const documentMovementsAPI = {
+  getAll: async () => {
+    const result = await fetchAPI(`/document-movements${actorParam()}`);
+    return {
+      ...result,
+      data: (result.data || []).map(transformDocumentMovement) as DocumentMovement[],
+    };
+  },
+  getByClient: async (clientId: string) => {
+    const result = await fetchAPI(`/document-movements/client/${encodeURIComponent(clientId)}${actorParam()}`);
+    return {
+      ...result,
+      data: (result.data || []).map(transformDocumentMovement) as DocumentMovement[],
+    };
+  },
+  create: async (movement: {
+    clientId: string;
+    direction: 'IN' | 'OUT';
+    documentType: string;
+    transferMethod: string;
+    details?: string;
+    sourceInId?: string;
+  }) => {
+    const result = await fetchAPI(`/document-movements${actorParam()}`, {
+      method: 'POST',
+      body: JSON.stringify(movement),
+    });
+    return {
+      ...result,
+      data: result.data ? transformDocumentMovement(result.data) : null,
+    };
+  },
+};
+
 export const clientApprovalsAPI = {
   getSettings: async () => fetchAPI(`/approval-settings${actorParam()}`),
   updateSetting: async (actionKey: string, setting: { enabled: boolean; approverId: string | null }) =>

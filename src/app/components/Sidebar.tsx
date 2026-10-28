@@ -51,6 +51,7 @@ const ICONS: Record<string, LucideIcon> = {
   approvals: ClipboardCheck,
   leave: CalendarDays,
   documents: FileText,
+  'docs-manager': FolderOpen,
   'due-dates': CalendarClock,
   chat: MessageCircle,
   queries: HelpCircle,
@@ -97,6 +98,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
   // Spliced into each role's menu rather than listed per role, so the rules live
   // in one place and cannot disagree between partner, admin and staff.
   const isPartnerOrAdmin = isApproverRole(user.role);
+  const hasDocsManagerAccess = user.email.trim().toLowerCase() === 'caoffice.sahaj@gmail.com';
 
   const deskItems: MenuItem[] = [
     ...(canAccessClients(user) ? [{ label: 'Clients', id: 'clients' }] : []),
@@ -156,6 +158,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Dashboard', id: 'dashboard' },
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
+      ...(hasDocsManagerAccess ? [{ label: 'Docs Manager', id: 'docs-manager' }] : []),
       ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Announcements', id: 'announcements' },
