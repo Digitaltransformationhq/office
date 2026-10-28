@@ -12,7 +12,7 @@ import { useToast } from './Toast';
 import { DailyTodoList } from './DailyTodoList';
 import { TASK_STATUS, statusColor, statusLabel, isAwaitingApproval, isOpenTask, isFinishedTask } from '../utils/taskStatus';
 import { sortTasks } from '../utils/sorting';
-import { Loader2, Plus, MessageSquarePlus, MessageSquare, RotateCcw, ChevronLeft } from 'lucide-react';
+import { Loader2, Plus, MessageSquarePlus, MessageSquare, RotateCcw, ChevronLeft, Search, X } from 'lucide-react';
 
 interface TeamMemberDashboardProps {
   user?: {
@@ -189,6 +189,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
   /** Tasks with an in-flight status write, so their buttons can't be double-fired. */
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [view, setView] = useState<'all' | 'active' | 'in-progress' | 'awaiting' | 'completed'>('active');
+  const [taskSearch, setTaskSearch] = useState('');
   /** Mirror of busyIds readable from the poll timer, which closes over stale state. */
   const busyRef = useRef(false);
   busyRef.current = busyIds.size > 0;
@@ -340,6 +341,13 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
     completed: { label: 'Completed', tasks: completedTasks },
   } as const;
   const shownTasks = VIEWS[view].tasks;
+  const normalizedTaskSearch = taskSearch.trim().toLocaleLowerCase();
+  const filteredShownTasks = normalizedTaskSearch
+    ? shownTasks.filter((task: any) =>
+        [task.client, task.task, task.category, task.priority, statusLabel(task.status)]
+          .some(value => String(value || '').toLocaleLowerCase().includes(normalizedTaskSearch))
+      )
+    : shownTasks;
   const returnedTasks = allTasks.filter(isRejectedTask);
 
   /** One definition of what a task offers, rendered two ways (card + table). */
@@ -515,33 +523,62 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
         {/* ── Active tasks ── */}
         <Card>
           <CardHeader>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <CardTitle>{VIEWS[view].label}</CardTitle>
-              <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                {shownTasks.length}
-              </span>
-              {view !== 'active' && (
-                <button
-                  onClick={() => setView('active')}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-[#1b365d]"
-                >
-                  <ChevronLeft size={16} className="shrink-0" />
-                  Show active
-                </button>
-              )}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <CardTitle>{VIEWS[view].label}</CardTitle>
+                <span className="rounded-full bg-[#F4F6F9] px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  {normalizedTaskSearch ? `${filteredShownTasks.length} of ${shownTasks.length}` : shownTasks.length}
+                </span>
+                {view !== 'active' && (
+                  <button
+                    onClick={() => setView('active')}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-[#1b365d]"
+                  >
+                    <ChevronLeft size={16} className="shrink-0" />
+                    Show active
+                  </button>
+                )}
+              </div>
+
+              <div className="relative w-full sm:w-72">
+                <Search
+                  aria-hidden="true"
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
+                <input
+                  type="search"
+                  value={taskSearch}
+                  onChange={(event) => setTaskSearch(event.target.value)}
+                  placeholder={`Search ${VIEWS[view].label.toLowerCase()}`}
+                  aria-label={`Search ${VIEWS[view].label.toLowerCase()}`}
+                  className="h-9 w-full rounded-lg border border-[#D9E1EA] bg-white pl-9 pr-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/10"
+                />
+                {taskSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setTaskSearch('')}
+                    aria-label="Clear task search"
+                    className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-[#1b365d]"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {shownTasks.length === 0 ? (
+            {filteredShownTasks.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                {view === 'active' ? 'No active tasks. All caught up.'
+                {normalizedTaskSearch ? `No ${VIEWS[view].label.toLowerCase()} match “${taskSearch.trim()}”.`
+                  : view === 'active' ? 'No active tasks. All caught up.'
                   : `Nothing under ${VIEWS[view].label.toLowerCase()}.`}
               </p>
             ) : (
               <>
                 {/* Mobile — purpose-built cards */}
                 <div className="space-y-3 p-4 md:hidden">
-                  {shownTasks.map((task: any) => (
+                  {filteredShownTasks.map((task: any) => (
                     <TaskCard
                       key={task.id}
                       task={task}
@@ -578,7 +615,7 @@ export function TeamMemberDashboard({ user }: TeamMemberDashboardProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {shownTasks.map((task: any) => (
+                    {filteredShownTasks.map((task: any) => (
                       <tr
                         key={task.id}
                         className={`border-b border-[#EFF3F8] transition-colors hover:bg-[#F9FBFD] ${
