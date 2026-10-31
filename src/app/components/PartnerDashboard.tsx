@@ -11,7 +11,7 @@ import { DailyTodoList } from './DailyTodoList';
 import { useLiveData } from '../hooks/useLiveData';
 import { statusColor, statusLabel, statusHex, isAwaitingApproval, isOpenTask, canApproveTask } from '../utils/taskStatus';
 import { sortTasks, sortText } from '../utils/sorting';
-import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, X, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, Users, ClipboardList, Mail, X, Search, CalendarDays } from 'lucide-react';
 
 const NAVY = '#1b365d';
 const GREEN = '#4ea72e';
@@ -87,6 +87,7 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [showTaskApprovals, setShowTaskApprovals] = useState(false);
   const [showInquiryApprovals, setShowInquiryApprovals] = useState(false);
+  const [selectedCalendarTask, setSelectedCalendarTask] = useState<any | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const timeAgo = useTimeAgo(lastRefresh);
 
@@ -370,14 +371,16 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
                     {dueTasks.length > 0 && (
                       <div className="flex flex-col gap-1 px-2 pt-2">
                         {dueTasks.slice(0, 2).map(t => (
-                          <div
+                          <button
                             key={t.id}
                             title={`${t.client}: ${t.task}`}
-                            className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 ${today ? 'bg-white shadow-sm' : 'bg-[#F4F6F9]'}`}
+                            onClick={() => setSelectedCalendarTask(t)}
+                            className={`group flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left outline-none transition-all hover:-translate-y-px hover:shadow-sm focus-visible:ring-2 focus-visible:ring-[#1b365d]/35 ${today ? 'bg-white shadow-sm' : 'bg-[#F4F6F9] hover:bg-white'}`}
+                            aria-label={`View task details for ${t.task}, ${t.client}`}
                           >
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: statusHex(t.status) }} />
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full transition-transform group-hover:scale-125" style={{ backgroundColor: statusHex(t.status) }} />
                             <span className="truncate text-[0.62rem] font-medium" style={{ color: NAVY }}>{t.client}</span>
-                          </div>
+                          </button>
                         ))}
                         {dueTasks.length > 2 && (
                           <p className="px-1 text-[0.58rem] text-muted-foreground">+{dueTasks.length - 2} more</p>
@@ -625,6 +628,12 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
       {showAddStaff && (
         <AddStaffModal onClose={() => setShowAddStaff(false)} onSuccess={loadData} />
       )}
+      {selectedCalendarTask && (
+        <CalendarTaskDetailsModal
+          task={selectedCalendarTask}
+          onClose={() => setSelectedCalendarTask(null)}
+        />
+      )}
       {showTaskApprovals && currentUser?.id && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1728]/60 p-4 backdrop-blur-sm">
           <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]">
@@ -689,6 +698,100 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function formatTaskDate(value?: string | null) {
+  if (!value) return 'Not set';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not set';
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+/** Read-only task context opened from a compact calendar chip. */
+function CalendarTaskDetailsModal({ task, onClose }: { task: any; onClose: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1728]/60 p-4 backdrop-blur-sm"
+      onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="calendar-task-title"
+        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]"
+      >
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#E7EDF4] px-5 py-4 sm:px-6 sm:py-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: 'rgba(27,54,93,0.08)', color: NAVY }}>
+              <CalendarDays size={20} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Calendar task</p>
+              <h2 id="calendar-task-title" className="mt-0.5 text-[1.05rem] font-semibold leading-snug" style={{ color: NAVY }}>
+                {task.task || 'Task details'}
+              </h2>
+              <p className="mt-0.5 truncate text-sm text-muted-foreground">{task.client || 'No client'}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[#F4F6F9] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b365d]/35"
+            aria-label="Close task details"
+            autoFocus
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <span className={`inline-flex rounded-md px-2.5 py-1 text-xs font-medium ${statusColor(task.status)}`}>
+              {statusLabel(task.status)}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-[#E7EDF4] bg-[#F9FAFB] px-2.5 py-1 text-xs font-medium text-foreground/75">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: priorityDot(task.priority) }} />
+              {task.priority || 'No priority'}
+            </span>
+          </div>
+
+          <dl className="overflow-hidden rounded-xl border border-[#E7EDF4]">
+            <TaskDetailRow label="Client" value={task.client || '—'} />
+            <TaskDetailRow label="Assigned to" value={task.assignedTo || 'Unassigned'} />
+            <TaskDetailRow label="Category" value={task.category || '—'} />
+            <TaskDetailRow label="Due date" value={formatTaskDate(task.targetDate)} />
+            <TaskDetailRow label="Start date" value={formatTaskDate(task.startDate)} />
+            <TaskDetailRow label="Created by" value={task.createdBy || 'Unknown'} />
+          </dl>
+
+          {task.comments && (
+            <div className="mt-4 rounded-xl border border-[#E7EDF4] bg-[#F9FAFB] p-4">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-muted-foreground">Notes</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/80">{task.comments}</p>
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function TaskDetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 border-b border-[#EFF3F8] px-4 py-3 last:border-b-0">
+      <dt className="text-[0.67rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</dt>
+      <dd className="text-right text-sm font-medium text-foreground/80">{value}</dd>
     </div>
   );
 }
