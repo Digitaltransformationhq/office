@@ -162,7 +162,21 @@ export function PartnerDashboard({ user }: PartnerDashboardProps) {
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   };
 
-  const pendingTasks = tasks.filter(t => isOpenTask(t.status)).map(t => ({ ...t, aging: calculateAging(t.targetDate) }));
+  // The Tasks sidebar is the firm-wide register. The dashboard is personal:
+  // show only open work where this user has an active stake in the task.
+  const isCurrentUserInvolved = (task: any) => {
+    const userId = currentUser?.id;
+    if (!userId) return false;
+
+    return task.assignedToId === userId ||
+      task.createdById === userId ||
+      task.approverId === userId ||
+      task.approvedById === userId;
+  };
+
+  const pendingTasks = tasks
+    .filter(t => isOpenTask(t.status) && isCurrentUserInvolved(t))
+    .map(t => ({ ...t, aging: calculateAging(t.targetDate) }));
   const uniqueCategories = sortText(Array.from(new Set(tasks.map((t: any) => t.category).filter(Boolean))));
   const uniqueStatuses = sortText(Array.from(new Set(tasks.map((t: any) => t.status).filter(Boolean))));
 
