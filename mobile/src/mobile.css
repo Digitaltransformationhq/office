@@ -1,0 +1,44 @@
+/* Mobile-only adjustments. The application and its desktop stylesheet remain
+   the source of truth; this file is added only to the packaged mobile build. */
+@media (max-width: 767px) {
+  html, body, #root { width: 100%; min-width: 0; }
+
+  /* Use the visible viewport when browser chrome or the keyboard changes it. */
+  #root > .h-screen {
+    height: 100vh;
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
+  }
+
+  /* A flex child may otherwise grow to the width of a register table and hide
+     its own horizontal scroller off screen. */
+  #root > .h-screen > .flex-1 { min-width: 0; }
+  main { min-width: 0; }
+  .overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+  /* Keep the drawer below the status bar and above the home indicator. */
+  #root .fixed.top-0.left-0.h-screen {
+    height: 100vh;
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
+  }
+
+  /* Prevent iOS from zooming in on form fields smaller than 16px. */
+  input, select, textarea { font-size: 16px; }
+
+  /* Form dialogs must remain usable on short screens and with the keyboard. */
+  .fixed.inset-0.flex.items-center.justify-center {
+    padding-top: max(1rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+  .fixed.inset-0.flex.items-center.justify-center > * {
+    max-height: calc(100vh - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
