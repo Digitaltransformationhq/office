@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">KAPS &amp; Co Office</string>
+    <string name="title_activity_main">KAPS &amp; Co Office</string>
+    <string name="package_name">com.kaps.office.mobile</string>
+    <string name="custom_url_scheme">com.kaps.office.mobile</string>
+</resources>
