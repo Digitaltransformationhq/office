@@ -1,12 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDownToLine, ArrowUpFromLine, Clock3, FileText, Search, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, Clock3, Download, FileText, Search, X } from 'lucide-react';
 import { clientsAPI, documentMovementsAPI, type DocumentMovement } from '../services/api';
 import { useLiveData } from '../hooks/useLiveData';
 import { useToast } from './Toast';
-import { sortByText } from '../utils/sorting';
+import { sortByText, sortOptions, sortText } from '../utils/sorting';
+import { exportDocumentMovementsToExcel } from '../utils/exportDocuments';
 
 const NAVY = '#1b365d';
+
+/** Documents a client usually hands over or collects. "Other" opens a free-text box. */
+const OTHER_DOCUMENT = 'Other';
+const DOCUMENT_TYPES = sortOptions([
+  'Aadhaar card', 'Agreement / contract', 'Audit report', 'Balance sheet & P&L',
+  'Bank statement', 'Cancelled cheque', 'Capital gain statement', 'Cash book',
+  'Certificate of incorporation', 'Challan copy', 'Credit / debit notes', 'DSC (Digital Signature Certificate)',
+  'DSC token / USB', 'E-way bills', 'Electricity bill', 'Expense vouchers',
+  'Fixed deposit certificate', 'Form 16', 'Form 16A', 'Form 26AS / AIS',
+  'GST certificate', 'GST return copy', 'Home loan certificate', 'Income tax return copy',
+  'Insurance premium receipt', 'Investment proofs', 'Loan statement', 'MOA / AOA',
+  'Partnership deed', 'PAN card', 'Passbook', 'Passport size photographs',
+  'Property documents', 'Purchase bills', 'Rent agreement', 'Rent receipts',
+  'Sales bills', 'Salary slips', 'Share certificates', 'Signed form / letter',
+  'Stamp papers', 'Stock statement', 'TDS certificate', 'Trust deed',
+  'Udyam / MSME certificate', 'Utility bills', OTHER_DOCUMENT,
+]);
 
 interface DocumentMovementManagerProps {
   user: { id: string; name: string; email: string; role: string };
@@ -36,6 +54,12 @@ export function DocumentMovementManager({ user }: DocumentMovementManagerProps) 
   const [search, setSearch] = useState('');
   const [action, setAction] = useState<{ client: ClientRow; direction: Direction } | null>(null);
   const [historyClient, setHistoryClient] = useState<ClientRow | null>(null);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [directionFilter, setDirectionFilter] = useState<'' | Direction>('');
+  const [clientFilter, setClientFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const load = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
@@ -73,6 +97,48 @@ export function DocumentMovementManager({ user }: DocumentMovementManagerProps) 
       .some(value => String(value || '').toLocaleLowerCase().includes(query)));
   }, [clients, search]);
 
+  const documentTypeOptions = useMemo(() => sortText([...new Set([
+    ...DOCUMENT_TYPES.filter(type => type !== OTHER_DOCUMENT),
+    ...movements.map(item => item.documentType).filter(Boolean),
+  ])]), [movements]);
+
+  const filtersActive = Boolean(fromDate || toDate || directionFilter || clientFilter || typeFilter);
+  const matchesFilters = (item: DocumentMovement) => {
+    const day = indiaDateKey(item.recordedAt);
+    return (!fromDate || day >= fromDate)
+      && (!toDate || day <= toDate)
+      && (!directionFilter || item.direction === directionFilter)
+      && (!clientFilter || item.clientId === clientFilter)
+      && (!typeFilter || item.documentType === typeFilter);
+  };
+  const filteredMovements = movements.filter(matchesFilters);
+
+  const clearFilters = () => {
+    setFromDate(''); setToDate(''); setDirectionFilter(''); setClientFilter(''); setTypeFilter('');
+  };
+
+  // The screen holds only the latest movements, so the export fetches the
+  // complete history and applies the same filters to it.
+  const exportExcel = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const result = await documentMovementsAPI.getAll({ all: true });
+      if (!result.success) throw new Error(result.error || 'Could not load document history.');
+      const rows = (result.data || []).filter(matchesFilters);
+      if (rows.length === 0) {
+        showError('No document movements match these filters.');
+        return;
+      }
+      await exportDocumentMovementsToExcel(rows, filtersActive ? 'filtered' : 'all');
+      showSuccess(`Exported ${rows.length} document movement${rows.length === 1 ? '' : 's'}.`);
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Could not export document history.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const today = indiaDateKey(new Date());
   const todayIn = movements.filter(item => item.direction === 'IN' && indiaDateKey(item.recordedAt) === today).length;
   const todayOut = movements.filter(item => item.direction === 'OUT' && indiaDateKey(item.recordedAt) === today).length;
@@ -83,6 +149,42 @@ export function DocumentMovementManager({ user }: DocumentMovementManagerProps) 
         <h1 className="text-[1.5rem] font-semibold tracking-tight" style={{ color: NAVY }}>Docs Manager</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">Record every client document received and released by the office · Managed by {user.name}</p>
       </div>
+
+      <section className="grid grid-cols-1 gap-2 rounded-xl border border-[#E7EDF4] bg-white px-4 py-3 sm:grid-cols-2 lg:grid-cols-[repeat(5,minmax(0,1fr))_auto_auto]">
+        <label className="block text-[0.68rem] font-medium text-muted-foreground">From
+          <input type="date" value={fromDate} max={toDate || undefined} onChange={event => setFromDate(event.target.value)} className={`mt-1 ${filterCls}`} />
+        </label>
+        <label className="block text-[0.68rem] font-medium text-muted-foreground">To
+          <input type="date" value={toDate} min={fromDate || undefined} onChange={event => setToDate(event.target.value)} className={`mt-1 ${filterCls}`} />
+        </label>
+        <FilterSelect label="In / Out" value={directionFilter} onChange={value => setDirectionFilter(value as '' | Direction)}>
+          <option value="">In &amp; Out</option>
+          <option value="IN">In only</option>
+          <option value="OUT">Out only</option>
+        </FilterSelect>
+        <FilterSelect label="Client" value={clientFilter} onChange={setClientFilter}>
+          <option value="">All clients</option>
+          {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+        </FilterSelect>
+        <FilterSelect label="Document type" value={typeFilter} onChange={setTypeFilter}>
+          <option value="">All documents</option>
+          {documentTypeOptions.map(type => <option key={type} value={type}>{type}</option>)}
+        </FilterSelect>
+        <div className="flex items-end">
+          <button type="button" onClick={clearFilters} disabled={!filtersActive} className="h-9 rounded-lg px-3 text-xs font-medium text-[#4f7cc4] hover:bg-[#EEF3FA] disabled:cursor-default disabled:text-muted-foreground/50 disabled:hover:bg-transparent">Clear</button>
+        </div>
+        <div className="flex items-end">
+          <button
+            type="button"
+            onClick={exportExcel}
+            disabled={exporting || loading}
+            className="flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-full border border-[#CBD8E6] bg-white px-4 text-sm font-medium transition hover:bg-[#F4F7FB] disabled:opacity-50"
+            style={{ color: NAVY }}
+          >
+            <Download size={15} /> {exporting ? 'Exporting…' : 'Export Excel'}
+          </button>
+        </div>
+      </section>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Clients" value={clients.length} />
@@ -178,12 +280,14 @@ export function DocumentMovementManager({ user }: DocumentMovementManagerProps) 
         </div>
         {movements.length === 0 ? (
           <div className="px-5 py-12 text-center text-sm text-muted-foreground">No document movement has been recorded yet.</div>
+        ) : filteredMovements.length === 0 ? (
+          <div className="px-5 py-12 text-center text-sm text-muted-foreground">No recent document movement matches these filters. Export Excel still searches the full history.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[850px] border-collapse text-sm">
               <thead className="bg-[#F9FAFB]"><tr className="border-b border-[#E7EDF4]"><Head>Date &amp; time</Head><Head>Client</Head><Head>In / Out</Head><Head>Document</Head><Head>How received / sent</Head><Head>Details</Head></tr></thead>
               <tbody>
-                {movements.slice(0, 100).map(item => (
+                {filteredMovements.slice(0, 100).map(item => (
                   <tr key={item.id} className="border-b border-[#EFF3F8] hover:bg-[#FAFBFD]">
                     <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">{formatDateTime(item.recordedAt)}</td>
                     <td className="px-4 py-3 font-medium" style={{ color: NAVY }}>{item.clientName}</td>
@@ -335,6 +439,7 @@ function MovementModal({ client, direction, onClose, onSave }: {
   onSave: (values: { documentType: string; transferMethod: string; details: string; sourceInId?: string }) => Promise<void>;
 }) {
   const [documentType, setDocumentType] = useState('');
+  const [documentChoice, setDocumentChoice] = useState('');
   const [transferMethod, setTransferMethod] = useState('');
   const [details, setDetails] = useState('');
   const [saving, setSaving] = useState(false);
@@ -390,7 +495,8 @@ function MovementModal({ client, direction, onClose, onSave }: {
       setError('Select a document that is currently in the office.');
       return;
     }
-    if ((!usingExisting && !documentType.trim()) || !transferMethod.trim()) {
+    const chosenType = documentChoice === OTHER_DOCUMENT ? documentType.trim() : documentChoice;
+    if ((!usingExisting && !chosenType) || !transferMethod.trim()) {
       setError('Document type and transfer method are required.');
       return;
     }
@@ -398,7 +504,7 @@ function MovementModal({ client, direction, onClose, onSave }: {
     setError('');
     try {
       await onSave({
-        documentType: selectedSource?.documentType || documentType.trim(),
+        documentType: selectedSource?.documentType || chosenType,
         transferMethod: transferMethod.trim(),
         details: details.trim(),
         sourceInId: usingExisting ? selectedSource?.id : undefined,
@@ -470,7 +576,10 @@ function MovementModal({ client, direction, onClose, onSave }: {
               )}
             </div>
           ) : (
-            <label className="block"><span className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>Document type <span className="text-red-600">*</span></span><input autoFocus value={documentType} onChange={event => setDocumentType(event.target.value)} placeholder="e.g. Bank statement, purchase bills, signed form" className="w-full rounded-lg border border-[#D9E1EA] px-3 py-2.5 text-sm outline-none focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/10" /></label>
+            <div className="space-y-2">
+              <label className="block"><span className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>Document type <span className="text-red-600">*</span></span><span className="relative block"><select autoFocus value={documentChoice} onChange={event => setDocumentChoice(event.target.value)} className={`w-full appearance-none rounded-lg border border-[#D9E1EA] bg-white py-2.5 pl-3 pr-9 text-sm outline-none focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/10 ${documentChoice ? '' : 'text-muted-foreground'}`}><option value="" disabled>Select a document</option>{DOCUMENT_TYPES.map(type => <option key={type} value={type} className="text-foreground">{type}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /></span></label>
+              {documentChoice === OTHER_DOCUMENT && <input autoFocus value={documentType} onChange={event => setDocumentType(event.target.value)} aria-label="Other document type" placeholder="Type the document name" className="w-full rounded-lg border border-[#D9E1EA] px-3 py-2.5 text-sm outline-none focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/10" />}
+            </div>
           )}
 
           <label className="block"><span className="mb-1.5 block text-sm font-medium" style={{ color: NAVY }}>{incoming ? 'How was it received?' : 'How was it sent?'} <span className="text-red-600">*</span></span><input value={transferMethod} onChange={event => setTransferMethod(event.target.value)} placeholder={incoming ? 'e.g. Hand delivered, courier, email, WhatsApp' : 'e.g. Collected by client, courier, email, WhatsApp'} className="w-full rounded-lg border border-[#D9E1EA] px-3 py-2.5 text-sm outline-none focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/10" /></label>
@@ -482,6 +591,25 @@ function MovementModal({ client, direction, onClose, onSave }: {
       </div>
       </div>
     </ViewportModal>
+  );
+}
+
+const filterCls =
+  'h-9 w-full rounded-lg border border-[#D9E1EA] bg-white px-3 text-sm text-foreground/80 outline-none transition focus:border-[#1b365d] focus:ring-2 focus:ring-[#1b365d]/10';
+
+function FilterSelect({ label, value, onChange, children }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block text-[0.68rem] font-medium text-muted-foreground">{label}
+      <span className="relative mt-1 block">
+        <select value={value} onChange={event => onChange(event.target.value)} className={`${filterCls} appearance-none pr-9`}>{children}</select>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      </span>
+    </label>
   );
 }
 
