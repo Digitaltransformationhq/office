@@ -460,8 +460,10 @@ function transformDocumentMovement(row: any): DocumentMovement {
 }
 
 export const documentMovementsAPI = {
-  getAll: async () => {
-    const result = await fetchAPI(`/document-movements${actorParam()}`);
+  /** The latest 500 movements, or with `all` every movement ever recorded. */
+  getAll: async ({ all = false }: { all?: boolean } = {}) => {
+    const query = actorParam();
+    const result = await fetchAPI(`/document-movements${query}${all ? `${query ? '&' : '?'}all=1` : ''}`);
     return {
       ...result,
       data: (result.data || []).map(transformDocumentMovement) as DocumentMovement[],

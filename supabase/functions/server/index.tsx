@@ -4581,6 +4581,17 @@ app.get('/make-server-0abfa7cf/document-movements', async (c) => {
       return c.json({ success: false, error: 'Docs Manager is available only to Rajesh Panchal' }, 403);
     }
 
+    // The screen needs only the latest movements; the Excel export asks for
+    // every row so a date filter can reach back past that window.
+    if (c.req.query('all') === '1') {
+      const rows = await selectAll(() => supabase
+        .from('document_movements')
+        .select('*')
+        .order('recorded_at', { ascending: false })
+        .order('id', { ascending: false }));
+      return c.json({ success: true, data: rows });
+    }
+
     const { data, error } = await supabase
       .from('document_movements')
       .select('*')
