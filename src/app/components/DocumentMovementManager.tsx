@@ -150,6 +150,13 @@ export function DocumentMovementManager({ user }: DocumentMovementManagerProps) 
         <p className="mt-0.5 text-sm text-muted-foreground">Record every client document received and released by the office · Managed by {user.name}</p>
       </div>
 
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Clients" value={clients.length} />
+        <Stat label="In today" value={todayIn} tone="in" />
+        <Stat label="Out today" value={todayOut} tone="out" />
+        <Stat label="History shown" value={movements.length} />
+      </div>
+
       <section className="grid grid-cols-1 gap-2 rounded-xl border border-[#E7EDF4] bg-white px-4 py-3 sm:grid-cols-2 lg:grid-cols-[repeat(5,minmax(0,1fr))_auto_auto]">
         <label className="block text-[0.68rem] font-medium text-muted-foreground">From
           <input type="date" value={fromDate} max={toDate || undefined} onChange={event => setFromDate(event.target.value)} className={`mt-1 ${filterCls}`} />
@@ -185,13 +192,6 @@ export function DocumentMovementManager({ user }: DocumentMovementManagerProps) 
           </button>
         </div>
       </section>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Clients" value={clients.length} />
-        <Stat label="In today" value={todayIn} tone="in" />
-        <Stat label="Out today" value={todayOut} tone="out" />
-        <Stat label="History shown" value={movements.length} />
-      </div>
 
       <section className="overflow-hidden rounded-xl border border-[#E7EDF4] bg-white">
         <div className="border-b border-[#E7EDF4] p-4">
