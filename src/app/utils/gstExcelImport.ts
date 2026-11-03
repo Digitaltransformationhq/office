@@ -224,26 +224,34 @@ export function parseGstWorkbookSheet(rows: ExcelCell[][], financialYear: string
   return { registrations: [...registrations.values()], filings: [...filings.values()], warnings, sourceRows };
 }
 
-/** Annual-return tabs carried in the same workbook as the monthly register. */
+const findHeader = (data: ExcelCell[][], returnType: string) =>
+  data.slice(0, 12).findIndex(row =>
+    row.some(cell => normalized(cell) === 'GSTIN') && row.some(cell => normalized(cell) === returnType));
+
+/**
+ * Annual-return tabs, either carried in the monthly register workbook or
+ * uploaded on their own. Sheets are found by their usual names first, then by
+ * header, so a renamed tab in a standalone workbook still reads.
+ */
 export function parseGstAnnualSheets(
   sheets: Array<{ sheet: string; data: ExcelCell[][] }>,
-  workbookFinancialYear: string,
-): { filings: GstExcelFiling[]; warnings: string[] } {
-  const reportingStart = fyStartYear(workbookFinancialYear) - 1;
-  const reportingYear = `${reportingStart}-${String((reportingStart + 1) % 100).padStart(2, '0')}`;
+  reportingYear: string,
+): { filings: GstExcelFiling[]; warnings: string[]; sourceRows: number; found: boolean } {
   const period = annualPeriod(reportingYear);
   const filings: GstExcelFiling[] = [];
   const warnings: string[] = [];
+  const gstinsRead = new Set<string>();
 
-  const regular = sheets.find(s => normalized(s.sheet) === 'GSTR-9 & 9C');
+  const regular = sheets.find(s => normalized(s.sheet) === 'GSTR-9 & 9C')
+    || sheets.find(s => findHeader(s.data, 'GSTR-9') !== -1);
   if (regular) {
-    const header = regular.data.slice(0, 12).findIndex(row =>
-      row.some(cell => normalized(cell) === 'GSTIN') && row.some(cell => normalized(cell) === 'GSTR-9'));
-    if (header === -1) warnings.push('Annual sheet "GSTR-9 & 9C" was found but its header could not be read.');
+    const header = findHeader(regular.data, 'GSTR-9');
+    if (header === -1) warnings.push(`Annual sheet "${regular.sheet}" was found but its header could not be read.`);
     else regular.data.slice(header + 1).forEach((row, offset) => {
       const rowNumber = header + offset + 2;
       const gstin = normalized(row[3]).replace(/\s/g, '');
       if (!gstin) return;
+      gstinsRead.add(gstin);
       ([['GSTR-9', 6, 9], ['GSTR-9C', 7, 10]] as const).forEach(([returnType, appliesCol, dateCol]) => {
         const applies = normalized(row[appliesCol]);
         const date = filingDate(row[dateCol]);
@@ -260,15 +268,16 @@ export function parseGstAnnualSheets(
     });
   }
 
-  const composition = sheets.find(s => normalized(s.sheet) === 'ANNUAL RETURN COMPOSITION');
+  const composition = sheets.find(s => normalized(s.sheet) === 'ANNUAL RETURN COMPOSITION')
+    || sheets.find(s => s !== regular && findHeader(s.data, 'GSTR-4') !== -1);
   if (composition) {
-    const header = composition.data.slice(0, 12).findIndex(row =>
-      row.some(cell => normalized(cell) === 'GSTIN') && row.some(cell => normalized(cell) === 'GSTR-4'));
-    if (header === -1) warnings.push('Annual sheet "Annual Return Composition" was found but its header could not be read.');
+    const header = findHeader(composition.data, 'GSTR-4');
+    if (header === -1) warnings.push(`Annual sheet "${composition.sheet}" was found but its header could not be read.`);
     else composition.data.slice(header + 1).forEach((row, offset) => {
       const rowNumber = header + offset + 2;
       const gstin = normalized(row[3]).replace(/\s/g, '');
       const raw = row[5];
+      if (gstin) gstinsRead.add(gstin);
       if (!gstin || !text(raw)) return;
       const date = filingDate(raw);
       const marker = normalized(raw);
@@ -283,5 +292,17 @@ export function parseGstAnnualSheets(
     });
   }
 
-  return { filings, warnings };
+  return { filings, warnings, sourceRows: gstinsRead.size, found: Boolean(regular || composition) };
+}
+
+/** The financial year whose register workbook carries the annual returns for `reportingYear`. */
+export function workbookYearFor(reportingYear: string) {
+  const start = fyStartYear(reportingYear) + 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+}
+
+/** The annual-return year carried in the register workbook for `workbookFinancialYear`. */
+export function reportingYearFor(workbookFinancialYear: string) {
+  const start = fyStartYear(workbookFinancialYear) - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
 }

@@ -4,6 +4,8 @@ import { gstAPI, type GstRegistration } from '../services/api';
 import {
   parseGstWorkbookSheet,
   parseGstAnnualSheets,
+  reportingYearFor,
+  workbookYearFor,
   type ExcelCell,
   type GstExcelParseResult,
 } from '../utils/gstExcelImport';
@@ -54,7 +56,13 @@ const localToday = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-export function GSTExcelImportModal({ financialYear, registrations, currentUser, onClose, onImported }: {
+/**
+ * `monthly` reads the register workbook for `financialYear` (and the annual tabs
+ * it carries for the year before). `annual` reads only the GSTR-9 / 9C / 4 tabs,
+ * and `financialYear` is then the year those returns report on.
+ */
+export function GSTExcelImportModal({ mode = 'monthly', financialYear, registrations, currentUser, onClose, onImported }: {
+  mode?: 'monthly' | 'annual';
   financialYear: string;
   registrations: GstRegistration[];
   currentUser: { id: string; name: string } | null;
@@ -78,6 +86,10 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
   const [historyLoading, setHistoryLoading] = useState(true);
   const [history, setHistory] = useState<ImportHistory[]>([]);
   const latestActiveImport = history.find(item => !item.rolledBackAt) || null;
+  const annualOnly = mode === 'annual';
+  // The server accepts annual rows for the year before the workbook year, so an
+  // annual-only upload is sent under the workbook year that carries it.
+  const workbookYear = annualOnly ? workbookYearFor(financialYear) : financialYear;
 
   useEffect(() => {
     let live = true;
@@ -131,7 +143,7 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
     if (!sheet) return;
     try {
       const monthly = parseGstWorkbookSheet(sheet.data, financialYear);
-      const annual = parseGstAnnualSheets(available, financialYear);
+      const annual = parseGstAnnualSheets(available, reportingYearFor(financialYear));
       setPreview({
         ...monthly,
         filings: [...monthly.filings, ...annual.filings],
@@ -159,6 +171,13 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
       const available = workbook.map(sheet => ({ sheet: sheet.sheet, data: sheet.data as ExcelCell[][] }));
       if (!available.length) throw new Error('This workbook contains no worksheets.');
       setSheets(available);
+      if (annualOnly) {
+        const annual = parseGstAnnualSheets(available, financialYear);
+        if (!annual.found) throw new Error('No GSTR-9 & 9C or Annual Return Composition worksheet was found in this workbook.');
+        if (!annual.sourceRows) throw new Error('No GSTIN rows were found in the annual-return worksheet.');
+        setPreview({ registrations: [], filings: annual.filings, warnings: annual.warnings, sourceRows: annual.sourceRows });
+        return;
+      }
       const candidates = available.filter(sheet => sheet.data.slice(0, 12).some(row =>
         String(row[5] ?? '').trim().toUpperCase() === 'GSTIN' &&
         String(row[13] ?? '').trim().toUpperCase().includes('GSTR 1')));
@@ -182,7 +201,7 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
     setError('');
     try {
       const response = await gstAPI.importWorkbook({
-        financialYear,
+        financialYear: workbookYear,
         registrations: preview.registrations,
         filings: preview.filings,
         preserveThrough,
@@ -196,7 +215,7 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
         importId: imported.importId,
         createdAt: new Date().toISOString(),
         createdByName: currentUser?.name || null,
-        financialYear,
+        financialYear: workbookYear,
         rolledBackAt: null,
         summary: {
           registrationsUpdated: imported.registrationsUpdated,
@@ -237,8 +256,12 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
       <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_40px_120px_-30px_rgba(10,23,40,0.8)]">
         <div className="flex items-start justify-between gap-4 border-b border-[#E7EDF4] px-6 py-5">
           <div>
-            <h2 className="text-base font-semibold" style={{ color: NAVY }}>Update GST records from Excel</h2>
-            <p className="mt-1 text-xs text-muted-foreground">F.Y. {financialYear} · matches registrations by GSTIN</p>
+            <h2 className="text-base font-semibold" style={{ color: NAVY }}>
+              {annualOnly ? 'Update annual returns from Excel' : 'Update GST records from Excel'}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {annualOnly ? `GSTR-9 · 9C · 4 for F.Y. ${financialYear}` : `F.Y. ${financialYear}`} · matches registrations by GSTIN
+            </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="rounded-full p-2 text-muted-foreground hover:bg-[#F4F6F9]">
             <X size={17} />
@@ -321,10 +344,16 @@ export function GSTExcelImportModal({ financialYear, registrations, currentUser,
             style={{ color: NAVY }}
           >
             <FileSpreadsheet size={22} />
-            {reading ? 'Reading workbook…' : fileName || 'Choose GST Excel workbook'}
+            {reading ? 'Reading workbook…' : fileName || (annualOnly ? 'Choose GSTR-9 & 9C Excel workbook' : 'Choose GST Excel workbook')}
           </button>
 
-          {monthlySheets.length > 1 && (
+          {annualOnly && !preview && !error && (
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              Reads the "GSTR-9 &amp; 9C" sheet (GSTIN, applicability and filed dates) and, if present, the "Annual Return Composition" sheet for GSTR-4.
+            </p>
+          )}
+
+          {!annualOnly && monthlySheets.length > 1 && (
             <label className="mt-4 block text-sm font-medium" style={{ color: NAVY }}>
               Worksheet
               <select

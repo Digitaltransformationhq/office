@@ -283,16 +283,15 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start">
-          {tab === 'monthly' && (
-            <button
-              type="button"
-              onClick={() => setImportingExcel(true)}
-              className="flex items-center gap-2 rounded-full border border-[#CBD8E6] bg-white px-4 py-2 text-sm font-medium transition hover:bg-[#F4F7FB]"
-              style={{ color: NAVY }}
-            >
-              <Upload size={15} /> Update from Excel
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setImportingExcel(true)}
+            disabled={tab !== 'monthly' && annualLoading}
+            className="flex items-center gap-2 rounded-full border border-[#CBD8E6] bg-white px-4 py-2 text-sm font-medium transition hover:bg-[#F4F7FB] disabled:opacity-50"
+            style={{ color: NAVY }}
+          >
+            <Upload size={15} /> {tab === 'monthly' ? 'Update from Excel' : 'Upload Excel'}
+          </button>
           <SelectShell className="font-medium">
             <select
               value={tab === 'monthly' ? financialYear : annualYear}
@@ -584,11 +583,12 @@ export function GSTCompliance({ currentUser, onOpenClient }: GSTComplianceProps)
       )}
       {importingExcel && (
         <GSTExcelImportModal
-          financialYear={financialYear}
-          registrations={registrations}
+          mode={tab === 'monthly' ? 'monthly' : 'annual'}
+          financialYear={tab === 'monthly' ? financialYear : annualYear}
+          registrations={tab === 'monthly' ? registrations : annual.registrations}
           currentUser={currentUser}
           onClose={() => setImportingExcel(false)}
-          onImported={() => load({ silent: true })}
+          onImported={() => (tab === 'monthly' ? load : loadAnnual)({ silent: true })}
         />
       )}
     </div>
