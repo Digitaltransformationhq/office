@@ -119,6 +119,17 @@ export function canAccessGstCompliance(user: AccessUser | null | undefined): boo
   return isPartnerOrAdmin(user) || emailOf(user) === GST_DESK;
 }
 
+/**
+ * Docs Manager: the documents desk runs it day to day; admin holds full
+ * control of the platform, so it sees every section a desk does.
+ */
+const DOCS_DESK = 'caoffice.sahaj@gmail.com';
+
+export function canAccessDocsManager(user: AccessUser | null | undefined): boolean {
+  if (!user) return false;
+  return normalizeRole(user.role) === 'admin' || emailOf(user) === DOCS_DESK;
+}
+
 export function canAccessIncomeTax(user: AccessUser | null | undefined): boolean {
   if (!user) return false;
   return isPartnerOrAdmin(user) || emailOf(user) === ITR_DESK;

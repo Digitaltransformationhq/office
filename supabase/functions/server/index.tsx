@@ -4574,11 +4574,18 @@ app.get('/make-server-0abfa7cf/attendance/user/:userId', async (c) => {
 
 const DOCS_MANAGER_EMAIL = 'caoffice.sahaj@gmail.com';
 
+// The documents desk runs Docs Manager; admin has full control of the platform.
+function canUseDocsManager(actor: any) {
+  if (!actor) return false;
+  return String(actor.role || '').toLowerCase() === 'admin'
+    || String(actor.email || '').trim().toLowerCase() === DOCS_MANAGER_EMAIL;
+}
+
 app.get('/make-server-0abfa7cf/document-movements', async (c) => {
   try {
     const actor = await activeActor(c.req.query('actedById'));
-    if (!actor || String(actor.email || '').toLowerCase() !== DOCS_MANAGER_EMAIL) {
-      return c.json({ success: false, error: 'Docs Manager is available only to Rajesh Panchal' }, 403);
+    if (!canUseDocsManager(actor)) {
+      return c.json({ success: false, error: 'Docs Manager is available only to admin and the documents desk' }, 403);
     }
 
     // The screen needs only the latest movements; the Excel export asks for
@@ -4608,8 +4615,8 @@ app.get('/make-server-0abfa7cf/document-movements', async (c) => {
 app.get('/make-server-0abfa7cf/document-movements/client/:clientId', async (c) => {
   try {
     const actor = await activeActor(c.req.query('actedById'));
-    if (!actor || String(actor.email || '').toLowerCase() !== DOCS_MANAGER_EMAIL) {
-      return c.json({ success: false, error: 'Docs Manager is available only to Rajesh Panchal' }, 403);
+    if (!canUseDocsManager(actor)) {
+      return c.json({ success: false, error: 'Docs Manager is available only to admin and the documents desk' }, 403);
     }
 
     const { data, error } = await supabase
@@ -4628,8 +4635,8 @@ app.get('/make-server-0abfa7cf/document-movements/client/:clientId', async (c) =
 app.post('/make-server-0abfa7cf/document-movements', async (c) => {
   try {
     const actor = await activeActor(c.req.query('actedById'));
-    if (!actor || String(actor.email || '').toLowerCase() !== DOCS_MANAGER_EMAIL) {
-      return c.json({ success: false, error: 'Docs Manager is available only to Rajesh Panchal' }, 403);
+    if (!canUseDocsManager(actor)) {
+      return c.json({ success: false, error: 'Docs Manager is available only to admin and the documents desk' }, 403);
     }
 
     const body = await c.req.json();

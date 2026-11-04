@@ -31,7 +31,7 @@ import { ITRRegister } from './components/ITRRegister';
 import { Accounting } from './components/Accounting';
 import { enablePush, pushPermission } from './services/push';
 import { viewForType, typeFromUrl, NOTIF_PARAM } from './utils/notifications';
-import { canAccessClients, canAccessGstCompliance, canAccessIncomeTax } from './utils/roles';
+import { canAccessClients, canAccessGstCompliance, canAccessIncomeTax, canAccessDocsManager } from './utils/roles';
 import { isApproverRole } from './utils/roles';
 import { RevenueShare } from './components/RevenueShare';
 import { ClientApprovalQueue } from './components/ClientApprovalQueue';
@@ -263,7 +263,7 @@ export default function App() {
         if (user) setActiveView(user.role);
         return null;
       case 'docs-manager':
-        if (user?.email.trim().toLowerCase() === 'caoffice.sahaj@gmail.com') {
+        if (user && canAccessDocsManager(user)) {
           return <DocumentMovementManager user={user} />;
         }
         if (user) setActiveView(user.role);
