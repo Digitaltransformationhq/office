@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import {
   normalizeRole, roleLabel, isApproverRole,
-  canAccessClients, canAccessGstCompliance, canAccessIncomeTax,
+  canAccessClients, canAccessGstCompliance, canAccessIncomeTax, canAccessDocsManager,
 } from '../utils/roles';
 
 interface User {
@@ -98,7 +98,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
   // Spliced into each role's menu rather than listed per role, so the rules live
   // in one place and cannot disagree between partner, admin and staff.
   const isPartnerOrAdmin = isApproverRole(user.role);
-  const hasDocsManagerAccess = user.email.trim().toLowerCase() === 'caoffice.sahaj@gmail.com';
+  const hasDocsManagerAccess = canAccessDocsManager(user);
 
   const deskItems: MenuItem[] = [
     ...(canAccessClients(user) ? [{ label: 'Clients', id: 'clients' }] : []),
@@ -127,6 +127,7 @@ export function Sidebar({ activeRole, onRoleChange, user, onLogout, isMobileOpen
       { label: 'Dashboard', id: 'dashboard' },
       { label: 'Tasks', id: 'tasks' },
       { label: 'Team', id: 'team' },
+      ...(hasDocsManagerAccess ? [{ label: 'Docs Manager', id: 'docs-manager' }] : []),
       ...deskItems,
       { label: 'Inquiries', id: 'inquiries' },
       { label: 'Core Approvals', id: 'approvals' },
