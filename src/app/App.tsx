@@ -184,6 +184,18 @@ export default function App() {
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
   }, [user]);
 
+  // The same, for a notification tapped in the mobile app (mobile/src/push.ts).
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return;
+    const onTap = (event: Event) => {
+      const type = typeFromUrl((event as CustomEvent).detail?.url || '');
+      const view = type ? viewForType(type) : null;
+      if (view) handleViewChange(view);
+    };
+    window.addEventListener('kaps-notification-click', onTap);
+    return () => window.removeEventListener('kaps-notification-click', onTap);
+  }, [user]);
+
   const renderDashboard = () => {
     switch (activeView) {
       // A director runs the firm exactly as a partner does, so the two share a

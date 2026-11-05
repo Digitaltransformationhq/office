@@ -54,16 +54,150 @@ async function getWebpush() {
   return _webpush;
 }
 
-// Send a browser push to all of a user's subscriptions (best-effort).
-async function sendPush(userId: string, payload: { title: string; body: string; url?: string }) {
+// ---- Native push for the mobile app --------------------------------------
+//
+// The phone app registers a device token (POST /push/register-native), stored
+// in push_subscriptions beside the browser subscriptions with a `native` field
+// naming the platform. Android goes through Firebase Cloud Messaging, iOS
+// straight to Apple. Each is off until its secrets are set:
+//   FCM_SERVICE_ACCOUNT  the Firebase service-account JSON
+//   APNS_KEY, APNS_KEY_ID, APNS_TEAM_ID  an Apple .p8 auth key and its ids
+//   APNS_BUNDLE_ID (default com.kaps.office.mobile), APNS_PRODUCTION=true for
+//   App Store / TestFlight builds (development builds use the sandbox).
+
+type PushPayload = { title: string; body: string; url?: string };
+
+function b64url(bytes: Uint8Array | string): string {
+  const raw = typeof bytes === 'string' ? bytes : String.fromCharCode(...bytes);
+  return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function pemToDer(pem: string): ArrayBuffer {
+  const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\\n/g, '').replace(/\s+/g, '');
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out.buffer;
+}
+
+async function signJwt(header: object, claims: object, key: CryptoKey, alg: AlgorithmIdentifier | EcdsaParams) {
+  const input = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claims))}`;
+  const sig = new Uint8Array(await crypto.subtle.sign(alg, key, new TextEncoder().encode(input)));
+  return `${input}.${b64url(sig)}`;
+}
+
+let _fcm: { projectId: string; token: string; expires: number } | null = null;
+async function fcmAccess() {
+  const raw = Deno.env.get('FCM_SERVICE_ACCOUNT');
+  if (!raw) return null;
+  if (_fcm && _fcm.expires > Date.now() + 60_000) return _fcm;
+  const sa = JSON.parse(raw);
+  const key = await crypto.subtle.importKey('pkcs8', pemToDer(sa.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = await signJwt({ alg: 'RS256', typ: 'JWT' }, {
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now, exp: now + 3600,
+  }, key, 'RSASSA-PKCS1-v1_5');
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${assertion}`,
+  });
+  const data = await res.json();
+  if (!res.ok || !data.access_token) throw new Error(`FCM auth failed: ${JSON.stringify(data)}`);
+  _fcm = { projectId: sa.project_id, token: data.access_token, expires: Date.now() + (data.expires_in || 3600) * 1000 };
+  return _fcm;
+}
+
+/** Returns false when the token is dead and should be dropped. */
+async function sendFcm(token: string, p: PushPayload): Promise<boolean> {
+  const auth = await fcmAccess();
+  if (!auth) return true;
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${auth.projectId}/messages:send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+    body: JSON.stringify({
+      message: {
+        token,
+        notification: { title: p.title, body: p.body },
+        data: { url: p.url || '/' },
+        android: {
+          priority: 'HIGH',
+          notification: { channel_id: 'kaps-default', icon: 'ic_stat_notify', color: '#1B5A8C' },
+        },
+      },
+    }),
+  });
+  if (res.ok) return true;
+  const text = await res.text();
+  if (res.status === 404 || text.includes('UNREGISTERED')) return false;
+  console.log('FCM send error:', res.status, text);
+  return true;
+}
+
+let _apns: { jwt: string; issued: number } | null = null;
+async function apnsJwt() {
+  const p8 = Deno.env.get('APNS_KEY');
+  const keyId = Deno.env.get('APNS_KEY_ID');
+  const teamId = Deno.env.get('APNS_TEAM_ID');
+  if (!p8 || !keyId || !teamId) return null;
+  // Apple accepts a token for an hour and rejects refreshing it too often.
+  if (_apns && Date.now() - _apns.issued < 50 * 60_000) return _apns.jwt;
+  const key = await crypto.subtle.importKey('pkcs8', pemToDer(p8),
+    { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const jwt = await signJwt({ alg: 'ES256', kid: keyId }, { iss: teamId, iat: Math.floor(Date.now() / 1000) },
+    key, { name: 'ECDSA', hash: 'SHA-256' });
+  _apns = { jwt, issued: Date.now() };
+  return jwt;
+}
+
+async function sendApns(token: string, p: PushPayload): Promise<boolean> {
+  const jwt = await apnsJwt();
+  if (!jwt) return true;
+  const host = Deno.env.get('APNS_PRODUCTION') === 'true' ? 'api.push.apple.com' : 'api.sandbox.push.apple.com';
+  const res = await fetch(`https://${host}/3/device/${token}`, {
+    method: 'POST',
+    headers: {
+      authorization: `bearer ${jwt}`,
+      'apns-topic': Deno.env.get('APNS_BUNDLE_ID') || 'com.kaps.office.mobile',
+      'apns-push-type': 'alert',
+      'apns-priority': '10',
+    },
+    body: JSON.stringify({ aps: { alert: { title: p.title, body: p.body }, sound: 'default' }, url: p.url || '/' }),
+  });
+  if (res.ok) return true;
+  const text = await res.text();
+  if (res.status === 410 || text.includes('BadDeviceToken') || text.includes('DeviceTokenNotForTopic')) return false;
+  console.log('APNs send error:', res.status, text);
+  return true;
+}
+
+// Send a push to all of a user's browsers and phones (best-effort).
+async function sendPush(userId: string, payload: PushPayload) {
   if (!userId) return;
-  const wp = await getWebpush();
-  if (!wp) return;
   try {
     const { data: subs } = await supabase.from('push_subscriptions').select('*').eq('user_id', userId);
     for (const s of subs || []) {
+      let sub: any;
+      try { sub = JSON.parse(s.subscription); } catch { continue; }
+
+      if (sub?.native) {
+        try {
+          const alive = sub.native === 'ios' ? await sendApns(sub.token, payload) : await sendFcm(sub.token, payload);
+          if (!alive) await supabase.from('push_subscriptions').delete().eq('id', s.id);
+        } catch (e) {
+          console.log('native push send error:', e);
+        }
+        continue;
+      }
+
+      const wp = await getWebpush();
+      if (!wp) continue;
       try {
-        await wp.sendNotification(JSON.parse(s.subscription), JSON.stringify(payload));
+        await wp.sendNotification(sub, JSON.stringify(payload));
       } catch (e: any) {
         // Drop expired/invalid subscriptions
         if (e?.statusCode === 404 || e?.statusCode === 410) {
@@ -4145,6 +4279,31 @@ app.post('/make-server-0abfa7cf/push/subscribe', async (c) => {
   } catch (error) {
     console.log('Error saving push subscription:', error);
     return c.json({ success: false, error: 'Failed to save subscription' }, 500);
+  }
+});
+
+// Mobile app: save a phone's push token for a user. One row per device token,
+// so a phone that changes hands follows its new user rather than notifying both.
+app.post('/make-server-0abfa7cf/push/register-native', async (c) => {
+  try {
+    const { userId, token, platform } = await c.req.json();
+    if (!token || typeof token !== 'string' || !['android', 'ios'].includes(platform)) {
+      return c.json({ success: false, error: 'token and platform (android or ios) are required' }, 400);
+    }
+    const actor = await activeActor(userId);
+    if (!actor) return c.json({ success: false, error: 'Unknown or inactive user' }, 403);
+
+    const { error } = await supabase.from('push_subscriptions').upsert({
+      id: `push:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      user_id: actor.id,
+      endpoint: `${platform}:${token}`,
+      subscription: JSON.stringify({ native: platform, token }),
+    }, { onConflict: 'endpoint' });
+    if (error) throw error;
+    return c.json({ success: true });
+  } catch (error) {
+    console.log('Error saving native push token:', error);
+    return c.json({ success: false, error: 'Failed to save push token' }, 500);
   }
 });
 

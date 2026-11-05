@@ -25,17 +25,40 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
   return out;
 }
 
+/**
+ * The mobile app installs this before the app mounts (mobile/src/push.ts).
+ * Inside the native WebView there is no browser Web Push, so notifications go
+ * through the phone's own push service instead. Absent on the website.
+ */
+interface NativePush {
+  enable(userId: string): Promise<{ ok: boolean; reason?: string }>;
+  permission(): NotificationPermission;
+}
+
+/** True inside the Android/iOS app rather than a browser. */
+export function isNativeApp(): boolean {
+  return nativePush() !== null;
+}
+function nativePush(): NativePush | null {
+  return (typeof window !== 'undefined' && (window as any).KapsNativePush) || null;
+}
+
 export function pushSupported(): boolean {
+  if (nativePush()) return true;
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 }
 
 export function pushPermission(): NotificationPermission | 'unsupported' {
   if (!pushSupported()) return 'unsupported';
+  const native = nativePush();
+  if (native) return native.permission();
   return Notification.permission;
 }
 
 /** Register the SW, request permission, subscribe, and save the subscription. */
 export async function enablePush(userId: string): Promise<{ ok: boolean; reason?: string }> {
+  const native = nativePush();
+  if (native) return native.enable(userId);
   if (!pushSupported()) return { ok: false, reason: 'unsupported' };
   try {
     const reg = await navigator.serviceWorker.register('/sw.js');

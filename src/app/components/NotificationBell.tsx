@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bell, BellRing, ClipboardList, Megaphone, CheckCheck, X } from 'lucide-react';
 import { notificationsAPI } from '../services/api';
-import { enablePush, pushPermission } from '../services/push';
+import { enablePush, pushPermission, isNativeApp } from '../services/push';
 import { viewForType } from '../utils/notifications';
 import { useLiveData } from '../hooks/useLiveData';
 
@@ -54,7 +54,9 @@ export function NotificationBell({ userId, onNavigate }: {
       // The browser refuses to re-show the prompt once a site is blocked — the
       // only way back is the browser's own site settings.
       setEnableError(
-        perm === 'denied'
+        perm === 'denied' && isNativeApp()
+          ? "Notifications are turned off for this app. Turn them on in your phone's Settings → Apps → KAPS & Co Office → Notifications."
+          : perm === 'denied'
           ? 'Your browser has blocked notifications for this site. Turn them on from the browser menu → Site settings → Notifications → Allow, then reload.'
           : "Couldn't enable notifications. Please try again."
       );
