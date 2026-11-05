@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "374246290564",
+    "project_id": "kaps-office",
+    "storage_bucket": "kaps-office.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:374246290564:android:0c6ba76e07ac0c4ce5fed1",
+        "android_client_info": {
+          "package_name": "com.kaps.office.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0eXR144c3r7R68WIvtXuTEtXJPvJ__Yo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
