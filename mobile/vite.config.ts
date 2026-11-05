@@ -1,5 +1,11 @@
 import { defineConfig, mergeConfig } from 'vite';
 import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+
+// Android push goes through Firebase, and registering without its config file
+// crashes the app. Native push is switched on for Android only once
+// android/app/google-services.json has been added.
+const androidPushConfigured = existsSync(resolve(__dirname, 'android/app/google-services.json'));
 import webConfig from '../vite.config';
 
 // Compile the shared web application without touching the web deployment's
@@ -7,6 +13,9 @@ import webConfig from '../vite.config';
 export default mergeConfig(webConfig, defineConfig({
   root: resolve(__dirname, '..'),
   base: './',
+  define: {
+    __ANDROID_PUSH_CONFIGURED__: JSON.stringify(androidPushConfigured),
+  },
   plugins: [{
     name: 'kaps-mobile-entry',
     transformIndexHtml: {

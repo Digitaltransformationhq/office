@@ -1,5 +1,10 @@
 {
   "appId": "com.kaps.office.mobile",
   "appName": "KAPS & Co Office",
-  "webDir": "www"
+  "webDir": "www",
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
 }
