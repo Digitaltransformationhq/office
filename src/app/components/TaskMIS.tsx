@@ -5,6 +5,7 @@ import { EditTaskModal } from './EditTaskModal';
 import { CreateTaskModal } from './CreateTaskModal';
 import { SubmitWorkModal } from './SubmitWorkModal';
 import { TaskThreadModal } from './TaskThreadModal';
+import { TaskDetailsModal } from './TaskDetailsModal';
 import { statusColor, statusLabel, isOpenTask, isFinishedTask, TASK_STATUS } from '../utils/taskStatus';
 import { useLiveData } from '../hooks/useLiveData';
 import { isApproverRole } from '../utils/roles';
@@ -12,7 +13,7 @@ import { compareText, compareTasks, sortText } from '../utils/sorting';
 import {
   Search, SlidersHorizontal, Check, X, Repeat2,
   RotateCcw, Pencil, Trash2, ChevronDown, ChevronUp, Plus,
-  Play, CheckCheck, MessageSquare,
+  Play, CheckCheck, MessageSquare, Eye,
 } from 'lucide-react';
 
 interface Task {
@@ -78,6 +79,14 @@ const searchCls =
 
 export function TaskMIS({ user }: TaskMISProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  /**
+   * Every task, unfiltered. The list below is narrowed to the viewer's own work
+   * for non-partners, but a client's history should show everything done for
+   * that client, whoever did it.
+   */
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
+  /** The client (and task) whose details are open, from clicking a name. */
+  const [detailsFor, setDetailsFor] = useState<{ client: string; taskId?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   /*
    * Opens on Pending rather than everything.
@@ -135,6 +144,7 @@ export function TaskMIS({ user }: TaskMISProps) {
       if (!silent) setLoading(true);
       const response = await tasksAPI.getAll();
       let all = response.data || [];
+      setAllTasks(all);
       if (!isPartnerOrAdmin) all = all.filter((t: Task) => t.assignedToId === user.id);
       setTasks(all);
     } catch (e) {
@@ -300,6 +310,13 @@ export function TaskMIS({ user }: TaskMISProps) {
     { label: 'For Acceptance', val: pendingAcceptanceTasks.length, tab: 'pending-acceptance' as const, dot: '#3b82f6' },
   ];
 
+  /**
+   * You can edit a task you are responsible for: partners and admins for
+   * anything, everyone else for work assigned to them or raised by them.
+   */
+  const canEditTask = (task: Task) =>
+    isPartnerOrAdmin || task.createdById === user.id || task.assignedToId === user.id;
+
   const taskActions = (task: Task) => {
     /**
      * You can edit a task you are responsible for: partners and admins for
@@ -310,10 +327,7 @@ export function TaskMIS({ user }: TaskMISProps) {
      * Edit and Delete greyed out purely because a colleague had created it.
      * Enabled on one row and not the next, with no visible reason.
      */
-    const canEdit =
-      isPartnerOrAdmin ||
-      task.createdById === user.id ||
-      task.assignedToId === user.id;
+    const canEdit = canEditTask(task);
     const isPendingAcceptance = task.assignmentStatus === 'Pending Acceptance' && task.assignedToId === user.id;
     const assign = task.assignmentStatus || 'Accepted';
     // The task is yours to work on: assigned to you, and past the accept/reject gate.
@@ -549,6 +563,18 @@ export function TaskMIS({ user }: TaskMISProps) {
                           <span style={{ color: NAVY }}>{task.targetDate ? new Date(task.targetDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</span>
                         </CardRow>
                         <CardRow label="Actions">{taskActions(task)}</CardRow>
+                        {/* The card face is itself the expand button, so the
+                            names cannot be links there; this row stands in. */}
+                        <div className="py-2.5">
+                          <button
+                            type="button"
+                            onClick={() => setDetailsFor({ client: task.client, taskId: task.id })}
+                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#E7EDF4] py-2 text-xs font-medium transition-colors hover:bg-[#F4F6F9]"
+                            style={{ color: NAVY }}
+                          >
+                            <Eye size={14} /> Details & client history
+                          </button>
+                        </div>
                       </dl>
                     )}
                   </div>
@@ -591,8 +617,25 @@ export function TaskMIS({ user }: TaskMISProps) {
                           ordered by it and a column you cannot read down in
                           order looks like a list that was never sorted. */}
                       <td className="px-3 py-3">
-                        <p className="truncate text-[0.82rem] font-medium" style={{ color: NAVY }} title={task.task}>{task.task}</p>
-                        <p className="truncate text-xs text-muted-foreground" title={task.client}>{task.client}</p>
+                        {/* Both names open the read-only details, so looking
+                            something up no longer means opening Edit. */}
+                        <button
+                          type="button"
+                          onClick={() => setDetailsFor({ client: task.client, taskId: task.id })}
+                          className="block max-w-full truncate text-left text-[0.82rem] font-medium hover:underline"
+                          style={{ color: NAVY }}
+                          title={`${task.task} — view details`}
+                        >
+                          {task.task}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDetailsFor({ client: task.client })}
+                          className="block max-w-full truncate text-left text-xs text-muted-foreground hover:text-[#1b365d] hover:underline"
+                          title={`${task.client} — all tasks for this client`}
+                        >
+                          {task.client}
+                        </button>
                         {task.reassignedFromName && (
                           <p className="truncate text-[0.62rem] text-muted-foreground/70">↙ {task.reassignedFromName}</p>
                         )}
@@ -643,6 +686,18 @@ export function TaskMIS({ user }: TaskMISProps) {
         )}
       </div>
 
+      {detailsFor && (
+        <TaskDetailsModal
+          tasks={allTasks}
+          client={detailsFor.client}
+          initialTaskId={detailsFor.taskId}
+          showBilling={isPartnerOrAdmin}
+          canAct={canEditTask}
+          onEdit={t => { setSelectedTask(t); setShowEditModal(true); }}
+          onOpenThread={t => setTaskThread(t)}
+          onClose={() => setDetailsFor(null)}
+        />
+      )}
       {showReassignModal && selectedTask && (
         <ReassignTaskModal task={selectedTask} currentUser={user}
           onClose={() => { setShowReassignModal(false); setSelectedTask(null); }}
