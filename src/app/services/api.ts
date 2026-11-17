@@ -495,6 +495,114 @@ export const documentMovementsAPI = {
   },
 };
 
+// ============================================
+// DSC REGISTER (inside Docs Manager)
+// ============================================
+// Table: supabase/sql/add-dsc-register.sql. The list never carries passwords;
+// an admin reveals one at a time with getPassword.
+
+export interface DscRecord {
+  id: string;
+  holderName: string;
+  companyName: string;
+  clientId: string;
+  dscClass: string;
+  /** YYYY-MM-DD, or '' when the expiry is unknown. */
+  expiryDate: string;
+  hasPassword: boolean;
+  notes: string;
+  needsReview: boolean;
+  reviewNote: string;
+  source: string;
+  updatedAt: string;
+  updatedByName: string;
+  /** The most recent In/Out of this token; null if none recorded. */
+  lastMovement: DscMovement | null;
+}
+
+export interface DscMovement {
+  id: string;
+  dscId: string;
+  direction: 'IN' | 'OUT';
+  transferMethod: string;
+  details: string;
+  recordedByName: string;
+  recordedAt: string;
+}
+
+function transformDscMovement(row: any): DscMovement {
+  return {
+    id: String(row.id),
+    dscId: String(row.dsc_id),
+    direction: row.direction,
+    transferMethod: row.transfer_method || '',
+    details: row.details || '',
+    recordedByName: row.recorded_by_name || '',
+    recordedAt: row.recorded_at,
+  };
+}
+
+export type DscInput = Partial<{
+  holderName: string;
+  companyName: string;
+  clientId: string;
+  dscClass: string;
+  expiryDate: string;
+  password: string;
+  notes: string;
+  needsReview: boolean;
+  reviewNote: string;
+}>;
+
+function transformDsc(row: any): DscRecord {
+  return {
+    id: String(row.id),
+    holderName: row.holder_name || '',
+    companyName: row.company_name || '',
+    clientId: row.client_id || '',
+    dscClass: row.dsc_class || '',
+    expiryDate: row.expiry_date || '',
+    hasPassword: Boolean(row.has_password),
+    notes: row.notes || '',
+    needsReview: Boolean(row.needs_review),
+    reviewNote: row.review_note || '',
+    source: row.source || '',
+    updatedAt: row.updated_at || '',
+    updatedByName: row.updated_by_name || '',
+    lastMovement: row.last_movement ? transformDscMovement(row.last_movement) : null,
+  };
+}
+
+export const dscRegisterAPI = {
+  getMovements: async (id: string) => {
+    const result = await fetchAPI(`/dsc-register/${encodeURIComponent(id)}/movements${actorParam()}`);
+    return { ...result, data: (result.data || []).map(transformDscMovement) as DscMovement[] };
+  },
+  recordMovement: async (id: string, movement: { direction: 'IN' | 'OUT'; transferMethod: string; details?: string }) => {
+    const result = await fetchAPI(`/dsc-register/${encodeURIComponent(id)}/movements${actorParam()}`, {
+      method: 'POST', body: JSON.stringify(movement),
+    });
+    return { ...result, data: result.data ? transformDscMovement(result.data) : null };
+  },
+  getAll: async () => {
+    const result = await fetchAPI(`/dsc-register${actorParam()}`);
+    return { ...result, data: (result.data || []).map(transformDsc) as DscRecord[] };
+  },
+  getPassword: async (id: string) => {
+    const result = await fetchAPI(`/dsc-register/${encodeURIComponent(id)}/password${actorParam()}`);
+    return { ...result, data: result.data ? String(result.data.password ?? '') : '' };
+  },
+  create: async (input: DscInput) => {
+    const result = await fetchAPI(`/dsc-register${actorParam()}`, { method: 'POST', body: JSON.stringify(input) });
+    return { ...result, data: result.data ? transformDsc(result.data) : null };
+  },
+  update: async (id: string, input: DscInput) => {
+    const result = await fetchAPI(`/dsc-register/${encodeURIComponent(id)}${actorParam()}`, { method: 'PUT', body: JSON.stringify(input) });
+    return { ...result, data: result.data ? transformDsc(result.data) : null };
+  },
+  remove: async (id: string) => fetchAPI(`/dsc-register/${encodeURIComponent(id)}${actorParam()}`, { method: 'DELETE' }),
+};
+
 export const clientApprovalsAPI = {
   getSettings: async () => fetchAPI(`/approval-settings${actorParam()}`),
   updateSetting: async (actionKey: string, setting: { enabled: boolean; approverId: string | null }) =>

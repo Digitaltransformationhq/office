@@ -4872,6 +4872,231 @@ app.post('/make-server-0abfa7cf/document-movements', async (c) => {
   }
 });
 
+// ============================================
+// DSC REGISTER (Docs Manager)
+// ============================================
+// Table: supabase/sql/add-dsc-register.sql. Token passwords are never in the
+// list response; an admin fetches one at a time from /:id/password.
+
+const DSC_LIST_COLUMNS = 'id, holder_name, company_name, client_id, dsc_class, expiry_date, notes, needs_review, review_note, source, created_at, updated_at, updated_by_name, password';
+
+function dscRowForList(row: any) {
+  const { password, ...rest } = row;
+  return { ...rest, has_password: Boolean(password) };
+}
+
+function dscFields(body: any) {
+  const fields: Record<string, any> = {};
+  const text = (key: string, column: string) => {
+    if (body[key] !== undefined) fields[column] = String(body[key] ?? '').trim();
+  };
+  text('holderName', 'holder_name');
+  text('companyName', 'company_name');
+  text('dscClass', 'dsc_class');
+  text('notes', 'notes');
+  text('reviewNote', 'review_note');
+  if (body.clientId !== undefined) fields.client_id = body.clientId ? String(body.clientId) : null;
+  if (body.expiryDate !== undefined) {
+    const value = String(body.expiryDate || '');
+    if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('INVALID_DATE');
+    fields.expiry_date = value || null;
+  }
+  if (body.needsReview !== undefined) fields.needs_review = Boolean(body.needsReview);
+  return fields;
+}
+
+app.get('/make-server-0abfa7cf/dsc-register', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!canUseDocsManager(actor)) {
+      return c.json({ success: false, error: 'You do not have access to Docs Manager' }, 403);
+    }
+    const [rows, movements] = await Promise.all([
+      selectAll(() => supabase
+        .from('dsc_register')
+        .select(DSC_LIST_COLUMNS)
+        .order('id', { ascending: true })),
+      // Tolerate a database that has not run the dsc_movements SQL yet: the
+      // register still lists, just without In/Out status.
+      selectAll(() => supabase
+        .from('dsc_movements')
+        .select('*')
+        .order('recorded_at', { ascending: false })
+        .order('id', { ascending: false }))
+        .catch((error: any) => {
+          console.log('DSC movements unavailable:', error?.message || error);
+          return [];
+        }),
+    ]);
+    // Newest first, so the first movement seen for a DSC is its current state.
+    const latest = new Map<string, any>();
+    movements.forEach((m: any) => { if (!latest.has(String(m.dsc_id))) latest.set(String(m.dsc_id), m); });
+    return c.json({
+      success: true,
+      data: rows.map((row: any) => ({ ...dscRowForList(row), last_movement: latest.get(String(row.id)) || null })),
+    });
+  } catch (error) {
+    console.log('Error fetching DSC register:', error);
+    return c.json({ success: false, error: 'Failed to fetch DSC register' }, 500);
+  }
+});
+
+app.get('/make-server-0abfa7cf/dsc-register/:id/password', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor || String(actor.role || '').toLowerCase() !== 'admin') {
+      return c.json({ success: false, error: 'Only admins can view DSC passwords' }, 403);
+    }
+    const { data, error } = await supabase
+      .from('dsc_register')
+      .select('password')
+      .eq('id', c.req.param('id'))
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return c.json({ success: false, error: 'DSC not found' }, 404);
+    return c.json({ success: true, data: { password: data.password || '' } });
+  } catch (error) {
+    console.log('Error fetching DSC password:', error);
+    return c.json({ success: false, error: 'Failed to fetch DSC password' }, 500);
+  }
+});
+
+app.post('/make-server-0abfa7cf/dsc-register', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!canUseDocsManager(actor)) {
+      return c.json({ success: false, error: 'You do not have access to Docs Manager' }, 403);
+    }
+    const body = await c.req.json();
+    const fields = dscFields(body);
+    if (!fields.holder_name) return c.json({ success: false, error: 'Holder name is required' }, 400);
+    const { data, error } = await supabase
+      .from('dsc_register')
+      .insert({ ...fields, password: String(body.password ?? ''), updated_by_name: actor.name })
+      .select(DSC_LIST_COLUMNS)
+      .single();
+    if (error) throw error;
+    await broadcastChange('dsc-register');
+    return c.json({ success: true, data: dscRowForList(data) }, 201);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'INVALID_DATE') {
+      return c.json({ success: false, error: 'Expiry date is not valid' }, 400);
+    }
+    console.log('Error adding DSC:', error);
+    return c.json({ success: false, error: 'Failed to add DSC' }, 500);
+  }
+});
+
+app.put('/make-server-0abfa7cf/dsc-register/:id', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!canUseDocsManager(actor)) {
+      return c.json({ success: false, error: 'You do not have access to Docs Manager' }, 403);
+    }
+    const body = await c.req.json();
+    const fields = dscFields(body);
+    if (fields.holder_name === '') return c.json({ success: false, error: 'Holder name is required' }, 400);
+    // Only admins can see a password, so only admins can change one.
+    if (body.password !== undefined) {
+      if (String(actor.role || '').toLowerCase() !== 'admin') {
+        return c.json({ success: false, error: 'Only admins can change DSC passwords' }, 403);
+      }
+      fields.password = String(body.password ?? '');
+    }
+    const { data, error } = await supabase
+      .from('dsc_register')
+      .update({ ...fields, updated_at: new Date().toISOString(), updated_by_name: actor.name })
+      .eq('id', c.req.param('id'))
+      .select(DSC_LIST_COLUMNS)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return c.json({ success: false, error: 'DSC not found' }, 404);
+    await broadcastChange('dsc-register');
+    return c.json({ success: true, data: dscRowForList(data) });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'INVALID_DATE') {
+      return c.json({ success: false, error: 'Expiry date is not valid' }, 400);
+    }
+    console.log('Error updating DSC:', error);
+    return c.json({ success: false, error: 'Failed to update DSC' }, 500);
+  }
+});
+
+app.get('/make-server-0abfa7cf/dsc-register/:id/movements', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!canUseDocsManager(actor)) {
+      return c.json({ success: false, error: 'You do not have access to Docs Manager' }, 403);
+    }
+    const { data, error } = await supabase
+      .from('dsc_movements')
+      .select('*')
+      .eq('dsc_id', c.req.param('id'))
+      .order('recorded_at', { ascending: false })
+      .order('id', { ascending: false });
+    if (error) throw error;
+    return c.json({ success: true, data: data || [] });
+  } catch (error) {
+    console.log('Error fetching DSC movements:', error);
+    return c.json({ success: false, error: 'Failed to fetch DSC In/Out history' }, 500);
+  }
+});
+
+app.post('/make-server-0abfa7cf/dsc-register/:id/movements', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!canUseDocsManager(actor)) {
+      return c.json({ success: false, error: 'You do not have access to Docs Manager' }, 403);
+    }
+    const body = await c.req.json();
+    const direction = String(body.direction || '').toUpperCase();
+    const transferMethod = String(body.transferMethod || '').trim();
+    const details = String(body.details || '').trim();
+    if (!['IN', 'OUT'].includes(direction) || !transferMethod) {
+      return c.json({ success: false, error: 'Direction and how it was received / sent are required' }, 400);
+    }
+    const { data: dsc, error: dscError } = await supabase
+      .from('dsc_register').select('id').eq('id', c.req.param('id')).maybeSingle();
+    if (dscError) throw dscError;
+    if (!dsc) return c.json({ success: false, error: 'DSC not found' }, 404);
+
+    const { data, error } = await supabase
+      .from('dsc_movements')
+      .insert({
+        dsc_id: dsc.id,
+        direction,
+        transfer_method: transferMethod,
+        details,
+        recorded_by_id: actor.id,
+        recorded_by_name: actor.name,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    await broadcastChange('dsc-register');
+    return c.json({ success: true, data }, 201);
+  } catch (error) {
+    console.log('Error recording DSC movement:', error);
+    return c.json({ success: false, error: 'Failed to record DSC In/Out' }, 500);
+  }
+});
+
+app.delete('/make-server-0abfa7cf/dsc-register/:id', async (c) => {
+  try {
+    const actor = await activeActor(c.req.query('actedById'));
+    if (!actor || String(actor.role || '').toLowerCase() !== 'admin') {
+      return c.json({ success: false, error: 'Only admins can delete a DSC' }, 403);
+    }
+    const { error } = await supabase.from('dsc_register').delete().eq('id', c.req.param('id'));
+    if (error) throw error;
+    await broadcastChange('dsc-register');
+    return c.json({ success: true });
+  } catch (error) {
+    console.log('Error deleting DSC:', error);
+    return c.json({ success: false, error: 'Failed to delete DSC' }, 500);
+  }
+});
+
 // Upload document
 app.post('/make-server-0abfa7cf/documents', async (c) => {
   try {

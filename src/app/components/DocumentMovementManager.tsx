@@ -6,16 +6,20 @@ import { useLiveData } from '../hooks/useLiveData';
 import { useToast } from './Toast';
 import { sortByText, sortOptions, sortText } from '../utils/sorting';
 import { exportDocumentMovementsToExcel } from '../utils/exportDocuments';
+import { DscRegister } from './DscRegister';
 
 const NAVY = '#1b365d';
 
-/** Documents a client usually hands over or collects. "Other" opens a free-text box. */
+/**
+ * Documents a client usually hands over or collects. "Other" opens a free-text box.
+ * DSC tokens are not here: they are tracked In/Out in the DSC Register tab.
+ */
 const OTHER_DOCUMENT = 'Other';
 const DOCUMENT_TYPES = sortOptions([
   'Aadhaar card', 'Agreement / contract', 'Audit report', 'Balance sheet & P&L',
   'Bank statement', 'Cancelled cheque', 'Capital gain statement', 'Cash book',
-  'Certificate of incorporation', 'Challan copy', 'Credit / debit notes', 'DSC (Digital Signature Certificate)',
-  'DSC token / USB', 'E-way bills', 'Electricity bill', 'Expense vouchers',
+  'Certificate of incorporation', 'Challan copy', 'Credit / debit notes',
+  'E-way bills', 'Electricity bill', 'Expense vouchers',
   'Fixed deposit certificate', 'Form 16', 'Form 16A', 'Form 26AS / AIS',
   'GST certificate', 'GST return copy', 'Home loan certificate', 'Income tax return copy',
   'Insurance premium receipt', 'Investment proofs', 'Loan statement', 'MOA / AOA',
@@ -60,6 +64,7 @@ export function DocumentMovementManager({ user }: DocumentMovementManagerProps) 
   const [clientFilter, setClientFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [tab, setTab] = useState<'movements' | 'dsc'>('movements');
 
   const load = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
@@ -150,6 +155,25 @@ export function DocumentMovementManager({ user }: DocumentMovementManagerProps) 
         <p className="mt-0.5 text-sm text-muted-foreground">Record every client document received and released by the office · Managed by {user.name}</p>
       </div>
 
+      {/* Same switch as the GST Compliance monthly / annual tabs. */}
+      <div role="tablist" aria-label="Docs Manager sections" className="flex gap-1 rounded-xl border border-[#E7EDF4] bg-white p-1">
+        {([['movements', 'Document In / Out', 'Client documents received & released'], ['dsc', 'DSC Register', 'Digital signatures · expiry · passwords']] as const).map(([id, label, sub]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={`min-w-0 flex-1 rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:px-4 sm:text-sm ${tab === id ? 'text-white' : 'text-muted-foreground hover:bg-[#F4F6F9]'}`}
+            style={tab === id ? { backgroundColor: NAVY } : undefined}
+          >
+            {label}
+            <span className={`ml-2 hidden text-[0.68rem] font-normal sm:inline ${tab === id ? 'text-white/70' : 'text-muted-foreground/70'}`}>{sub}</span>
+          </button>
+        ))}
+      </div>
+
+      {tab === 'dsc' ? <DscRegister user={user} clients={clients} /> : <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Clients" value={clients.length} />
         <Stat label="In today" value={todayIn} tone="in" />
@@ -302,6 +326,7 @@ export function DocumentMovementManager({ user }: DocumentMovementManagerProps) 
           </div>
         )}
       </section>
+      </>}
 
       {action && (
         <MovementModal
