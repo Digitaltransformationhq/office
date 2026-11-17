@@ -50,3 +50,6 @@ __pycache__/
 nonfilers*.sql
 
 itr-import*.sql
+
+# DSC import with token passwords: run in the Supabase SQL editor, never commit.
+supabase/sql/import-dsc-sheet.sql

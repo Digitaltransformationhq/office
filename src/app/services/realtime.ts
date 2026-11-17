@@ -40,6 +40,8 @@ export type ChangeTopic =
   | 'accounting'
   // Rajesh Panchal's client document In/Out register.
   | 'document-movements'
+  // The DSC register inside Docs Manager.
+  | 'dsc-register'
   // The client discussion log.
   | 'discussions';
 
