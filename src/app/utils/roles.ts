@@ -121,13 +121,19 @@ export function canAccessGstCompliance(user: AccessUser | null | undefined): boo
 
 /**
  * Docs Manager: the documents desk runs it day to day; admin holds full
- * control of the platform, so it sees every section a desk does.
+ * control of the platform, so it sees every section a desk does. Named people
+ * beyond the desk are added by email, not by role, so granting one partner
+ * does not open it to every partner. Must match DOCS_MANAGER_EMAILS on the
+ * server.
  */
-const DOCS_DESK = 'caoffice.sahaj@gmail.com';
+const DOCS_MANAGER_EMAILS = [
+  'caoffice.sahaj@gmail.com', // documents desk
+  'brijesh@kapsca.in',        // Brijesh Pitroda
+];
 
 export function canAccessDocsManager(user: AccessUser | null | undefined): boolean {
   if (!user) return false;
-  return normalizeRole(user.role) === 'admin' || emailOf(user) === DOCS_DESK;
+  return normalizeRole(user.role) === 'admin' || DOCS_MANAGER_EMAILS.includes(emailOf(user));
 }
 
 export function canAccessIncomeTax(user: AccessUser | null | undefined): boolean {
