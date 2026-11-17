@@ -4731,20 +4731,25 @@ app.get('/make-server-0abfa7cf/attendance/user/:userId', async (c) => {
 // DOCUMENTS
 // ============================================
 
-const DOCS_MANAGER_EMAIL = 'caoffice.sahaj@gmail.com';
+// Must match DOCS_MANAGER_EMAILS in src/app/utils/roles.ts.
+const DOCS_MANAGER_EMAILS = [
+  'caoffice.sahaj@gmail.com', // documents desk
+  'brijesh@kapsca.in',        // Brijesh Pitroda
+];
 
-// The documents desk runs Docs Manager; admin has full control of the platform.
+// The documents desk and named people run Docs Manager; admin has full control
+// of the platform.
 function canUseDocsManager(actor: any) {
   if (!actor) return false;
   return String(actor.role || '').toLowerCase() === 'admin'
-    || String(actor.email || '').trim().toLowerCase() === DOCS_MANAGER_EMAIL;
+    || DOCS_MANAGER_EMAILS.includes(String(actor.email || '').trim().toLowerCase());
 }
 
 app.get('/make-server-0abfa7cf/document-movements', async (c) => {
   try {
     const actor = await activeActor(c.req.query('actedById'));
     if (!canUseDocsManager(actor)) {
-      return c.json({ success: false, error: 'Docs Manager is available only to admin and the documents desk' }, 403);
+      return c.json({ success: false, error: 'You do not have access to Docs Manager' }, 403);
     }
 
     // The screen needs only the latest movements; the Excel export asks for
@@ -4775,7 +4780,7 @@ app.get('/make-server-0abfa7cf/document-movements/client/:clientId', async (c) =
   try {
     const actor = await activeActor(c.req.query('actedById'));
     if (!canUseDocsManager(actor)) {
-      return c.json({ success: false, error: 'Docs Manager is available only to admin and the documents desk' }, 403);
+      return c.json({ success: false, error: 'You do not have access to Docs Manager' }, 403);
     }
 
     const { data, error } = await supabase
@@ -4795,7 +4800,7 @@ app.post('/make-server-0abfa7cf/document-movements', async (c) => {
   try {
     const actor = await activeActor(c.req.query('actedById'));
     if (!canUseDocsManager(actor)) {
-      return c.json({ success: false, error: 'Docs Manager is available only to admin and the documents desk' }, 403);
+      return c.json({ success: false, error: 'You do not have access to Docs Manager' }, 403);
     }
 
     const body = await c.req.json();
