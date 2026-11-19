@@ -20,6 +20,7 @@ import { LeaveManagement } from './components/LeaveManagement';
 import { AnnouncementManagement } from './components/AnnouncementManagement';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { ImportantDatesBar } from './components/ImportantDatesBar';
+import { UrgentAlertOverlay } from './components/UrgentAlertOverlay';
 import { MyInquiries } from './components/MyInquiries';
 import { InquiryManagement } from './components/InquiryManagement';
 import { ToastProvider } from './components/Toast';
@@ -403,7 +404,7 @@ export default function App() {
           />
           {/* Important Dates Bar - Shows for all users */}
           <ImportantDatesBar />
-          {/* Announcement Bar - Shows for all users */}          <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          <main className="flex-1 overflow-y-auto p-4 md:p-6">
             {/* One screen's crash stays one screen's crash: the shell around it
                 survives, so the sidebar is still there to navigate away with —
                 and switching view clears the error rather than needing a reload. */}
@@ -413,6 +414,8 @@ export default function App() {
           </main>
         </div>
       </div>
+      {/* Urgent announcements cover every screen until acknowledged. */}
+      <UrgentAlertOverlay user={user} />
     </ToastProvider>
   );
 }

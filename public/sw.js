@@ -22,6 +22,15 @@ self.addEventListener('push', (event) => {
     tag: data.tag || undefined,
     data: { url: data.url || '/' },
   };
+  // An urgent announcement stays on screen until it is clicked, instead of
+  // sliding away after a few seconds, and makes a sound even when it replaces
+  // an earlier notification with the same tag.
+  if (data.urgent) {
+    options.requireInteraction = true;
+    options.renotify = !!data.tag;
+    options.silent = false;
+    options.vibrate = [300, 150, 300, 150, 300];
+  }
 
   event.waitUntil(self.registration.showNotification(title, options));
 });

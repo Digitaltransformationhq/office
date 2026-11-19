@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { KPICard } from './KPICard';
 import { announcementsAPI } from '../services/api';
 import { useToast } from './Toast';
+import { useLiveData } from '../hooks/useLiveData';
 import { Megaphone, Plus, Pencil, Trash2, Power, PowerOff, X, ChevronDown } from 'lucide-react';
 
 interface Announcement {
@@ -179,6 +180,7 @@ export function AnnouncementManagement({ user }: AnnouncementManagementProps) {
                     </span>
                     {a.created_by && <span className="sm:ml-auto">by {a.created_by}</span>}
                   </div>
+                  {a.type === 'urgent' && <ReadReceipts announcementId={a.id} />}
                 </div>
               );
             })}
@@ -193,6 +195,76 @@ export function AnnouncementManagement({ user }: AnnouncementManagementProps) {
           onClose={() => { setShowAddModal(false); setEditingAnnouncement(null); }}
           onSuccess={() => { loadAnnouncements(); setShowAddModal(false); setEditingAnnouncement(null); }}
         />
+      )}
+    </div>
+  );
+}
+
+interface Receipt { user_id: string; name: string; role: string; acknowledged_at?: string }
+
+/** For an urgent announcement: who has clicked "I've read this", and who hasn't. */
+function ReadReceipts({ announcementId }: { announcementId: string }) {
+  const [data, setData] = useState<{ acknowledged: Receipt[]; pending: Receipt[] } | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const load = async () => {
+    try {
+      const res = await announcementsAPI.getAcknowledgements(announcementId);
+      if (res?.success) setData(res.data);
+    } catch { /* shown as loading; the next refresh retries */ }
+  };
+
+  useEffect(() => { load(); }, [announcementId]);
+  useLiveData(['announcements'], load);
+
+  if (!data) {
+    return <p className="mt-3 text-xs text-muted-foreground">Checking who has read it…</p>;
+  }
+
+  const read = data.acknowledged.length;
+  const total = read + data.pending.length;
+  const allRead = total > 0 && data.pending.length === 0;
+
+  return (
+    <div className="mt-3 rounded-lg bg-[#F9FAFB] px-3 py-2.5 text-xs">
+      <button type="button" onClick={() => setOpen(o => !o)} className="flex w-full items-center gap-2 text-left">
+        <span className={`font-semibold ${allRead ? 'text-[#3d8a22]' : 'text-[#c0392b]'}`}>
+          Read by {read} of {total}
+        </span>
+        {!allRead && data.pending.length > 0 && (
+          <span className="text-muted-foreground">· {data.pending.length} still to read</span>
+        )}
+        <ChevronDown size={14} className={`ml-auto text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="mt-2.5 grid gap-3 sm:grid-cols-2">
+          <ReceiptList title="Not read yet" people={data.pending} tone="text-[#c0392b]" />
+          <ReceiptList title="Read" people={data.acknowledged} tone="text-[#3d8a22]" showTime />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReceiptList({ title, people, tone, showTime }: { title: string; people: Receipt[]; tone: string; showTime?: boolean }) {
+  return (
+    <div>
+      <p className={`mb-1 font-semibold ${tone}`}>{title} ({people.length})</p>
+      {people.length === 0 ? (
+        <p className="text-muted-foreground">—</p>
+      ) : (
+        <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+          {people.map(p => (
+            <li key={p.user_id} className="flex justify-between gap-2 text-foreground/80">
+              <span className="truncate">{p.name}</span>
+              {showTime && p.acknowledged_at && (
+                <span className="shrink-0 text-muted-foreground">
+                  {new Date(p.acknowledged_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -246,7 +318,7 @@ function AddAnnouncementModal({ user, announcement, onClose, onSuccess }: AddAnn
       const data = {
         title: formData.title, message: formData.message, type: formData.type, isActive: formData.isActive,
         startDate: formData.startDate || null, endDate: formData.endDate || null,
-        targetRoles: formData.targetRoles, createdBy: user.name,
+        targetRoles: formData.targetRoles, createdBy: user.name, createdById: user.id,
       };
       const response = announcement
         ? await announcementsAPI.update(announcement.id, data)
@@ -302,6 +374,11 @@ function AddAnnouncementModal({ user, announcement, onClose, onSuccess }: AddAnn
                 <span className="pointer-events-none absolute right-9 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full" style={{ backgroundColor: typeOf(formData.type).color }} />
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               </div>
+              {formData.type === 'urgent' && (
+                <p className="mt-1.5 rounded-lg bg-[#FDECEC] px-3 py-2 text-xs text-[#c0392b]">
+                  Pops up full-screen on every screen for the selected people until they click "I've read this". You'll see who has read it here.
+                </p>
+              )}
             </Field>
 
             <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-[#E7EDF4] bg-[#F9FAFB] px-3.5 py-2.5">

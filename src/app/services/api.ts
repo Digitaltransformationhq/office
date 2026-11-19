@@ -1581,6 +1581,23 @@ export const announcementsAPI = {
       method: 'PUT',
     });
   },
+
+  /** Live urgent alerts aimed at this user that they haven't acknowledged yet. */
+  getPendingUrgent: async (userId: string) => {
+    return fetchAPI(`/announcements/urgent/pending?userId=${encodeURIComponent(userId)}`);
+  },
+
+  acknowledge: async (announcementId: string, userId: string) => {
+    return fetchAPI(`/announcements/${announcementId}/acknowledge`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    });
+  },
+
+  /** Who has and hasn't read an urgent alert: { acknowledged, pending }. */
+  getAcknowledgements: async (announcementId: string) => {
+    return fetchAPI(`/announcements/${announcementId}/acknowledgements`);
+  },
 };
 
 // Billing Records API
