@@ -52,6 +52,58 @@ export function SelectField({ value, onChange, children }: {
   );
 }
 
+/** Suggested industries, A–Z. Free text is still allowed for anything not listed. */
+export const INDUSTRY_OPTIONS = [
+  'Construction', 'E-commerce', 'Education', 'Healthcare', 'IT Services',
+  'Manufacturing', 'Retail', 'Services', 'Trading', 'Wholesale',
+];
+
+/** Type-or-pick input: typing filters the list, the chevron opens all options. */
+export function IndustryField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [filtering, setFiltering] = React.useState(false);
+  const q = value.trim().toLowerCase();
+  const options = filtering && q ? INDUSTRY_OPTIONS.filter(o => o.toLowerCase().includes(q)) : INDUSTRY_OPTIONS;
+  return (
+    <div className="relative" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false); }}>
+      <input
+        className={`${inputCls} pr-9`}
+        value={value}
+        placeholder="Select or type an industry"
+        onChange={e => { onChange(e.target.value); setFiltering(true); setOpen(true); }}
+        onFocus={() => { setFiltering(false); setOpen(true); }}
+        onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Show industries"
+        className="absolute inset-y-0 right-0 flex w-9 items-center justify-center"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => { setFiltering(false); setOpen(o => !o); }}
+      >
+        <ChevronDownIcon />
+      </button>
+      {open && options.length > 0 && (
+        <ul className="absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-[#E7EDF4] bg-white py-1 shadow-lg">
+          {options.map(o => (
+            <li key={o}>
+              <button
+                type="button"
+                className={`w-full px-3.5 py-2 text-left text-[0.9rem] hover:bg-[#F3F6FA] ${o === value ? 'font-medium text-[#1b365d]' : ''}`}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { onChange(o); setOpen(false); }}
+              >
+                {o}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function FeeInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
     <div>
