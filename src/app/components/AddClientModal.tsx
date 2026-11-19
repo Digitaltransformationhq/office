@@ -5,7 +5,7 @@ import { useToast } from './Toast';
 import { X, Building2 } from 'lucide-react';
 import {
   NAVY, inputCls, FEE_FIELDS, rupees, Field, SelectField, FeeList, ModalTabs, overlayCls, panelCls,
-  PanField, DuplicateWarning, panProblem, panPayload, gstServiceProblem, type PossibleDuplicate,
+  PanField, DuplicateWarning, panProblem, panPayload, gstServiceProblem, IndustryField, type PossibleDuplicate,
 } from './clientModalUI';
 
 interface AddClientModalProps {
@@ -113,7 +113,7 @@ export function AddClientModal({ onClose, onSuccess, onOpenExisting }: AddClient
                 <Field label="GSTIN"><input className={inputCls} value={formData.gstin} onChange={e => set('gstin', e.target.value.toUpperCase())} placeholder="22ABCDE1234F1Z5" maxLength={15} /></Field>
                 <Field label="Contact number"><input className={inputCls} type="tel" value={formData.contact} onChange={e => set('contact', e.target.value)} placeholder="+91 98765 43210" /></Field>
                 <Field label="Email"><input className={inputCls} type="email" value={formData.email} onChange={e => set('email', e.target.value)} placeholder="contact@abcenterprises.com" /></Field>
-                <Field label="Industry"><input className={inputCls} value={formData.industry} onChange={e => set('industry', e.target.value)} placeholder="Manufacturing, Trading, Services…" /></Field>
+                <Field label="Industry"><IndustryField value={formData.industry} onChange={v => set('industry', v)} /></Field>
                 <Field label="Status">
                   <SelectField value={formData.status} onChange={e => set('status', e.target.value)}>
                     <option value="Active">Active</option>
