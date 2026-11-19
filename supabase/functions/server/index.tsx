@@ -65,7 +65,9 @@ async function getWebpush() {
 //   APNS_BUNDLE_ID (default com.kaps.office.mobile), APNS_PRODUCTION=true for
 //   App Store / TestFlight builds (development builds use the sandbox).
 
-type PushPayload = { title: string; body: string; url?: string };
+// `urgent` makes the browser notification stay on screen until clicked (see
+// public/sw.js); `tag` lets a later notification replace an earlier one.
+type PushPayload = { title: string; body: string; url?: string; urgent?: boolean; tag?: string };
 
 function b64url(bytes: Uint8Array | string): string {
   const raw = typeof bytes === 'string' ? bytes : String.fromCharCode(...bytes);
@@ -213,7 +215,10 @@ async function sendPush(userId: string, payload: PushPayload) {
 }
 
 // Create an in-app notification AND a browser push for a user (best-effort).
-async function notifyUser(userId: string, type: string, title: string, message: string) {
+async function notifyUser(
+  userId: string, type: string, title: string, message: string,
+  pushExtra: Pick<PushPayload, 'urgent' | 'tag'> = {},
+) {
   if (!userId) return;
   try {
     await supabase.from('notifications').insert([{
@@ -231,7 +236,7 @@ async function notifyUser(userId: string, type: string, title: string, message: 
   // (src/app/utils/notifications.ts) and resolves it against the user's role.
   // This was hardcoded to '/', so every push click landed on the app root.
   const url = `/?notif=${encodeURIComponent(type)}`;
-  await sendPush(userId, { title, body: message || title, url });
+  await sendPush(userId, { title, body: message || title, url, ...pushExtra });
   await broadcastChange('notifications');
 }
 
@@ -1575,6 +1580,41 @@ app.delete('/make-server-0abfa7cf/calendar-events/:eventId', async (c) => {
 // ANNOUNCEMENTS ENDPOINTS
 // ============================================
 
+/**
+ * Urgent announcements pop up full-screen on every screen until each recipient
+ * clicks "I've read this". An acknowledgement is its own KV row rather than a
+ * list on the announcement: when an alert goes out, many people acknowledge
+ * within seconds of each other, and read-modify-write on one record would lose
+ * some of them.
+ *
+ * The prefix must NOT start with "announcement:" — getByPrefix('announcement:')
+ * lists announcements, and acknowledgements would show up in it as phantoms.
+ */
+const ACK_PREFIX = 'ann_ack:';
+const ackKey = (announcementId: string, userId: string) => `${ACK_PREFIX}${announcementId}|${userId}`;
+const ackPrefixFor = (announcementId: string) => `${ACK_PREFIX}${announcementId}|`;
+
+function announcementIsLive(ann: any, now = new Date()) {
+  if (!ann?.is_active) return false;
+  if (ann.start_date && new Date(ann.start_date) > now) return false;
+  // end_date is a calendar date; the alert stays live through the whole of it.
+  if (ann.end_date && new Date(`${String(ann.end_date).slice(0, 10)}T23:59:59`) < now) return false;
+  return true;
+}
+
+function announcementTargets(ann: any, role: string) {
+  const roles = ann?.target_roles;
+  return !Array.isArray(roles) || roles.length === 0 || roles.includes(role);
+}
+
+async function announcementRecipients(ann: any) {
+  let query = supabase.from('users').select('id, name, role').eq('status', 'Active');
+  const roles = ann?.target_roles;
+  if (Array.isArray(roles) && roles.length > 0) query = query.in('role', roles);
+  const { data } = await query;
+  return data || [];
+}
+
 app.get('/make-server-0abfa7cf/announcements', async (c) => {
   try {
     const announcements = await kvStore.getByPrefix('announcement:');
@@ -1625,27 +1665,35 @@ app.post('/make-server-0abfa7cf/announcements', async (c) => {
       end_date: body.endDate || null,
       target_roles: body.targetRoles || [], // Empty array means all roles
       created_by: body.createdBy,
+      // The author is never shown their own urgent alert.
+      created_by_id: body.createdById || null,
       created_at: new Date().toISOString(),
     };
 
     await kvStore.set(announcementId, announcementData);
 
+    // Broadcast first: an urgent alert should pop up on open screens now, not
+    // after the push fan-out below has worked through every recipient.
+    await broadcastChange('announcements');
+
     // Fan out a notification to every targeted user (all active users if no roles set)
     if (announcementData.is_active) {
       try {
-        let query = supabase.from('users').select('id').eq('status', 'Active');
-        const roles = announcementData.target_roles;
-        if (Array.isArray(roles) && roles.length > 0) query = query.in('role', roles);
-        const { data: recipients } = await query;
-        for (const u of recipients || []) {
-          await notifyUser(u.id, 'announcement', announcementData.title, announcementData.message);
+        const urgent = announcementData.type === 'urgent';
+        const recipients = await announcementRecipients(announcementData);
+        for (const u of recipients) {
+          if (urgent && u.id === announcementData.created_by_id) continue;
+          await notifyUser(
+            u.id, 'announcement',
+            urgent ? `🔴 URGENT: ${announcementData.title}` : announcementData.title,
+            announcementData.message,
+            urgent ? { urgent: true, tag: `urgent-${announcementId}` } : {},
+          );
         }
       } catch (e) {
         console.log('announcement notify fan-out failed:', e);
       }
     }
-
-    await broadcastChange('announcements');
 
 
     return c.json({ success: true, data: announcementData });
@@ -1711,11 +1759,23 @@ app.delete('/make-server-0abfa7cf/announcements/:announcementId', async (c) => {
           .from('notifications')
           .delete()
           .eq('type', 'announcement')
-          .eq('title', a.title)
+          // Urgent ones went out with a prefixed title.
+          .in('title', [a.title, `🔴 URGENT: ${a.title}`])
           .eq('message', a.message || a.title);
       } catch (e) {
         console.log('Could not clear announcement notifications:', e);
       }
+    }
+
+    // Its acknowledgements go with it.
+    try {
+      const acks = await kvStore.getByPrefix(ackPrefixFor(announcementId));
+      const keys = acks
+        .filter((k: any) => k?.announcement_id === announcementId && k?.user_id)
+        .map((k: any) => ackKey(announcementId, k.user_id));
+      if (keys.length) await kvStore.mdel(keys);
+    } catch (e) {
+      console.log('Could not clear announcement acknowledgements:', e);
     }
 
     await kvStore.del(announcementId);
@@ -1745,10 +1805,109 @@ app.put('/make-server-0abfa7cf/announcements/:announcementId/toggle', async (c) 
     };
 
     await kvStore.set(announcementId, updatedData);
+    // Switching an urgent alert on must pop it up on open screens.
+    await broadcastChange('announcements');
     return c.json({ success: true, data: updatedData });
   } catch (error) {
     console.log('Error toggling announcement:', error);
     return c.json({ success: false, error: 'Failed to toggle announcement' }, 500);
+  }
+});
+
+// Live urgent alerts aimed at this user that they have not yet acknowledged.
+// Oldest first, so they are worked through in the order they were sent.
+app.get('/make-server-0abfa7cf/announcements/urgent/pending', async (c) => {
+  try {
+    const userId = c.req.query('userId') || '';
+    if (!userId) return c.json({ success: false, error: 'userId is required' }, 400);
+
+    const { data: me } = await supabase.from('users').select('id, role').eq('id', userId).maybeSingle();
+    if (!me) return c.json({ success: true, data: [] });
+
+    const now = new Date();
+    const urgent = (await kvStore.getByPrefix('announcement:')).filter((a: any) =>
+      a?.type === 'urgent' &&
+      announcementIsLive(a, now) &&
+      announcementTargets(a, me.role) &&
+      a.created_by_id !== userId
+    );
+    if (urgent.length === 0) return c.json({ success: true, data: [] });
+
+    // mget returns only the rows that exist, in no particular order, so match
+    // on the ids stored inside them rather than by position.
+    const acked = await kvStore.mget(urgent.map((a: any) => ackKey(a.id, userId)));
+    const ackedIds = new Set(acked.filter((k: any) => k?.user_id === userId).map((k: any) => k.announcement_id));
+    const pending = urgent
+      .filter((a: any) => !ackedIds.has(a.id))
+      .sort((a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at)));
+
+    return c.json({ success: true, data: pending });
+  } catch (error) {
+    console.log('Error fetching pending urgent announcements:', error);
+    return c.json({ success: false, error: 'Failed to fetch urgent announcements' }, 500);
+  }
+});
+
+app.post('/make-server-0abfa7cf/announcements/:announcementId/acknowledge', async (c) => {
+  try {
+    const announcementId = c.req.param('announcementId');
+    const body = await c.req.json();
+    const userId = body?.userId;
+    if (!userId) return c.json({ success: false, error: 'userId is required' }, 400);
+
+    const ann = await kvStore.get(announcementId);
+    if (!ann) return c.json({ success: false, error: 'Announcement not found' }, 404);
+
+    // The name comes from the users table, not the request.
+    const { data: me } = await supabase.from('users').select('id, name, role').eq('id', userId).maybeSingle();
+    if (!me) return c.json({ success: false, error: 'User not found' }, 404);
+
+    const key = ackKey(announcementId, userId);
+    const existing = await kvStore.get(key);
+    if (!existing) {
+      await kvStore.set(key, {
+        announcement_id: announcementId,
+        user_id: me.id,
+        user_name: me.name,
+        role: me.role,
+        acknowledged_at: new Date().toISOString(),
+      });
+      await broadcastChange('announcements');
+    }
+    return c.json({ success: true });
+  } catch (error) {
+    console.log('Error acknowledging announcement:', error);
+    return c.json({ success: false, error: 'Failed to acknowledge announcement' }, 500);
+  }
+});
+
+// Who has and hasn't read an urgent alert, for the admin. Both lists A–Z.
+app.get('/make-server-0abfa7cf/announcements/:announcementId/acknowledgements', async (c) => {
+  try {
+    const announcementId = c.req.param('announcementId');
+    const ann = await kvStore.get(announcementId);
+    if (!ann) return c.json({ success: false, error: 'Announcement not found' }, 404);
+
+    const acks = (await kvStore.getByPrefix(ackPrefixFor(announcementId)))
+      .filter((a: any) => a?.announcement_id === announcementId);
+    const ackedIds = new Set(acks.map((a: any) => a.user_id));
+
+    const recipients = (await announcementRecipients(ann)).filter((u: any) => u.id !== ann.created_by_id);
+    const byName = (a: any, b: any) =>
+      String(a.name || a.user_name || '').localeCompare(String(b.name || b.user_name || ''), 'en', { sensitivity: 'base' });
+
+    const acknowledged = acks
+      .map((a: any) => ({ user_id: a.user_id, name: a.user_name, role: a.role, acknowledged_at: a.acknowledged_at }))
+      .sort(byName);
+    const pending = recipients
+      .filter((u: any) => !ackedIds.has(u.id))
+      .map((u: any) => ({ user_id: u.id, name: u.name, role: u.role }))
+      .sort(byName);
+
+    return c.json({ success: true, data: { acknowledged, pending } });
+  } catch (error) {
+    console.log('Error fetching acknowledgements:', error);
+    return c.json({ success: false, error: 'Failed to fetch acknowledgements' }, 500);
   }
 });
 
